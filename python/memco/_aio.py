@@ -72,7 +72,7 @@ class AsyncMemco:
         timeout: Default per-call deadline in seconds.
         check_health: Whether :meth:`connect` probes the health endpoint.
         verify_credentials: Whether :meth:`connect` also calls
-            :meth:`~memco.operations.MemoryOperations.list_domains` to prove
+            :meth:`~memco.operations.MemoryOperations.describe_domains` to prove
             the credential works. Off by default because it makes an
             additional request every time a client is connected.
         env: Environment mapping to read defaults from. Defaults to
@@ -175,7 +175,7 @@ class AsyncMemco:
             if self._check_health_on_connect:
                 await self._check_health()
             if self._verify_credentials_on_connect:
-                await self.memory.list_domains()
+                await self.memory.describe_domains()
         except BaseException:
             # Drop the channel but stay usable: a failed probe is often a
             # transient blip, and this method documents itself as repeatable.

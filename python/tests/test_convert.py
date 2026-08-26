@@ -40,7 +40,7 @@ def test_instructions_keep_empty_strings():
 
 def test_repeated_fields_become_tuples():
     result = to_domain_list(
-        pb.ListDomainsResponse(
+        pb.DescribeDomainsResponse(
             domains=[pb.DomainEntry(slug="coding", filter_tag_types=["language"])]
         )
     )

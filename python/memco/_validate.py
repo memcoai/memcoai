@@ -148,7 +148,7 @@ def check_domain(domain: str) -> None:
     """Validate a domain slug.
 
     Args:
-        domain: The slug, as returned by ``list_domains``.
+        domain: The slug, as returned by ``describe_domains``.
 
     Raises:
         MemcoInvalidRequestError: If it is blank.

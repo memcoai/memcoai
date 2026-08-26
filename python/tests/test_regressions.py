@@ -59,19 +59,19 @@ def test_zero_timeout_is_rejected_not_silently_widened(client: Memco, harness: H
     # Asking for an immediate deadline and getting 30s is the opposite of the
     # request, so it must be an error rather than a substitution.
     with pytest.raises(errors.MemcoConfigError, match="timeout"):
-        client.memory.list_domains(timeout=0)
+        client.memory.describe_domains(timeout=0)
     assert harness.memory.calls == []
 
 
 def test_negative_timeout_is_rejected(client: Memco, harness: Harness):
     with pytest.raises(errors.MemcoConfigError, match="timeout"):
-        client.memory.list_domains(timeout=-5)
+        client.memory.describe_domains(timeout=-5)
     assert harness.memory.calls == []
 
 
 async def test_zero_timeout_is_rejected_on_the_async_client(async_client: AsyncMemco):
     with pytest.raises(errors.MemcoConfigError, match="timeout"):
-        await async_client.memory.list_domains(timeout=0)
+        await async_client.memory.describe_domains(timeout=0)
 
 
 # --- M6: a one-shot iterable was validated and then sent empty ------------
@@ -121,7 +121,7 @@ def test_calling_a_closed_client_raises_a_memco_error(harness: Harness):
     connected = Memco(token=TOKEN, host=harness.address, tls=False)
     connected._closed = True  # the pre-check still guards this path
     with pytest.raises(errors.MemcoError):
-        connected.memory.list_domains()
+        connected.memory.describe_domains()
     connected.close()
 
 
@@ -142,7 +142,7 @@ for _ in range(5):
             # and invoking an unwarmed one on a destroyed channel used to take
             # the whole process down rather than raise.
             for call in (
-                lambda: client.memory.list_domains(),
+                lambda: client.memory.describe_domains(),
                 lambda: client.memory.search("q", domain="d"),
                 lambda: client.memory.get_memory("m"),
                 lambda: client.memory.start_session("d"),
@@ -193,7 +193,7 @@ def test_a_call_that_races_close_still_raises_a_memco_error(harness: Harness):
     def hammer(connected: Memco) -> None:
         for _ in range(40):
             try:
-                connected.memory.list_domains()
+                connected.memory.describe_domains()
             except errors.MemcoError:
                 pass
             except BaseException as exc:
@@ -217,7 +217,7 @@ async def test_an_async_call_that_races_close_still_raises_a_memco_error(harness
     await connected.connect()
     await connected._channel.close(grace=None)
     with pytest.raises(errors.MemcoError):
-        await connected.memory.list_domains()
+        await connected.memory.describe_domains()
     await connected.close()
 
 
@@ -237,7 +237,7 @@ client = AsyncMemco(token="t", host=sys.argv[1], tls=False)   # no loop exists y
 
 async def main() -> int:
     async with client:
-        return len((await client.memory.list_domains()).domains)
+        return len((await client.memory.describe_domains()).domains)
 
 
 print("domains:", asyncio.run(main()))
@@ -272,7 +272,7 @@ client = AsyncMemco(token="t", host=sys.argv[1], tls=False)
 
 async def main() -> int:
     await client.connect()          # deliberately not closed between runs
-    return len((await client.memory.list_domains()).domains)
+    return len((await client.memory.describe_domains()).domains)
 
 
 for _ in range(3):
@@ -379,7 +379,7 @@ async def test_connect_can_be_retried_after_a_transient_failure(harness: Harness
     # The docstring promises a repeat simply repeats the checks.
     harness.health.status = health_pb2.HealthCheckResponse.SERVING
     await connected.connect()
-    await connected.memory.list_domains()
+    await connected.memory.describe_domains()
     await connected.close()
 
 

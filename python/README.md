@@ -36,7 +36,7 @@ Requires Python 3.10 or newer.
 from memco import Memco
 
 with Memco() as client:  # reads MEMCO_API_TOKEN
-    for domain in client.memory.list_domains().domains:
+    for domain in client.memory.describe_domains().domains:
         print(domain.slug, "-", domain.summary)
 
     session = client.memory.start_session("coding")
@@ -98,7 +98,7 @@ The memory operations live on `client.memory`.
 
 | Method | Purpose |
 |---|---|
-| `memory.list_domains()` | Which domains this credential may name, and their tag vocabulary |
+| `memory.describe_domains()` | Which domains this credential may name, and their tag vocabulary |
 | `memory.start_session(domain)` | Open a session so related searches are recorded as one series |
 | `memory.search(query, ...)` | Find memories answering a task-based query |
 | `memory.get_memory(idx)` | Fetch a memory a search returned only as a reference |

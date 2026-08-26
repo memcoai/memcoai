@@ -49,7 +49,7 @@ class MemoryOperations:
         self._stub = stub
         self._call = call
 
-    def list_domains(self, *, timeout: float | None = None) -> DomainList:
+    def describe_domains(self, *, timeout: float | None = None) -> DomainList:
         """List the memory domains this credential may name.
 
         Takes no domain itself: it is the answer to "which domain?". Call it
@@ -66,10 +66,12 @@ class MemoryOperations:
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> for domain in client.memory.list_domains().domains:
+            >>> for domain in client.memory.describe_domains().domains:
             ...     print(domain.slug, "-", domain.summary)
         """
-        response = self._call(self._stub.ListDomains, _requests.list_domains_request(), timeout)
+        response = self._call(
+            self._stub.DescribeDomains, _requests.describe_domains_request(), timeout
+        )
         return _convert.to_domain_list(response)
 
     def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
@@ -80,7 +82,7 @@ class MemoryOperations:
         handle for subsequent searches, writes and ratings.
 
         Args:
-            domain: Slug of the domain, as returned by :meth:`list_domains`.
+            domain: Slug of the domain, as returned by :meth:`describe_domains`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -122,7 +124,7 @@ class MemoryOperations:
                 is given.
             session_id: An open session to record this search under.
             tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`list_domains` describes
+                rather than boost is per-domain; :meth:`describe_domains` describes
                 them.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
@@ -388,7 +390,7 @@ class AsyncMemoryOperations:
         self._stub = stub
         self._call = call
 
-    async def list_domains(self, *, timeout: float | None = None) -> DomainList:
+    async def describe_domains(self, *, timeout: float | None = None) -> DomainList:
         """List the memory domains this credential may name.
 
         Takes no domain itself: it is the answer to "which domain?". Call it
@@ -405,11 +407,11 @@ class AsyncMemoryOperations:
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> for domain in (await client.memory.list_domains()).domains:
+            >>> for domain in (await client.memory.describe_domains()).domains:
             ...     print(domain.slug, "-", domain.summary)
         """
         response = await self._call(
-            self._stub.ListDomains, _requests.list_domains_request(), timeout
+            self._stub.DescribeDomains, _requests.describe_domains_request(), timeout
         )
         return _convert.to_domain_list(response)
 
@@ -421,7 +423,7 @@ class AsyncMemoryOperations:
         handle for subsequent searches, writes and ratings.
 
         Args:
-            domain: Slug of the domain, as returned by :meth:`list_domains`.
+            domain: Slug of the domain, as returned by :meth:`describe_domains`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -464,7 +466,7 @@ class AsyncMemoryOperations:
                 is given.
             session_id: An open session to record this search under.
             tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`list_domains` describes
+                rather than boost is per-domain; :meth:`describe_domains` describes
                 them.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 

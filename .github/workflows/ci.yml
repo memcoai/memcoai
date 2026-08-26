@@ -310,7 +310,7 @@ jobs:
           from memco import Memco, provenance
           with Memco() as client:
               print("contract:", provenance().server_commit)
-              domains = client.memory.list_domains().domains
+              domains = client.memory.describe_domains().domains
               print("domains:", [d.slug for d in domains])
               assert domains, "the service returned no domains"
               session = client.memory.start_session(domains[0].slug)

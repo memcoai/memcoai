@@ -253,10 +253,23 @@ the draft in step 5 can be deleted, but the upload cannot be taken back.
 
 **That pause only exists if you configure it.** An environment with no
 protection rule does not stop for anyone, so a tag push would publish to PyPI
-unattended. Add yourself as a required reviewer under **Settings → Environments
-→ pypi**; rejecting there ends the run with nothing uploaded, which is how you
+unattended. Under **Settings → Environments → pypi**:
+
+- add a **required reviewer**, which is what creates the pause;
+- set **deployment branches and tags** to the tag pattern `python-v*`, so the
+  token is unreachable from any other ref;
+- keep `PYPI_API_TOKEN` as an *environment* secret rather than a repository one.
+  Only a job naming this environment can then resolve it, and no job in
+  `ci.yml` does.
+
+Rejecting the approval ends the run with nothing uploaded, which is how you
 rehearse the gate and the CI half of the pipeline. The publish and draft steps
 are only ever exercised by a real release.
+
+If the run fails *after* the upload — PyPI has the package but no draft
+appeared — do not re-tag. Re-run the failed jobs from the run page: the `dist`
+and `docs` artefacts are still attached to it, and re-running `uv publish` over
+files PyPI already has is a no-op rather than an error.
 
 A pre-release tag (`python-v0.1.0rc1`) is marked as a pre-release on GitHub
 automatically and is skipped by `pip install` unless asked for — but it still

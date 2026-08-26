@@ -51,7 +51,7 @@ class Memco:
         check_health: Whether to probe the health endpoint on construction. Set
             to ``False`` to construct without touching the network.
         verify_credentials: Whether to additionally call
-            :meth:`~memco.operations.MemoryOperations.list_domains` on
+            :meth:`~memco.operations.MemoryOperations.describe_domains` on
             construction to prove the credential works. Off by default because
             it makes an additional request every time a client is built.
         env: Environment mapping to read defaults from. Defaults to
@@ -105,7 +105,7 @@ class Memco:
             if check_health:
                 self._check_health()
             if verify_credentials:
-                self.memory.list_domains()
+                self.memory.describe_domains()
         except BaseException:
             self.close()
             raise

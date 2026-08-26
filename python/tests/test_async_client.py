@@ -6,6 +6,7 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
+import memco
 from memco import AsyncMemco, errors, types
 from memco.memory.v1 import memory_pb2 as pb
 
@@ -16,12 +17,12 @@ from .fake_server import Harness
 
 
 async def test_auth_metadata_is_bearer_with_a_capital_b(async_client: AsyncMemco, harness: Harness):
-    await async_client.memory.list_domains()
+    await async_client.memory.describe_domains()
     assert harness.memory.metadata[-1]["authorization"] == f"Bearer {TOKEN}"
 
 
 async def test_auth_metadata_is_sent_on_every_method(async_client: AsyncMemco, harness: Harness):
-    await async_client.memory.list_domains()
+    await async_client.memory.describe_domains()
     await async_client.memory.start_session("coding")
     assert len(harness.memory.metadata) == 2
     for sent in harness.memory.metadata:
@@ -69,10 +70,10 @@ async def test_credentials_are_not_verified_by_default(harness: Harness):
     assert harness.memory.calls == []
 
 
-async def test_verify_credentials_fires_list_domains(harness: Harness):
+async def test_verify_credentials_fires_describe_domains(harness: Harness):
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False, verify_credentials=True):
         pass
-    assert harness.memory.calls == ["ListDomains"]
+    assert harness.memory.calls == ["DescribeDomains"]
 
 
 # --- error translation ---------------------------------------------------
@@ -92,7 +93,7 @@ async def test_server_errors_arrive_typed(
 ):
     harness.memory.error = (code, "boom")
     with pytest.raises(expected) as caught:
-        await async_client.memory.list_domains()
+        await async_client.memory.describe_domains()
     assert caught.value.code is code
 
 
@@ -106,10 +107,10 @@ async def test_validation_fires_before_any_rpc(async_client: AsyncMemco, harness
 
 
 async def test_all_eight_operations_round_trip(async_client: AsyncMemco, harness: Harness):
-    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
+    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
         domains=[pb.DomainEntry(slug="coding")]
     )
-    assert [d.slug for d in (await async_client.memory.list_domains()).domains] == ["coding"]
+    assert [d.slug for d in (await async_client.memory.describe_domains()).domains] == ["coding"]
 
     session = await async_client.memory.start_session("coding")
     assert session.session_id == "session-a"
@@ -144,9 +145,9 @@ async def test_all_eight_operations_round_trip(async_client: AsyncMemco, harness
 
 async def test_context_manager_closes_the_channel(harness: Harness):
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False) as connected:
-        await connected.memory.list_domains()
+        await connected.memory.describe_domains()
     with pytest.raises(errors.MemcoConfigError, match="closed"):
-        await connected.memory.list_domains()
+        await connected.memory.describe_domains()
 
 
 async def test_double_close_is_safe(harness: Harness):
@@ -158,3 +159,14 @@ async def test_double_close_is_safe(harness: Harness):
 
 async def test_provenance_is_reachable(async_client: AsyncMemco):
     assert async_client.provenance().server_commit
+
+
+async def test_the_user_agent_is_sent_by_the_async_client(
+    async_client: AsyncMemco, harness: Harness
+):
+    await async_client.memory.describe_domains()
+    sent = harness.memory.metadata[-1]["user-agent"]
+    assert f"memco-python/{memco.__version__}" in sent
+    # The asyncio transport identifies itself as grpc-python-asyncio, so match
+    # the stem rather than the synchronous spelling.
+    assert "grpc-python" in sent

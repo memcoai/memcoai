@@ -23,9 +23,9 @@ _M = TypeVar("_M", bound=Message)
 
 __all__ = [
     "create_memory_request",
+    "describe_domains_request",
     "enrich_memory_request",
     "get_memory_request",
-    "list_domains_request",
     "require_memory",
     "revert_memory_request",
     "search_request",
@@ -87,14 +87,14 @@ def _source(source: DataSource) -> _pb.DataSource:
     return cast(_pb.DataSource, source.value)
 
 
-def list_domains_request() -> _pb.ListDomainsRequest:
-    """Build a ``ListDomains`` request.
+def describe_domains_request() -> _pb.DescribeDomainsRequest:
+    """Build a ``DescribeDomains`` request.
 
     Returns:
         The request message. It carries no fields: the call is the answer to
         "which domain?", so it takes no domain of its own.
     """
-    return _pb.ListDomainsRequest()
+    return _pb.DescribeDomainsRequest()
 
 
 def revert_memory_request(operation_id: str) -> _pb.RevertMemoryRequest:

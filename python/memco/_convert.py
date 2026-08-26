@@ -160,8 +160,8 @@ def _to_domain_entry(message: _pb.DomainEntry) -> DomainEntry:
     )
 
 
-def to_domain_list(message: _pb.ListDomainsResponse) -> DomainList:
-    """Convert a ``ListDomainsResponse``.
+def to_domain_list(message: _pb.DescribeDomainsResponse) -> DomainList:
+    """Convert a ``DescribeDomainsResponse``.
 
     Args:
         message: The generated response.

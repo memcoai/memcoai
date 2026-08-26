@@ -99,7 +99,13 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       full: true
-    # The nested live smoke test reads MEMCO_API_TOKEN from its own environment.
+    # Covers MEMCO_API_TOKEN for the nested live smoke test if it is a
+    # repository secret. If it is instead a secret of the `integration`
+    # environment, that job resolves it itself and this is a no-op; keep it
+    # either way, because passing the secret explicitly would need a
+    # `secrets:` declaration in ci.yml and would not reach an environment
+    # secret at all. A job with `uses:` cannot declare an environment, so this
+    # structurally cannot forward anything scoped to `pypi`.
     secrets: inherit
 
   publish:
