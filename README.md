@@ -73,16 +73,17 @@ python/           the Python SDK
 go/, nodejs/      generated gRPC clients
 ```
 
-Everything under `proto/` and `<language>/client/` is generated from the service
-contract and is replaced wholesale each time it is regenerated. Please do not
-edit those by hand — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Generated code is replaced wholesale each time it is regenerated, so please do
+not edit it by hand — see [CONTRIBUTING.md](CONTRIBUTING.md). For Python that is
+`python/memco/memory/`; for Go and Node it is `<language>/client/`.
 
 ## Contributing
 
-Bug reports and pull requests are welcome. Please read
-[CONTRIBUTING.md](CONTRIBUTING.md) first — it covers how to set up the
-development environment, which files are generated and must not be edited, and
-what a change needs before it can be merged.
+Bug reports and pull requests are welcome, and you do not need access to Memco's
+servers to work on this — the test suites run in-process, so everything passes
+offline. [CONTRIBUTING.md](CONTRIBUTING.md) covers which files are generated and
+must not be edited, what a change needs before it can be merged, and the
+per-language setup (see the [Python](CONTRIBUTING.md#python) section).
 
 ```bash
 make install   # set up every development environment

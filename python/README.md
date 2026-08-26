@@ -162,8 +162,9 @@ provenance().protos[0].path  # 'memco/memory/v1/memory.proto'
 
 Bug reports and pull requests are welcome, and you do not need access to Memco's
 servers to work on this — the test suite runs against an in-process gRPC server,
-so everything passes offline. See
-[CONTRIBUTING.md](https://github.com/memcoai/memco/blob/main/CONTRIBUTING.md).
+so everything passes offline. The
+[Python section of CONTRIBUTING.md](https://github.com/memcoai/memco/blob/main/CONTRIBUTING.md#python)
+covers local setup, the checks, and the test conventions.
 
 ```bash
 make install                # from the repository root
