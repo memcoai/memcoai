@@ -474,10 +474,30 @@ func (*DescribeDomainsRequest) Descriptor() ([]byte, []int) {
 }
 
 type DescribeDomainsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Domains       []*DomainEntry         `protobuf:"bytes,1,rep,name=domains,proto3" json:"domains,omitempty"`
-	Instructions  *Instructions          `protobuf:"bytes,2,opt,name=instructions,proto3" json:"instructions,omitempty"`
-	Limits        *Limits                `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Domains      []*DomainEntry         `protobuf:"bytes,1,rep,name=domains,proto3" json:"domains,omitempty"`
+	Instructions *Instructions          `protobuf:"bytes,2,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	Limits       *Limits                `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
+	// deprecated marks what the caller is using as superseded — either this API
+	// version, or the SDK build they are running. A client should surface it once
+	// per process rather than per call.
+	//
+	// It does NOT say which of the two it is: that distinction lives in
+	// deprecation_message, because only the server knows the remedy and only the
+	// server can change the wording without an SDK release. Clients relay the
+	// message; they should not try to infer a cause from the flag.
+	//
+	// This field ships before it is needed on purpose. A client can only be told
+	// it is out of date if the version it was built against already carried the
+	// field, so adding it when v2 arrives would reach only the callers who least
+	// need telling.
+	Deprecated bool `protobuf:"varint,4,opt,name=deprecated,proto3" json:"deprecated,omitempty"`
+	// deprecation_message is the server-authored remedy, empty when not
+	// deprecated. It is the whole of what a client should show.
+	DeprecationMessage string `protobuf:"bytes,5,opt,name=deprecation_message,json=deprecationMessage,proto3" json:"deprecation_message,omitempty"`
+	// sunset_date is when what the caller uses stops working, as YYYY-MM-DD.
+	// Empty when no date is set, which is not a promise that none will be.
+	SunsetDate    string `protobuf:"bytes,6,opt,name=sunset_date,json=sunsetDate,proto3" json:"sunset_date,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -531,6 +551,27 @@ func (x *DescribeDomainsResponse) GetLimits() *Limits {
 		return x.Limits
 	}
 	return nil
+}
+
+func (x *DescribeDomainsResponse) GetDeprecated() bool {
+	if x != nil {
+		return x.Deprecated
+	}
+	return false
+}
+
+func (x *DescribeDomainsResponse) GetDeprecationMessage() string {
+	if x != nil {
+		return x.DeprecationMessage
+	}
+	return ""
+}
+
+func (x *DescribeDomainsResponse) GetSunsetDate() string {
+	if x != nil {
+		return x.SunsetDate
+	}
+	return ""
 }
 
 // Limits are the caps the server enforces, published so a client can check its
@@ -1850,11 +1891,17 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\x11version_tag_types\x18\t \x03(\tR\x0fversionTagTypes\x12+\n" +
 	"\x12max_tags_per_query\x18\n" +
 	" \x01(\x05R\x0fmaxTagsPerQuery\"\x18\n" +
-	"\x16DescribeDomainsRequest\"\xc5\x01\n" +
+	"\x16DescribeDomainsRequest\"\xb7\x02\n" +
 	"\x17DescribeDomainsResponse\x126\n" +
 	"\adomains\x18\x01 \x03(\v2\x1c.memco.memory.v1.DomainEntryR\adomains\x12A\n" +
 	"\finstructions\x18\x02 \x01(\v2\x1d.memco.memory.v1.InstructionsR\finstructions\x12/\n" +
-	"\x06limits\x18\x03 \x01(\v2\x17.memco.memory.v1.LimitsR\x06limits\"\xeb\x01\n" +
+	"\x06limits\x18\x03 \x01(\v2\x17.memco.memory.v1.LimitsR\x06limits\x12\x1e\n" +
+	"\n" +
+	"deprecated\x18\x04 \x01(\bR\n" +
+	"deprecated\x12/\n" +
+	"\x13deprecation_message\x18\x05 \x01(\tR\x12deprecationMessage\x12\x1f\n" +
+	"\vsunset_date\x18\x06 \x01(\tR\n" +
+	"sunsetDate\"\xeb\x01\n" +
 	"\x06Limits\x120\n" +
 	"\x14max_query_characters\x18\x01 \x01(\x05R\x12maxQueryCharacters\x12.\n" +
 	"\x13max_text_characters\x18\x02 \x01(\x05R\x11maxTextCharacters\x12,\n" +

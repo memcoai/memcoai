@@ -115,6 +115,26 @@ message DescribeDomainsResponse {
   repeated DomainEntry domains = 1;
   Instructions instructions = 2;
   Limits limits = 3;
+  // deprecated marks what the caller is using as superseded — either this API
+  // version, or the SDK build they are running. A client should surface it once
+  // per process rather than per call.
+  //
+  // It does NOT say which of the two it is: that distinction lives in
+  // deprecation_message, because only the server knows the remedy and only the
+  // server can change the wording without an SDK release. Clients relay the
+  // message; they should not try to infer a cause from the flag.
+  //
+  // This field ships before it is needed on purpose. A client can only be told
+  // it is out of date if the version it was built against already carried the
+  // field, so adding it when v2 arrives would reach only the callers who least
+  // need telling.
+  bool deprecated = 4;
+  // deprecation_message is the server-authored remedy, empty when not
+  // deprecated. It is the whole of what a client should show.
+  string deprecation_message = 5;
+  // sunset_date is when what the caller uses stops working, as YYYY-MM-DD.
+  // Empty when no date is set, which is not a promise that none will be.
+  string sunset_date = 6;
 }
 
 // Limits are the caps the server enforces, published so a client can check its

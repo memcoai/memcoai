@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1cmemco/memory/v1/memory.proto\x12\x0fmemco.memory.v1\"]\n\x0cInstructions\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x0e\n\x06policy\x18\x02 \x01(\t\x12\x0e\n\x06\x61\x64\x64ing\x18\x03 \x01(\t\x12\x0e\n\x06rating\x18\x04 \x01(\t\x12\x0c\n\x04next\x18\x05 \x01(\t\"D\n\x03Tag\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x14\n\x07version\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_version\"\xee\x01\n\x0b\x44omainEntry\x12\x0c\n\x04slug\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07summary\x18\x03 \x01(\t\x12\x16\n\x0ewhen_to_search\x18\x04 \x01(\t\x12\x14\n\x0cwhen_to_save\x18\x05 \x01(\t\x12\x18\n\x10what_not_to_save\x18\x06 \x01(\t\x12\x18\n\x10tags_description\x18\x07 \x01(\t\x12\x18\n\x10\x66ilter_tag_types\x18\x08 \x03(\t\x12\x19\n\x11version_tag_types\x18\t \x03(\t\x12\x1a\n\x12max_tags_per_query\x18\n \x01(\x05\"\x18\n\x16\x44\x65scribeDomainsRequest\"\xa6\x01\n\x17\x44\x65scribeDomainsResponse\x12-\n\x07\x64omains\x18\x01 \x03(\x0b\x32\x1c.memco.memory.v1.DomainEntry\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\x12\'\n\x06limits\x18\x03 \x01(\x0b\x32\x17.memco.memory.v1.Limits\"\x92\x01\n\x06Limits\x12\x1c\n\x14max_query_characters\x18\x01 \x01(\x05\x12\x1b\n\x13max_text_characters\x18\x02 \x01(\x05\x12\x1a\n\x12max_idx_characters\x18\x03 \x01(\x05\x12\x13\n\x0bmax_sources\x18\x04 \x01(\x05\x12\x1c\n\x14max_feedback_entries\x18\x05 \x01(\x05\"%\n\x13StartSessionRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\"_\n\x14StartSessionResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"f\n\rSearchRequest\x12\"\n\x04tags\x18\x01 \x03(\x0b\x32\x14.memco.memory.v1.Tag\x12\x0e\n\x06\x64omain\x18\x02 \x01(\t\x12\r\n\x05query\x18\x03 \x01(\t\x12\x12\n\nsession_id\x18\x04 \x01(\t\"\x9a\x01\n\x0eSearchResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12/\n\x08memories\x18\x02 \x03(\x0b\x32\x1d.memco.memory.v1.MemoryResult\x12\x0e\n\x06notice\x18\x03 \x01(\t\x12\x33\n\x0cinstructions\x18\x04 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"\x95\x01\n\x0cMemoryResult\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\x0c\n\x04kind\x18\x02 \x01(\t\x12\x14\n\x0ctimes_served\x18\x03 \x01(\x03\x12\x0f\n\x07intents\x18\x04 \x03(\t\x12\x30\n\x08insights\x18\x05 \x03(\x0b\x32\x1e.memco.memory.v1.InsightResult\x12\x11\n\treference\x18\x06 \x01(\t\"\x87\x01\n\rInsightResult\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\x0f\n\x07updated\x18\x04 \x01(\t\x12\x14\n\x0ctimes_served\x18\x05 \x01(\x03\x12\x10\n\x08\x65ndorsed\x18\x06 \x01(\x03\x12\x10\n\x08\x64isputed\x18\x07 \x01(\x03\"\x1f\n\x10GetMemoryRequest\x12\x0b\n\x03idx\x18\x01 \x01(\t\"B\n\x11GetMemoryResponse\x12-\n\x06memory\x18\x01 \x01(\x0b\x32\x1d.memco.memory.v1.MemoryResult\"\xb9\x01\n\x13\x43reateMemoryRequest\x12\"\n\x04tags\x18\x01 \x03(\x0b\x32\x14.memco.memory.v1.Tag\x12+\n\x06source\x18\x02 \x01(\x0e\x32\x1b.memco.memory.v1.DataSource\x12\x0e\n\x06\x64omain\x18\x03 \x01(\t\x12\x12\n\nsession_id\x18\x04 \x01(\t\x12\r\n\x05query\x18\x05 \x01(\t\x12\r\n\x05title\x18\x06 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x07 \x01(\t\"a\n\x14\x43reateMemoryResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"\xbf\x01\n\x13\x45nrichMemoryRequest\x12\"\n\x04tags\x18\x01 \x03(\x0b\x32\x14.memco.memory.v1.Tag\x12+\n\x06source\x18\x02 \x01(\x0e\x32\x1b.memco.memory.v1.DataSource\x12\r\n\x05title\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x04 \x01(\t\x12\x0f\n\x07sources\x18\x05 \x03(\t\x12\x12\n\nsession_id\x18\x06 \x01(\t\x12\x12\n\nmemory_idx\x18\x07 \x01(\t\"a\n\x14\x45nrichMemoryResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"]\n\x14ShareFeedbackRequest\x12\x31\n\x08\x66\x65\x65\x64\x62\x61\x63k\x18\x01 \x03(\x0b\x32\x1f.memco.memory.v1.FeedbackRating\x12\x12\n\nsession_id\x18\x02 \x01(\t\"b\n\x0e\x46\x65\x65\x64\x62\x61\x63kRating\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\x10\n\x08relevant\x18\x02 \x01(\x08\x12\x0f\n\x07\x63orrect\x18\x03 \x01(\x08\x12\x14\n\x07\x63omment\x18\x04 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_comment\"\x91\x01\n\x15ShareFeedbackResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12/\n\x07\x65ntries\x18\x02 \x03(\x0b\x32\x1e.memco.memory.v1.FeedbackEntry\x12\x33\n\x0cinstructions\x18\x03 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"O\n\rFeedbackEntry\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\x10\n\x08relevant\x18\x02 \x01(\x08\x12\x0f\n\x07\x63orrect\x18\x03 \x01(\x08\x12\x0e\n\x06\x61\x64vice\x18\x04 \x01(\t\"$\n\x13RevertMemoryRequest\x12\r\n\x05op_id\x18\x01 \x01(\t\"\x92\x01\n\x14RevertMemoryResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12/\n\x07outcome\x18\x02 \x01(\x0e\x32\x1e.memco.memory.v1.RevertOutcome\x12\x33\n\x0cinstructions\x18\x03 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions*V\n\nDataSource\x12\x1b\n\x17\x44\x41TA_SOURCE_UNSPECIFIED\x10\x00\x12\x14\n\x10\x44\x41TA_SOURCE_USER\x10\x01\x12\x15\n\x11\x44\x41TA_SOURCE_AGENT\x10\x02*\x8a\x02\n\rRevertOutcome\x12\x1e\n\x1aREVERT_OUTCOME_UNSPECIFIED\x10\x00\x12!\n\x1dREVERT_OUTCOME_MEMORY_REMOVED\x10\x01\x12#\n\x1fREVERT_OUTCOME_ADDITION_REMOVED\x10\x02\x12 \n\x1cREVERT_OUTCOME_ENTRY_REMOVED\x10\x03\x12\x19\n\x15REVERT_OUTCOME_MERGED\x10\x04\x12\x1c\n\x18REVERT_OUTCOME_NOT_FOUND\x10\x05\x12\x1a\n\x16REVERT_OUTCOME_EXPIRED\x10\x06\x12\x1a\n\x16REVERT_OUTCOME_REFUSED\x10\x07\x32\xe8\x05\n\rMemoryService\x12\x64\n\x0f\x44\x65scribeDomains\x12\'.memco.memory.v1.DescribeDomainsRequest\x1a(.memco.memory.v1.DescribeDomainsResponse\x12[\n\x0cStartSession\x12$.memco.memory.v1.StartSessionRequest\x1a%.memco.memory.v1.StartSessionResponse\x12I\n\x06Search\x12\x1e.memco.memory.v1.SearchRequest\x1a\x1f.memco.memory.v1.SearchResponse\x12R\n\tGetMemory\x12!.memco.memory.v1.GetMemoryRequest\x1a\".memco.memory.v1.GetMemoryResponse\x12[\n\x0c\x43reateMemory\x12$.memco.memory.v1.CreateMemoryRequest\x1a%.memco.memory.v1.CreateMemoryResponse\x12[\n\x0c\x45nrichMemory\x12$.memco.memory.v1.EnrichMemoryRequest\x1a%.memco.memory.v1.EnrichMemoryResponse\x12^\n\rShareFeedback\x12%.memco.memory.v1.ShareFeedbackRequest\x1a&.memco.memory.v1.ShareFeedbackResponse\x12[\n\x0cRevertMemory\x12$.memco.memory.v1.RevertMemoryRequest\x1a%.memco.memory.v1.RevertMemoryResponseB=Z;github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1cmemco/memory/v1/memory.proto\x12\x0fmemco.memory.v1\"]\n\x0cInstructions\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x0e\n\x06policy\x18\x02 \x01(\t\x12\x0e\n\x06\x61\x64\x64ing\x18\x03 \x01(\t\x12\x0e\n\x06rating\x18\x04 \x01(\t\x12\x0c\n\x04next\x18\x05 \x01(\t\"D\n\x03Tag\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x14\n\x07version\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_version\"\xee\x01\n\x0b\x44omainEntry\x12\x0c\n\x04slug\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07summary\x18\x03 \x01(\t\x12\x16\n\x0ewhen_to_search\x18\x04 \x01(\t\x12\x14\n\x0cwhen_to_save\x18\x05 \x01(\t\x12\x18\n\x10what_not_to_save\x18\x06 \x01(\t\x12\x18\n\x10tags_description\x18\x07 \x01(\t\x12\x18\n\x10\x66ilter_tag_types\x18\x08 \x03(\t\x12\x19\n\x11version_tag_types\x18\t \x03(\t\x12\x1a\n\x12max_tags_per_query\x18\n \x01(\x05\"\x18\n\x16\x44\x65scribeDomainsRequest\"\xec\x01\n\x17\x44\x65scribeDomainsResponse\x12-\n\x07\x64omains\x18\x01 \x03(\x0b\x32\x1c.memco.memory.v1.DomainEntry\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\x12\'\n\x06limits\x18\x03 \x01(\x0b\x32\x17.memco.memory.v1.Limits\x12\x12\n\ndeprecated\x18\x04 \x01(\x08\x12\x1b\n\x13\x64\x65precation_message\x18\x05 \x01(\t\x12\x13\n\x0bsunset_date\x18\x06 \x01(\t\"\x92\x01\n\x06Limits\x12\x1c\n\x14max_query_characters\x18\x01 \x01(\x05\x12\x1b\n\x13max_text_characters\x18\x02 \x01(\x05\x12\x1a\n\x12max_idx_characters\x18\x03 \x01(\x05\x12\x13\n\x0bmax_sources\x18\x04 \x01(\x05\x12\x1c\n\x14max_feedback_entries\x18\x05 \x01(\x05\"%\n\x13StartSessionRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\"_\n\x14StartSessionResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"f\n\rSearchRequest\x12\"\n\x04tags\x18\x01 \x03(\x0b\x32\x14.memco.memory.v1.Tag\x12\x0e\n\x06\x64omain\x18\x02 \x01(\t\x12\r\n\x05query\x18\x03 \x01(\t\x12\x12\n\nsession_id\x18\x04 \x01(\t\"\x9a\x01\n\x0eSearchResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12/\n\x08memories\x18\x02 \x03(\x0b\x32\x1d.memco.memory.v1.MemoryResult\x12\x0e\n\x06notice\x18\x03 \x01(\t\x12\x33\n\x0cinstructions\x18\x04 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"\x95\x01\n\x0cMemoryResult\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\x0c\n\x04kind\x18\x02 \x01(\t\x12\x14\n\x0ctimes_served\x18\x03 \x01(\x03\x12\x0f\n\x07intents\x18\x04 \x03(\t\x12\x30\n\x08insights\x18\x05 \x03(\x0b\x32\x1e.memco.memory.v1.InsightResult\x12\x11\n\treference\x18\x06 \x01(\t\"\x87\x01\n\rInsightResult\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\x0f\n\x07updated\x18\x04 \x01(\t\x12\x14\n\x0ctimes_served\x18\x05 \x01(\x03\x12\x10\n\x08\x65ndorsed\x18\x06 \x01(\x03\x12\x10\n\x08\x64isputed\x18\x07 \x01(\x03\"\x1f\n\x10GetMemoryRequest\x12\x0b\n\x03idx\x18\x01 \x01(\t\"B\n\x11GetMemoryResponse\x12-\n\x06memory\x18\x01 \x01(\x0b\x32\x1d.memco.memory.v1.MemoryResult\"\xb9\x01\n\x13\x43reateMemoryRequest\x12\"\n\x04tags\x18\x01 \x03(\x0b\x32\x14.memco.memory.v1.Tag\x12+\n\x06source\x18\x02 \x01(\x0e\x32\x1b.memco.memory.v1.DataSource\x12\x0e\n\x06\x64omain\x18\x03 \x01(\t\x12\x12\n\nsession_id\x18\x04 \x01(\t\x12\r\n\x05query\x18\x05 \x01(\t\x12\r\n\x05title\x18\x06 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x07 \x01(\t\"a\n\x14\x43reateMemoryResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"\xbf\x01\n\x13\x45nrichMemoryRequest\x12\"\n\x04tags\x18\x01 \x03(\x0b\x32\x14.memco.memory.v1.Tag\x12+\n\x06source\x18\x02 \x01(\x0e\x32\x1b.memco.memory.v1.DataSource\x12\r\n\x05title\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x04 \x01(\t\x12\x0f\n\x07sources\x18\x05 \x03(\t\x12\x12\n\nsession_id\x18\x06 \x01(\t\x12\x12\n\nmemory_idx\x18\x07 \x01(\t\"a\n\x14\x45nrichMemoryResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x33\n\x0cinstructions\x18\x02 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"]\n\x14ShareFeedbackRequest\x12\x31\n\x08\x66\x65\x65\x64\x62\x61\x63k\x18\x01 \x03(\x0b\x32\x1f.memco.memory.v1.FeedbackRating\x12\x12\n\nsession_id\x18\x02 \x01(\t\"b\n\x0e\x46\x65\x65\x64\x62\x61\x63kRating\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\x10\n\x08relevant\x18\x02 \x01(\x08\x12\x0f\n\x07\x63orrect\x18\x03 \x01(\x08\x12\x14\n\x07\x63omment\x18\x04 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_comment\"\x91\x01\n\x15ShareFeedbackResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12/\n\x07\x65ntries\x18\x02 \x03(\x0b\x32\x1e.memco.memory.v1.FeedbackEntry\x12\x33\n\x0cinstructions\x18\x03 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions\"O\n\rFeedbackEntry\x12\x0b\n\x03idx\x18\x01 \x01(\t\x12\x10\n\x08relevant\x18\x02 \x01(\x08\x12\x0f\n\x07\x63orrect\x18\x03 \x01(\x08\x12\x0e\n\x06\x61\x64vice\x18\x04 \x01(\t\"$\n\x13RevertMemoryRequest\x12\r\n\x05op_id\x18\x01 \x01(\t\"\x92\x01\n\x14RevertMemoryResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12/\n\x07outcome\x18\x02 \x01(\x0e\x32\x1e.memco.memory.v1.RevertOutcome\x12\x33\n\x0cinstructions\x18\x03 \x01(\x0b\x32\x1d.memco.memory.v1.Instructions*V\n\nDataSource\x12\x1b\n\x17\x44\x41TA_SOURCE_UNSPECIFIED\x10\x00\x12\x14\n\x10\x44\x41TA_SOURCE_USER\x10\x01\x12\x15\n\x11\x44\x41TA_SOURCE_AGENT\x10\x02*\x8a\x02\n\rRevertOutcome\x12\x1e\n\x1aREVERT_OUTCOME_UNSPECIFIED\x10\x00\x12!\n\x1dREVERT_OUTCOME_MEMORY_REMOVED\x10\x01\x12#\n\x1fREVERT_OUTCOME_ADDITION_REMOVED\x10\x02\x12 \n\x1cREVERT_OUTCOME_ENTRY_REMOVED\x10\x03\x12\x19\n\x15REVERT_OUTCOME_MERGED\x10\x04\x12\x1c\n\x18REVERT_OUTCOME_NOT_FOUND\x10\x05\x12\x1a\n\x16REVERT_OUTCOME_EXPIRED\x10\x06\x12\x1a\n\x16REVERT_OUTCOME_REFUSED\x10\x07\x32\xe8\x05\n\rMemoryService\x12\x64\n\x0f\x44\x65scribeDomains\x12\'.memco.memory.v1.DescribeDomainsRequest\x1a(.memco.memory.v1.DescribeDomainsResponse\x12[\n\x0cStartSession\x12$.memco.memory.v1.StartSessionRequest\x1a%.memco.memory.v1.StartSessionResponse\x12I\n\x06Search\x12\x1e.memco.memory.v1.SearchRequest\x1a\x1f.memco.memory.v1.SearchResponse\x12R\n\tGetMemory\x12!.memco.memory.v1.GetMemoryRequest\x1a\".memco.memory.v1.GetMemoryResponse\x12[\n\x0c\x43reateMemory\x12$.memco.memory.v1.CreateMemoryRequest\x1a%.memco.memory.v1.CreateMemoryResponse\x12[\n\x0c\x45nrichMemory\x12$.memco.memory.v1.EnrichMemoryRequest\x1a%.memco.memory.v1.EnrichMemoryResponse\x12^\n\rShareFeedback\x12%.memco.memory.v1.ShareFeedbackRequest\x1a&.memco.memory.v1.ShareFeedbackResponse\x12[\n\x0cRevertMemory\x12$.memco.memory.v1.RevertMemoryRequest\x1a%.memco.memory.v1.RevertMemoryResponseB=Z;github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,10 +32,10 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'memco.memory.v1.memory_pb2'
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z;github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1'
-  _globals['_DATASOURCE']._serialized_start=2778
-  _globals['_DATASOURCE']._serialized_end=2864
-  _globals['_REVERTOUTCOME']._serialized_start=2867
-  _globals['_REVERTOUTCOME']._serialized_end=3133
+  _globals['_DATASOURCE']._serialized_start=2848
+  _globals['_DATASOURCE']._serialized_end=2934
+  _globals['_REVERTOUTCOME']._serialized_start=2937
+  _globals['_REVERTOUTCOME']._serialized_end=3203
   _globals['_INSTRUCTIONS']._serialized_start=49
   _globals['_INSTRUCTIONS']._serialized_end=142
   _globals['_TAG']._serialized_start=144
@@ -45,45 +45,45 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_DESCRIBEDOMAINSREQUEST']._serialized_start=455
   _globals['_DESCRIBEDOMAINSREQUEST']._serialized_end=479
   _globals['_DESCRIBEDOMAINSRESPONSE']._serialized_start=482
-  _globals['_DESCRIBEDOMAINSRESPONSE']._serialized_end=648
-  _globals['_LIMITS']._serialized_start=651
-  _globals['_LIMITS']._serialized_end=797
-  _globals['_STARTSESSIONREQUEST']._serialized_start=799
-  _globals['_STARTSESSIONREQUEST']._serialized_end=836
-  _globals['_STARTSESSIONRESPONSE']._serialized_start=838
-  _globals['_STARTSESSIONRESPONSE']._serialized_end=933
-  _globals['_SEARCHREQUEST']._serialized_start=935
-  _globals['_SEARCHREQUEST']._serialized_end=1037
-  _globals['_SEARCHRESPONSE']._serialized_start=1040
-  _globals['_SEARCHRESPONSE']._serialized_end=1194
-  _globals['_MEMORYRESULT']._serialized_start=1197
-  _globals['_MEMORYRESULT']._serialized_end=1346
-  _globals['_INSIGHTRESULT']._serialized_start=1349
-  _globals['_INSIGHTRESULT']._serialized_end=1484
-  _globals['_GETMEMORYREQUEST']._serialized_start=1486
-  _globals['_GETMEMORYREQUEST']._serialized_end=1517
-  _globals['_GETMEMORYRESPONSE']._serialized_start=1519
-  _globals['_GETMEMORYRESPONSE']._serialized_end=1585
-  _globals['_CREATEMEMORYREQUEST']._serialized_start=1588
-  _globals['_CREATEMEMORYREQUEST']._serialized_end=1773
-  _globals['_CREATEMEMORYRESPONSE']._serialized_start=1775
-  _globals['_CREATEMEMORYRESPONSE']._serialized_end=1872
-  _globals['_ENRICHMEMORYREQUEST']._serialized_start=1875
-  _globals['_ENRICHMEMORYREQUEST']._serialized_end=2066
-  _globals['_ENRICHMEMORYRESPONSE']._serialized_start=2068
-  _globals['_ENRICHMEMORYRESPONSE']._serialized_end=2165
-  _globals['_SHAREFEEDBACKREQUEST']._serialized_start=2167
-  _globals['_SHAREFEEDBACKREQUEST']._serialized_end=2260
-  _globals['_FEEDBACKRATING']._serialized_start=2262
-  _globals['_FEEDBACKRATING']._serialized_end=2360
-  _globals['_SHAREFEEDBACKRESPONSE']._serialized_start=2363
-  _globals['_SHAREFEEDBACKRESPONSE']._serialized_end=2508
-  _globals['_FEEDBACKENTRY']._serialized_start=2510
-  _globals['_FEEDBACKENTRY']._serialized_end=2589
-  _globals['_REVERTMEMORYREQUEST']._serialized_start=2591
-  _globals['_REVERTMEMORYREQUEST']._serialized_end=2627
-  _globals['_REVERTMEMORYRESPONSE']._serialized_start=2630
-  _globals['_REVERTMEMORYRESPONSE']._serialized_end=2776
-  _globals['_MEMORYSERVICE']._serialized_start=3136
-  _globals['_MEMORYSERVICE']._serialized_end=3880
+  _globals['_DESCRIBEDOMAINSRESPONSE']._serialized_end=718
+  _globals['_LIMITS']._serialized_start=721
+  _globals['_LIMITS']._serialized_end=867
+  _globals['_STARTSESSIONREQUEST']._serialized_start=869
+  _globals['_STARTSESSIONREQUEST']._serialized_end=906
+  _globals['_STARTSESSIONRESPONSE']._serialized_start=908
+  _globals['_STARTSESSIONRESPONSE']._serialized_end=1003
+  _globals['_SEARCHREQUEST']._serialized_start=1005
+  _globals['_SEARCHREQUEST']._serialized_end=1107
+  _globals['_SEARCHRESPONSE']._serialized_start=1110
+  _globals['_SEARCHRESPONSE']._serialized_end=1264
+  _globals['_MEMORYRESULT']._serialized_start=1267
+  _globals['_MEMORYRESULT']._serialized_end=1416
+  _globals['_INSIGHTRESULT']._serialized_start=1419
+  _globals['_INSIGHTRESULT']._serialized_end=1554
+  _globals['_GETMEMORYREQUEST']._serialized_start=1556
+  _globals['_GETMEMORYREQUEST']._serialized_end=1587
+  _globals['_GETMEMORYRESPONSE']._serialized_start=1589
+  _globals['_GETMEMORYRESPONSE']._serialized_end=1655
+  _globals['_CREATEMEMORYREQUEST']._serialized_start=1658
+  _globals['_CREATEMEMORYREQUEST']._serialized_end=1843
+  _globals['_CREATEMEMORYRESPONSE']._serialized_start=1845
+  _globals['_CREATEMEMORYRESPONSE']._serialized_end=1942
+  _globals['_ENRICHMEMORYREQUEST']._serialized_start=1945
+  _globals['_ENRICHMEMORYREQUEST']._serialized_end=2136
+  _globals['_ENRICHMEMORYRESPONSE']._serialized_start=2138
+  _globals['_ENRICHMEMORYRESPONSE']._serialized_end=2235
+  _globals['_SHAREFEEDBACKREQUEST']._serialized_start=2237
+  _globals['_SHAREFEEDBACKREQUEST']._serialized_end=2330
+  _globals['_FEEDBACKRATING']._serialized_start=2332
+  _globals['_FEEDBACKRATING']._serialized_end=2430
+  _globals['_SHAREFEEDBACKRESPONSE']._serialized_start=2433
+  _globals['_SHAREFEEDBACKRESPONSE']._serialized_end=2578
+  _globals['_FEEDBACKENTRY']._serialized_start=2580
+  _globals['_FEEDBACKENTRY']._serialized_end=2659
+  _globals['_REVERTMEMORYREQUEST']._serialized_start=2661
+  _globals['_REVERTMEMORYREQUEST']._serialized_end=2697
+  _globals['_REVERTMEMORYRESPONSE']._serialized_start=2700
+  _globals['_REVERTMEMORYRESPONSE']._serialized_end=2846
+  _globals['_MEMORYSERVICE']._serialized_start=3206
+  _globals['_MEMORYSERVICE']._serialized_end=3950
 # @@protoc_insertion_point(module_scope)

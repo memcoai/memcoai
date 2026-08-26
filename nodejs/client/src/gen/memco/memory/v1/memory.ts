@@ -243,7 +243,35 @@ export interface DescribeDomainsRequest {
 export interface DescribeDomainsResponse {
   domains: DomainEntry[];
   instructions?: Instructions | undefined;
-  limits?: Limits | undefined;
+  limits?:
+    | Limits
+    | undefined;
+  /**
+   * deprecated marks what the caller is using as superseded — either this API
+   * version, or the SDK build they are running. A client should surface it once
+   * per process rather than per call.
+   *
+   * It does NOT say which of the two it is: that distinction lives in
+   * deprecation_message, because only the server knows the remedy and only the
+   * server can change the wording without an SDK release. Clients relay the
+   * message; they should not try to infer a cause from the flag.
+   *
+   * This field ships before it is needed on purpose. A client can only be told
+   * it is out of date if the version it was built against already carried the
+   * field, so adding it when v2 arrives would reach only the callers who least
+   * need telling.
+   */
+  deprecated: boolean;
+  /**
+   * deprecation_message is the server-authored remedy, empty when not
+   * deprecated. It is the whole of what a client should show.
+   */
+  deprecationMessage: string;
+  /**
+   * sunset_date is when what the caller uses stops working, as YYYY-MM-DD.
+   * Empty when no date is set, which is not a promise that none will be.
+   */
+  sunsetDate: string;
 }
 
 /**
@@ -965,7 +993,14 @@ export const DescribeDomainsRequest: MessageFns<DescribeDomainsRequest> = {
 };
 
 function createBaseDescribeDomainsResponse(): DescribeDomainsResponse {
-  return { domains: [], instructions: undefined, limits: undefined };
+  return {
+    domains: [],
+    instructions: undefined,
+    limits: undefined,
+    deprecated: false,
+    deprecationMessage: "",
+    sunsetDate: "",
+  };
 }
 
 export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
@@ -978,6 +1013,15 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     }
     if (message.limits !== undefined) {
       Limits.encode(message.limits, writer.uint32(26).fork()).join();
+    }
+    if (message.deprecated !== false) {
+      writer.uint32(32).bool(message.deprecated);
+    }
+    if (message.deprecationMessage !== "") {
+      writer.uint32(42).string(message.deprecationMessage);
+    }
+    if (message.sunsetDate !== "") {
+      writer.uint32(50).string(message.sunsetDate);
     }
     return writer;
   },
@@ -1013,6 +1057,30 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
           message.limits = Limits.decode(reader, reader.uint32());
           continue;
         }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.deprecated = reader.bool();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.deprecationMessage = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.sunsetDate = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1027,6 +1095,9 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
       domains: globalThis.Array.isArray(object?.domains) ? object.domains.map((e: any) => DomainEntry.fromJSON(e)) : [],
       instructions: isSet(object.instructions) ? Instructions.fromJSON(object.instructions) : undefined,
       limits: isSet(object.limits) ? Limits.fromJSON(object.limits) : undefined,
+      deprecated: isSet(object.deprecated) ? globalThis.Boolean(object.deprecated) : false,
+      deprecationMessage: isSet(object.deprecationMessage) ? globalThis.String(object.deprecationMessage) : "",
+      sunsetDate: isSet(object.sunsetDate) ? globalThis.String(object.sunsetDate) : "",
     };
   },
 
@@ -1040,6 +1111,15 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     }
     if (message.limits !== undefined) {
       obj.limits = Limits.toJSON(message.limits);
+    }
+    if (message.deprecated !== false) {
+      obj.deprecated = message.deprecated;
+    }
+    if (message.deprecationMessage !== "") {
+      obj.deprecationMessage = message.deprecationMessage;
+    }
+    if (message.sunsetDate !== "") {
+      obj.sunsetDate = message.sunsetDate;
     }
     return obj;
   },
@@ -1056,6 +1136,9 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     message.limits = (object.limits !== undefined && object.limits !== null)
       ? Limits.fromPartial(object.limits)
       : undefined;
+    message.deprecated = object.deprecated ?? false;
+    message.deprecationMessage = object.deprecationMessage ?? "";
+    message.sunsetDate = object.sunsetDate ?? "";
     return message;
   },
 };

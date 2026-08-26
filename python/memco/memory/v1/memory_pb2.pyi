@@ -88,14 +88,20 @@ class DescribeDomainsRequest(_message.Message):
     def __init__(self) -> None: ...
 
 class DescribeDomainsResponse(_message.Message):
-    __slots__ = ("domains", "instructions", "limits")
+    __slots__ = ("domains", "instructions", "limits", "deprecated", "deprecation_message", "sunset_date")
     DOMAINS_FIELD_NUMBER: _ClassVar[int]
     INSTRUCTIONS_FIELD_NUMBER: _ClassVar[int]
     LIMITS_FIELD_NUMBER: _ClassVar[int]
+    DEPRECATED_FIELD_NUMBER: _ClassVar[int]
+    DEPRECATION_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    SUNSET_DATE_FIELD_NUMBER: _ClassVar[int]
     domains: _containers.RepeatedCompositeFieldContainer[DomainEntry]
     instructions: Instructions
     limits: Limits
-    def __init__(self, domains: _Optional[_Iterable[_Union[DomainEntry, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ...) -> None: ...
+    deprecated: bool
+    deprecation_message: str
+    sunset_date: str
+    def __init__(self, domains: _Optional[_Iterable[_Union[DomainEntry, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ..., deprecated: bool = ..., deprecation_message: _Optional[str] = ..., sunset_date: _Optional[str] = ...) -> None: ...
 
 class Limits(_message.Message):
     __slots__ = ("max_query_characters", "max_text_characters", "max_idx_characters", "max_sources", "max_feedback_entries")
