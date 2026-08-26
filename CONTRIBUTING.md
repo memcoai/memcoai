@@ -156,7 +156,7 @@ make -C python test         # the suite, on the floor version
 make -C python test-all     # the suite on 3.10, 3.11, 3.12 and 3.13
 make -C python docs         # build the reference; warnings are errors
 make -C python docs-serve   # build it and serve it on :8000
-make -C python build        # build the wheel
+make -C python build        # build the sdist and the wheel
 ```
 
 `make check` from the root runs the same set plus the provenance check.
@@ -221,6 +221,60 @@ guide to read — if `make check` is green, the style is right.
 `# type: ignore[code]` and `# noqa: RULE - why` are accepted where the
 alternative would be a fiction: grpc ships no type information, so its callback
 signatures genuinely are `Any`. Say why in the comment.
+
+## Releasing
+
+Releases are cut from a tag on `main`. The tag is prefixed with the language it
+releases, so each SDK in this repository versions independently.
+
+1. Bump `version` in [`python/pyproject.toml`](python/pyproject.toml) and merge
+   that to `main`.
+2. Tag the merge commit and push the tag:
+
+   ```bash
+   git checkout main && git pull
+   git tag python-v0.1.0
+   git push origin python-v0.1.0
+   ```
+
+3. **CI runs, in full.** [`release.yml`](.github/workflows/release.yml) checks
+   that the tag names the version the package declares and that the commit is
+   contained in `main`, then re-runs every CI job — provenance, lint, strict
+   typing, the suite on 3.10 through 3.13, both runtime-compat pin sets, the
+   build, the docs, and the live smoke test.
+4. **Approve the `pypi` environment.** The wheel and sdist go to PyPI.
+5. **Publish the draft.** A draft GitHub release appears carrying three assets —
+   the wheel, the sdist, and `memco-docs-python-<version>.tar.gz` — with
+   generated notes. Edit them and publish.
+
+Step 4 is the point of no return: a version on PyPI cannot be replaced,
+re-uploaded, or meaningfully withdrawn. Everything before it is repeatable, and
+the draft in step 5 can be deleted, but the upload cannot be taken back.
+
+**That pause only exists if you configure it.** An environment with no
+protection rule does not stop for anyone, so a tag push would publish to PyPI
+unattended. Add yourself as a required reviewer under **Settings → Environments
+→ pypi**; rejecting there ends the run with nothing uploaded, which is how you
+rehearse the gate and the CI half of the pipeline. The publish and draft steps
+are only ever exercised by a real release.
+
+A pre-release tag (`python-v0.1.0rc1`) is marked as a pre-release on GitHub
+automatically and is skipped by `pip install` unless asked for — but it still
+consumes that version on PyPI permanently, so it is a lower-stakes release, not
+a free one.
+
+### The documentation tarball
+
+`memco-docs-python-<version>.tar.gz` is the built Sphinx reference, packaged so
+it can be dropped into the documentation site without renaming anything:
+
+```bash
+tar xzf memco-docs-python-0.1.0.tar.gz -C <docs-site>/public/reference/
+# -> public/reference/python/0.1.0/index.html
+```
+
+Every link inside it is relative, so it works from any mount path. Go and Node
+will reuse the same `<language>/<version>/` shape.
 
 ---
 

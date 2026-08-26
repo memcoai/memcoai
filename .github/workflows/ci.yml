@@ -1,8 +1,19 @@
 name: CI
 
 on:
+  # Branches only. A tag push belongs to the release pipeline, which calls this
+  # workflow itself; an unfiltered `push` would run every check twice.
   push:
+    branches: ["**"]
   pull_request:
+  # The release pipeline calls this so a tag re-runs every check from one
+  # definition. Duplicating the jobs there would guarantee they drift.
+  workflow_call:
+    inputs:
+      full:
+        description: Run every job, whatever the ref.
+        type: boolean
+        default: false
 
 # Public repository: grant nothing by default, and let a fork PR run every
 # hermetic job without needing a secret.
@@ -79,11 +90,11 @@ jobs:
       - run: uv sync --extra dev --python 3.12
       - run: uv run --python 3.12 pytest -q
 
-  # ---- longer, pull requests and main only -------------------------------
+  # ---- longer: pull requests, main, and releases -------------------------
 
   test-matrix:
     name: Test (${{ matrix.python }})
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -103,7 +114,7 @@ jobs:
 
   build:
     name: Build and install
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -115,8 +126,13 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
 
-      - name: Build the wheel
-        run: uv build --wheel
+      # Not `--wheel`: plain `uv build` writes the sdist first and then builds
+      # the wheel *from that sdist*, so every check below runs against a wheel
+      # that came through the source distribution. That is what proves the sdist
+      # is whole: a requirements input or a generated module missing from it
+      # fails here rather than in a consumer's install from source.
+      - name: Build the sdist, and the wheel from it
+        run: uv build
 
       # Validated with `packaging`, the same parser PyPI's own index uses.
       # `twine check` is not used here: hatchling emits Metadata-Version 2.5 and
@@ -189,9 +205,16 @@ jobs:
           grep -q 'Incompatible types in assignment' out.txt \
             || { echo "installed package is not seen as typed"; exit 1; }
 
+      # The release pipeline uploads these to PyPI as-is; rebuilding there would
+      # ship an artefact that none of the above ever ran against.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: dist
+          path: python/dist
+
   docs:
     name: Docs
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -212,7 +235,7 @@ jobs:
 
   runtime-compat:
     name: Runtime compat (${{ matrix.label }})
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -255,11 +278,11 @@ jobs:
           print("->", pb.DESCRIPTOR.name, "| client:", memco.Memco.__name__)
           PY
 
-  # ---- live, merge to main only ------------------------------------------
+  # ---- live: merge to main, and releases ---------------------------------
 
   integration:
     name: Live smoke
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: inputs.full || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     # The preview endpoint is tied to a server pull request and will change.
     # Keep it a repository variable so moving it needs no code change.

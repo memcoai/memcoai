@@ -43,9 +43,9 @@ docs:  ## Build the reference documentation (warnings are errors)
 docs-serve: docs  ## Build the reference and serve it locally
 	$(UV) run python -m http.server -d docs/_build 8000
 
-build:  ## Build the wheel
+build:  ## Build the sdist and the wheel
 	rm -rf dist
-	$(UV) build --wheel
+	$(UV) build
 
 clean:  ## Remove build and cache artefacts
 	rm -rf dist docs/_build .mypy_cache .ruff_cache .pytest_cache
