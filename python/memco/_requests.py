@@ -16,6 +16,7 @@ from google.protobuf.message import Message
 from memco.memory.v1 import memory_pb2 as _pb
 
 from . import _validate
+from ._limits import Known
 from .errors import MemcoNotFoundError
 from .types import DataSource, FeedbackRating, Tag
 
@@ -58,12 +59,14 @@ def _built(build: Callable[[], _M]) -> _M:
         raise _validate.reject(f"a field value cannot be sent: {exc}") from exc
 
 
-def _tags(tags: Iterable[Tag] | None) -> list[_pb.Tag]:
+def _tags(tags: Iterable[Tag] | None, cap: int = 0) -> list[_pb.Tag]:
     """Convert public tags to wire messages.
 
     Args:
         tags: The tags supplied by the caller, if any. Consumed exactly once,
             so a generator is safe here.
+        cap: The domain's tag cap. The service trims rather than refusing, so
+            this trims too; zero means no cap was reported.
 
     Returns:
         The wire messages, empty when no tags were given.
@@ -71,7 +74,41 @@ def _tags(tags: Iterable[Tag] | None) -> list[_pb.Tag]:
     Raises:
         MemcoInvalidRequestError: If a tag's type or value is blank.
     """
-    return [tag.to_proto() for tag in _validate.check_tags(tags)]
+    return [tag.to_proto() for tag in _validate.trim(_validate.check_tags(tags), cap)]
+
+
+def _check_handle(value: str, field: str, known: Known | None) -> None:
+    """Apply the reported cap on handle-shaped values.
+
+    Args:
+        value: The handle supplied by the caller.
+        field: Field name, used verbatim in the error message.
+        known: What the service has reported, if anything.
+
+    Raises:
+        MemcoInvalidRequestError: If a cap is known and the handle exceeds it.
+    """
+    if known and known.limits:
+        _validate.check_within(value, field, known.limits.max_idx_characters)
+
+
+def _check_text_together(title: str, content: str, caps: Known) -> None:
+    """Apply the reported cap on title and content, which it bounds jointly.
+
+    Args:
+        title: The title supplied by the caller.
+        content: The content supplied by the caller.
+        caps: What the service has reported.
+
+    Raises:
+        MemcoInvalidRequestError: If their combined length exceeds the cap.
+    """
+    limit = caps.limits.max_text_characters if caps.limits else 0
+    if limit and len(title) + len(content) > limit:
+        raise _validate.reject(
+            f"title and content are {len(title) + len(content)} characters together, "
+            f"which exceeds the combined limit of {limit}"
+        )
 
 
 def _source(source: DataSource) -> _pb.DataSource:
@@ -97,11 +134,12 @@ def describe_domains_request() -> _pb.DescribeDomainsRequest:
     return _pb.DescribeDomainsRequest()
 
 
-def revert_memory_request(operation_id: str) -> _pb.RevertMemoryRequest:
+def revert_memory_request(operation_id: str, known: Known | None = None) -> _pb.RevertMemoryRequest:
     """Validate and build a ``RevertMemory`` request.
 
     Args:
         operation_id: The operation id a create or enrich returned.
+        known: What the service has reported about its own limits, if anything.
 
     Returns:
         The request message.
@@ -110,6 +148,7 @@ def revert_memory_request(operation_id: str) -> _pb.RevertMemoryRequest:
         MemcoInvalidRequestError: If the operation id is blank or too long.
     """
     _validate.check_operation_id(operation_id)
+    _check_handle(operation_id, "operation_id", known)
     return _built(lambda: _pb.RevertMemoryRequest(op_id=operation_id))
 
 
@@ -135,6 +174,7 @@ def search_request(
     domain: str | None,
     session_id: str | None,
     tags: Iterable[Tag] | None,
+    known: Known | None = None,
 ) -> _pb.SearchRequest:
     """Validate and build a ``Search`` request.
 
@@ -144,6 +184,7 @@ def search_request(
         session_id: The session to record this search under, if any.
         tags: Tags narrowing or boosting the results. Consumed exactly once,
             so a generator is safe.
+        known: What the service has reported about its own limits, if anything.
 
     Returns:
         The request message.
@@ -154,18 +195,26 @@ def search_request(
     """
     _validate.check_query(query)
     _validate.check_scope(domain=domain, session_id=session_id)
+    caps = known or Known()
+    if caps.limits:
+        _validate.check_within(query, "query", caps.limits.max_query_characters)
+    tag_messages = _tags(tags, caps.max_tags(domain))
     return _built(
         lambda: _pb.SearchRequest(
-            query=query, domain=domain or "", session_id=session_id or "", tags=_tags(tags)
+            query=query,
+            domain=domain or "",
+            session_id=session_id or "",
+            tags=tag_messages,
         )
     )
 
 
-def get_memory_request(idx: str) -> _pb.GetMemoryRequest:
+def get_memory_request(idx: str, known: Known | None = None) -> _pb.GetMemoryRequest:
     """Validate and build a ``GetMemory`` request.
 
     Args:
         idx: The handle to fetch.
+        known: What the service has reported about its own limits, if anything.
 
     Returns:
         The request message.
@@ -174,6 +223,7 @@ def get_memory_request(idx: str) -> _pb.GetMemoryRequest:
         MemcoInvalidRequestError: If the handle is blank or too long.
     """
     _validate.check_idx(idx)
+    _check_handle(idx, "idx", known)
     return _built(lambda: _pb.GetMemoryRequest(idx=idx))
 
 
@@ -186,6 +236,7 @@ def create_memory_request(
     session_id: str | None,
     tags: Iterable[Tag] | None,
     source: DataSource,
+    known: Known | None = None,
 ) -> _pb.CreateMemoryRequest:
     """Validate and build a ``CreateMemory`` request.
 
@@ -197,6 +248,7 @@ def create_memory_request(
         session_id: The session this memory was learned during, if any.
         tags: Tags describing the memory.
         source: Who produced the content.
+        known: What the service has reported about its own limits, if anything.
 
     Returns:
         The request message.
@@ -209,6 +261,11 @@ def create_memory_request(
     _validate.check_title(title)
     _validate.check_content(content)
     _validate.check_scope(domain=domain, session_id=session_id)
+    caps = known or Known()
+    if caps.limits:
+        _validate.check_within(query, "query", caps.limits.max_query_characters)
+        _check_text_together(title, content, caps)
+    tag_messages = _tags(tags, caps.max_tags(domain))
     return _built(
         lambda: _pb.CreateMemoryRequest(
             query=query,
@@ -216,7 +273,7 @@ def create_memory_request(
             content=content,
             domain=domain or "",
             session_id=session_id or "",
-            tags=_tags(tags),
+            tags=tag_messages,
             source=_source(source),
         )
     )
@@ -231,6 +288,7 @@ def enrich_memory_request(
     tags: Iterable[Tag] | None,
     sources: Iterable[str] | None,
     source: DataSource,
+    known: Known | None = None,
 ) -> _pb.EnrichMemoryRequest:
     """Validate and build an ``EnrichMemory`` request.
 
@@ -244,6 +302,7 @@ def enrich_memory_request(
         sources: Handles of the memories this addition draws on. Consumed
             exactly once, so a generator is safe.
         source: Who produced the content.
+        known: What the service has reported about its own limits, if anything.
 
     Returns:
         The request message.
@@ -256,13 +315,23 @@ def enrich_memory_request(
     _validate.check_title(title)
     _validate.check_content(content)
     materialised = _validate.check_sources(sources)
+    caps = known or Known()
+    if caps.limits:
+        _check_text_together(title, content, caps)
+        _check_handle(memory_idx, "memory_idx", known)
+        for entry in materialised:
+            _check_handle(entry, "sources entry", known)
+        # The service keeps the first max_sources and drops the rest, so raising
+        # here would reject a call it would have accepted.
+        materialised = _validate.trim(materialised, caps.limits.max_sources)
+    tag_messages = _tags(tags, caps.max_tags(None))
     return _built(
         lambda: _pb.EnrichMemoryRequest(
             memory_idx=memory_idx,
             session_id=session_id,
             title=title,
             content=content,
-            tags=_tags(tags),
+            tags=tag_messages,
             sources=materialised,
             source=_source(source),
         )
@@ -270,13 +339,14 @@ def enrich_memory_request(
 
 
 def share_feedback_request(
-    *, session_id: str, feedback: Sequence[FeedbackRating]
+    *, session_id: str, feedback: Sequence[FeedbackRating], known: Known | None = None
 ) -> _pb.ShareFeedbackRequest:
     """Validate and build a ``ShareFeedback`` request.
 
     Args:
         session_id: The session whose search is being rated.
         feedback: The ratings to record.
+        known: What the service has reported about its own limits, if anything.
 
     Returns:
         The request message.
@@ -286,6 +356,11 @@ def share_feedback_request(
     """
     _validate.check_session_id(session_id)
     _validate.check_feedback(feedback)
+    caps = known or Known()
+    if caps.limits:
+        _validate.check_count(len(feedback), "feedback", caps.limits.max_feedback_entries)
+        for rating in feedback:
+            _check_handle(rating.idx, "feedback idx", known)
     return _built(
         lambda: _pb.ShareFeedbackRequest(
             session_id=session_id, feedback=[rating.to_proto() for rating in feedback]

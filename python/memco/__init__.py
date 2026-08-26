@@ -49,6 +49,7 @@ from importlib.metadata import version as _metadata_version
 from . import errors, operations, types
 from ._aio import AsyncMemco
 from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
+from ._deprecation import MemcoDeprecationWarning
 from ._provenance import provenance
 from ._sync import Memco
 from ._validate import NEW_MEMORY
@@ -64,6 +65,7 @@ __all__ = [
     "NEW_MEMORY",
     "AsyncMemco",
     "Memco",
+    "MemcoDeprecationWarning",
     "__version__",
     "errors",
     "operations",

@@ -560,7 +560,13 @@ def test_unencodable_text_is_a_typed_error(field):
     kwargs[field] = "bad \ud800 here"
     with pytest.raises(errors.MemcoInvalidRequestError):
         requests.create_memory_request(
-            **kwargs, session_id=None, tags=None, source=DataSource.AGENT
+            query=kwargs["query"],
+            title=kwargs["title"],
+            content=kwargs["content"],
+            domain=kwargs["domain"],
+            session_id=None,
+            tags=None,
+            source=DataSource.AGENT,
         )
 
 

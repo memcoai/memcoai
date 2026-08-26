@@ -4,13 +4,16 @@ Only **structural** rules live here: a blank value, a missing required
 combination of arguments, an empty batch. Those follow from the shape of the
 contract and cannot go out of date.
 
-Numeric limits — how long a query may be, how many ratings fit in one call —
-are deliberately **not** checked here. The service owns those, and a value
-compiled into the SDK goes stale the moment the service changes one: an older
-client would keep rejecting requests the service would now accept, locally,
-with no way for the caller to tell why. Until the limits are delivered by the
-service itself they are its business alone, and an over-long field is reported
-by the service rather than guessed at here.
+Numeric limits are never *compiled in* here. The service owns those, and a value
+baked into the SDK goes stale the moment the service changes one: an older
+client would keep rejecting requests the service had started accepting, locally,
+with no way for the caller to tell why.
+
+They are applied all the same, but only once the service has reported them on a
+``DescribeDomains`` response — see :mod:`memco._limits`. The helpers below that
+take a cap treat zero as "nothing was reported" and check nothing. Two of the
+caps **trim** rather than refuse, because the service trims: raising would
+reject a call it would have accepted.
 
 Every failure raises :class:`~memco.errors.MemcoInvalidRequestError` with an
 ``INVALID_ARGUMENT`` status, so a caller handles a local rejection and a
@@ -20,11 +23,14 @@ server-side one the same way.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import TypeVar
 
 import grpc
 
 from memco.errors import MemcoInvalidRequestError
 from memco.types import FeedbackRating, Tag
+
+_T = TypeVar("_T")
 
 NEW_MEMORY = "new"
 """Sentinel opening a new memory instead of enriching an existing one.
@@ -36,6 +42,7 @@ This is a value the contract defines, not a limit the service tunes.
 __all__ = [
     "NEW_MEMORY",
     "check_content",
+    "check_count",
     "check_domain",
     "check_feedback",
     "check_idx",
@@ -47,7 +54,9 @@ __all__ = [
     "check_sources",
     "check_tags",
     "check_title",
+    "check_within",
     "reject",
+    "trim",
 ]
 
 
@@ -253,6 +262,53 @@ def check_sources(sources: Iterable[str] | None) -> list[str]:
     for source in materialised:
         check_idx(source, "sources entry")
     return materialised
+
+
+def check_within(value: str, field: str, cap: int) -> None:
+    """Reject a value longer than a cap the service reported.
+
+    Args:
+        value: The value supplied by the caller.
+        field: Field name, used verbatim in the error message.
+        cap: The reported cap. Zero means none was reported, so nothing is
+            checked.
+
+    Raises:
+        MemcoInvalidRequestError: If the value exceeds the cap.
+    """
+    if cap and len(value) > cap:
+        raise reject(f"{field} is {len(value)} characters, which exceeds the limit of {cap}")
+
+
+def check_count(count: int, field: str, cap: int) -> None:
+    """Reject a batch larger than a cap the service reported.
+
+    Args:
+        count: How many entries the caller supplied.
+        field: Field name, used verbatim in the error message.
+        cap: The reported cap. Zero means none was reported.
+
+    Raises:
+        MemcoInvalidRequestError: If the count exceeds the cap.
+    """
+    if cap and count > cap:
+        raise reject(f"{field} has {count} entries, which exceeds the limit of {cap}")
+
+
+def trim(values: list[_T], cap: int) -> list[_T]:
+    """Trim a list to a cap the service applies by trimming.
+
+    The service keeps the first ``cap`` entries and drops the rest, so a client
+    that raised here would reject a call the service would have accepted.
+
+    Args:
+        values: The entries the caller supplied.
+        cap: The reported cap. Zero means none was reported.
+
+    Returns:
+        The entries, trimmed if a cap applies.
+    """
+    return values[:cap] if cap and len(values) > cap else values
 
 
 def check_feedback(feedback: Sequence[FeedbackRating]) -> None:

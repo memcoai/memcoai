@@ -166,7 +166,9 @@ async def test_the_user_agent_is_sent_by_the_async_client(
 ):
     await async_client.memory.describe_domains()
     sent = harness.memory.metadata[-1]["user-agent"]
-    assert f"memco-python/{memco.__version__}" in sent
+    # Prepended, not appended: gRPC's own token must survive or the transport
+    # becomes unidentifiable.
+    assert sent.startswith(f"memco-python/{memco.__version__}")
     # The asyncio transport identifies itself as grpc-python-asyncio, so match
     # the stem rather than the synchronous spelling.
     assert "grpc-python" in sent

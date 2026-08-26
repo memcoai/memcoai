@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from . import _convert, _requests
+from . import _convert, _deprecation, _limits, _requests
 from .types import (
     DataSource,
     DomainList,
@@ -48,6 +48,8 @@ class MemoryOperations:
         """
         self._stub = stub
         self._call = call
+        self._known = _limits.Known()
+        """What the service has reported about its own limits, once it has."""
 
     def describe_domains(self, *, timeout: float | None = None) -> DomainList:
         """List the memory domains this credential may name.
@@ -72,7 +74,10 @@ class MemoryOperations:
         response = self._call(
             self._stub.DescribeDomains, _requests.describe_domains_request(), timeout
         )
-        return _convert.to_domain_list(response)
+        described = _convert.to_domain_list(response)
+        self._known.update(described.limits, described.domains)
+        _deprecation.warn_once(described.deprecation_message, described.sunset_date)
+        return described
 
     def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
         """Open a session in one memory domain.
@@ -146,7 +151,9 @@ class MemoryOperations:
             ...     for insight in memory.insights:
             ...         print(insight.title, insight.updated)
         """
-        request = _requests.search_request(query, domain=domain, session_id=session_id, tags=tags)
+        request = _requests.search_request(
+            query, domain=domain, session_id=session_id, tags=tags, known=self._known
+        )
         return _convert.to_search_result(self._call(self._stub.Search, request, timeout))
 
     def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
@@ -173,7 +180,9 @@ class MemoryOperations:
             >>> memory = client.memory.get_memory("memory-9fg6vc-1")
             >>> [insight.title for insight in memory.insights]
         """
-        response = self._call(self._stub.GetMemory, _requests.get_memory_request(idx), timeout)
+        response = self._call(
+            self._stub.GetMemory, _requests.get_memory_request(idx, self._known), timeout
+        )
         return _convert.to_memory(_requests.require_memory(response, idx))
 
     def create_memory(
@@ -236,6 +245,7 @@ class MemoryOperations:
             session_id=session_id,
             tags=tags,
             source=source,
+            known=self._known,
         )
         return _convert.to_write_result(self._call(self._stub.CreateMemory, request, timeout))
 
@@ -294,6 +304,7 @@ class MemoryOperations:
             tags=tags,
             sources=sources,
             source=source,
+            known=self._known,
         )
         return _convert.to_write_result(self._call(self._stub.EnrichMemory, request, timeout))
 
@@ -334,7 +345,9 @@ class MemoryOperations:
             ...     ],
             ... )
         """
-        request = _requests.share_feedback_request(session_id=session_id, feedback=feedback)
+        request = _requests.share_feedback_request(
+            session_id=session_id, feedback=feedback, known=self._known
+        )
         return _convert.to_feedback_result(self._call(self._stub.ShareFeedback, request, timeout))
 
     def revert_memory(self, operation_id: str, *, timeout: float | None = None) -> RevertResult:
@@ -362,7 +375,7 @@ class MemoryOperations:
             >>> if result.outcome is RevertOutcome.EXPIRED:
             ...     print("outside the revert window")
         """
-        request = _requests.revert_memory_request(operation_id)
+        request = _requests.revert_memory_request(operation_id, self._known)
         return _convert.to_revert_result(self._call(self._stub.RevertMemory, request, timeout))
 
 
@@ -389,6 +402,8 @@ class AsyncMemoryOperations:
         """
         self._stub = stub
         self._call = call
+        self._known = _limits.Known()
+        """What the service has reported about its own limits, once it has."""
 
     async def describe_domains(self, *, timeout: float | None = None) -> DomainList:
         """List the memory domains this credential may name.
@@ -413,7 +428,10 @@ class AsyncMemoryOperations:
         response = await self._call(
             self._stub.DescribeDomains, _requests.describe_domains_request(), timeout
         )
-        return _convert.to_domain_list(response)
+        described = _convert.to_domain_list(response)
+        self._known.update(described.limits, described.domains)
+        _deprecation.warn_once(described.deprecation_message, described.sunset_date)
+        return described
 
     async def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
         """Open a session in one memory domain.
@@ -488,7 +506,9 @@ class AsyncMemoryOperations:
             ...     for insight in memory.insights:
             ...         print(insight.title, insight.updated)
         """
-        request = _requests.search_request(query, domain=domain, session_id=session_id, tags=tags)
+        request = _requests.search_request(
+            query, domain=domain, session_id=session_id, tags=tags, known=self._known
+        )
         return _convert.to_search_result(await self._call(self._stub.Search, request, timeout))
 
     async def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
@@ -516,7 +536,7 @@ class AsyncMemoryOperations:
             >>> [insight.title for insight in memory.insights]
         """
         response = await self._call(
-            self._stub.GetMemory, _requests.get_memory_request(idx), timeout
+            self._stub.GetMemory, _requests.get_memory_request(idx, self._known), timeout
         )
         return _convert.to_memory(_requests.require_memory(response, idx))
 
@@ -580,6 +600,7 @@ class AsyncMemoryOperations:
             session_id=session_id,
             tags=tags,
             source=source,
+            known=self._known,
         )
         return _convert.to_write_result(await self._call(self._stub.CreateMemory, request, timeout))
 
@@ -638,6 +659,7 @@ class AsyncMemoryOperations:
             tags=tags,
             sources=sources,
             source=source,
+            known=self._known,
         )
         return _convert.to_write_result(await self._call(self._stub.EnrichMemory, request, timeout))
 
@@ -678,7 +700,9 @@ class AsyncMemoryOperations:
             ...     ],
             ... )
         """
-        request = _requests.share_feedback_request(session_id=session_id, feedback=feedback)
+        request = _requests.share_feedback_request(
+            session_id=session_id, feedback=feedback, known=self._known
+        )
         return _convert.to_feedback_result(
             await self._call(self._stub.ShareFeedback, request, timeout)
         )
@@ -710,7 +734,7 @@ class AsyncMemoryOperations:
             >>> if result.outcome is RevertOutcome.EXPIRED:
             ...     print("outside the revert window")
         """
-        request = _requests.revert_memory_request(operation_id)
+        request = _requests.revert_memory_request(operation_id, self._known)
         return _convert.to_revert_result(
             await self._call(self._stub.RevertMemory, request, timeout)
         )

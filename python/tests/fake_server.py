@@ -8,6 +8,7 @@ exercised for real.
 from __future__ import annotations
 
 from concurrent import futures
+from typing import Any
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
@@ -22,6 +23,8 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
     Attributes:
         calls: Method names received, in order.
         metadata: One dict of request metadata per call, in the same order.
+        requests: The last request message received for each method, so a test
+            can assert what actually went on the wire.
         responses: Method name to canned response. A method with no entry
             returns an empty message of the right type.
         error: When set to a ``(code, details)`` pair, every method aborts with
@@ -31,45 +34,50 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.metadata: list[dict[str, str]] = []
-        self.responses: dict[str, object] = {}
+        self.requests: dict[str, Any] = {}
+        self.responses: dict[str, Any] = {}
         self.error: tuple[grpc.StatusCode, str] | None = None
 
-    def _handle(self, name: str, context: grpc.ServicerContext, default: object) -> object:
+    def _handle(self, name: str, context: grpc.ServicerContext, default: Any, request: Any) -> Any:
         self.calls.append(name)
         self.metadata.append(dict(context.invocation_metadata()))
+        self.requests[name] = request
         if self.error is not None:
             context.abort(*self.error)
         return self.responses.get(name, default)
 
     def DescribeDomains(self, request, context):  # noqa: N802
-        return self._handle("DescribeDomains", context, pb.DescribeDomainsResponse())
+        return self._handle("DescribeDomains", context, pb.DescribeDomainsResponse(), request)
 
     def StartSession(self, request, context):  # noqa: N802
         return self._handle(
-            "StartSession", context, pb.StartSessionResponse(session_id="session-a")
+            "StartSession", context, pb.StartSessionResponse(session_id="session-a"), request
         )
 
     def Search(self, request, context):  # noqa: N802
-        return self._handle("Search", context, pb.SearchResponse(session_id="session-a"))
+        return self._handle("Search", context, pb.SearchResponse(session_id="session-a"), request)
 
     def GetMemory(self, request, context):  # noqa: N802
         return self._handle(
-            "GetMemory", context, pb.GetMemoryResponse(memory=pb.MemoryResult(idx=request.idx))
+            "GetMemory",
+            context,
+            pb.GetMemoryResponse(memory=pb.MemoryResult(idx=request.idx)),
+            request,
         )
 
     def CreateMemory(self, request, context):  # noqa: N802
         return self._handle(
-            "CreateMemory", context, pb.CreateMemoryResponse(operation_id="create-a")
+            "CreateMemory", context, pb.CreateMemoryResponse(operation_id="create-a"), request
         )
 
     def EnrichMemory(self, request, context):  # noqa: N802
         return self._handle(
-            "EnrichMemory", context, pb.EnrichMemoryResponse(operation_id="enrich-a")
+            "EnrichMemory", context, pb.EnrichMemoryResponse(operation_id="enrich-a"), request
         )
 
     def ShareFeedback(self, request, context):  # noqa: N802
         return self._handle(
-            "ShareFeedback", context, pb.ShareFeedbackResponse(session_id="session-a")
+            "ShareFeedback", context, pb.ShareFeedbackResponse(session_id="session-a"), request
         )
 
     def RevertMemory(self, request, context):  # noqa: N802
@@ -77,6 +85,7 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
             "RevertMemory",
             context,
             pb.RevertMemoryResponse(operation_id=request.op_id, outcome=pb.REVERT_OUTCOME_MERGED),
+            request,
         )
 
 

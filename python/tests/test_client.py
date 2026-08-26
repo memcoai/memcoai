@@ -56,6 +56,8 @@ def test_construction_checks_health_with_the_empty_service_name(harness: Harness
     with Memco(token=TOKEN, host=harness.address, tls=False):
         pass
     assert harness.health.checked_services == [""]
+    # The probe is a real call and must identify itself too.
+    assert "memco-python/" in harness.health.metadata[-1]["user-agent"]
 
 
 def test_not_serving_raises_unhealthy(harness: Harness):
@@ -246,8 +248,9 @@ def test_the_user_agent_names_the_sdk_and_its_version(client: Memco, harness: Ha
     # options, so a value that never leaves the client cannot pass this.
     client.memory.describe_domains()
     sent = harness.memory.metadata[-1]["user-agent"]
-    assert f"memco-python/{memco.__version__}" in sent
-    assert "python/" in sent
+    # A single stable product token: the service matches deprecation rules
+    # against it, so a second term could break that match.
+    assert sent.startswith(f"memco-python/{memco.__version__} ")
 
 
 def test_the_user_agent_prepends_rather_than_replaces(client: Memco, harness: Harness):
@@ -262,5 +265,8 @@ def test_the_user_agent_is_sent_on_every_method(client: Memco, harness: Harness)
     client.memory.describe_domains()
     client.memory.start_session("coding")
     client.memory.get_memory("memory-a-1")
+    # Without the count, this cannot distinguish "all three carried it" from
+    # "nothing reached the wire at all".
+    assert len(harness.memory.metadata) == 3
     for sent in harness.memory.metadata:
         assert "memco-python/" in sent["user-agent"]

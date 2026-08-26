@@ -25,6 +25,7 @@ from .types import (
     FeedbackResult,
     Insight,
     Instructions,
+    Limits,
     Memory,
     RevertOutcome,
     RevertResult,
@@ -157,6 +158,30 @@ def _to_domain_entry(message: _pb.DomainEntry) -> DomainEntry:
         tags_description=message.tags_description,
         filter_tag_types=tuple(message.filter_tag_types),
         version_tag_types=tuple(message.version_tag_types),
+        max_tags_per_query=message.max_tags_per_query,
+    )
+
+
+def _to_limits(message: _pb.DescribeDomainsResponse) -> Limits | None:
+    """Convert the limits a response carries, if it carries any.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The limits, or ``None`` when the service reported none. ``None`` means
+        "validate nothing": reading an absent message as zeros would reject
+        every call before it was sent.
+    """
+    if not message.HasField("limits"):
+        return None
+    limits = message.limits
+    return Limits(
+        max_query_characters=limits.max_query_characters,
+        max_text_characters=limits.max_text_characters,
+        max_idx_characters=limits.max_idx_characters,
+        max_sources=limits.max_sources,
+        max_feedback_entries=limits.max_feedback_entries,
     )
 
 
@@ -172,6 +197,10 @@ def to_domain_list(message: _pb.DescribeDomainsResponse) -> DomainList:
     return DomainList(
         domains=tuple(_to_domain_entry(domain) for domain in message.domains),
         instructions=_to_instructions(message.instructions),
+        limits=_to_limits(message),
+        deprecated=message.deprecated,
+        deprecation_message=message.deprecation_message,
+        sunset_date=_to_date(message.sunset_date),
     )
 
 

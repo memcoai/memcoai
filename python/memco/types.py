@@ -27,6 +27,7 @@ __all__ = [
     "FeedbackResult",
     "Insight",
     "Instructions",
+    "Limits",
     "Memory",
     "ProtoRecord",
     "Provenance",
@@ -199,6 +200,9 @@ class DomainEntry:
             nothing at all.
         version_tag_types: Tag types that carry a version. A version on any other
             type is dropped.
+        max_tags_per_query: Bounds the tags on a call naming this domain.
+            **Trimmed** rather than refused, and per-domain rather than global.
+            Zero means this domain sets no cap.
     """
 
     slug: str
@@ -210,6 +214,38 @@ class DomainEntry:
     tags_description: str
     filter_tag_types: tuple[str, ...]
     version_tag_types: tuple[str, ...]
+    max_tags_per_query: int
+
+
+@dataclass(frozen=True, slots=True)
+class Limits:
+    """The caps the service enforces on request fields.
+
+    Delivered by :meth:`~memco.operations.MemoryOperations.describe_domains` so
+    the service owns them: an SDK carrying its own numbers would keep rejecting
+    requests the service had started accepting. A client that has not asked for
+    them validates nothing and lets the service rule.
+
+    Attributes:
+        max_query_characters: Bounds ``query`` on search and on a create.
+            Exceeding it is refused.
+        max_text_characters: Bounds ``title`` and ``content`` **together**, not
+            each. Exceeding it is refused.
+        max_idx_characters: Bounds every handle-shaped value — ``idx``,
+            ``memory_idx``, and each entry of ``sources``. Exceeding it is
+            refused.
+        max_sources: Bounds ``sources`` on an enrichment. **Trimmed** rather
+            than refused: the service keeps the first this many, so a client
+            trims to match instead of rejecting a call the service would accept.
+        max_feedback_entries: Bounds the ratings in one feedback call. Exceeding
+            it is refused.
+    """
+
+    max_query_characters: int
+    max_text_characters: int
+    max_idx_characters: int
+    max_sources: int
+    max_feedback_entries: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,10 +255,24 @@ class DomainList:
     Attributes:
         domains: The available domains.
         instructions: Guidance accompanying the result.
+        limits: The caps the service enforces on request fields, or ``None``
+            against a service that does not report them. ``None`` means *do not
+            validate*, never zero.
+        deprecated: Whether what this caller is using has been superseded —
+            either the API version or this SDK build. Which of the two is
+            deliberately not distinguished here; ``deprecation_message`` says.
+        deprecation_message: The service-authored remedy, empty when nothing is
+            deprecated. It is the whole of what a caller should be shown.
+        sunset_date: When what the caller uses stops working, or ``None`` when
+            no date is set — which is not a promise that none will be.
     """
 
     domains: tuple[DomainEntry, ...]
     instructions: Instructions
+    limits: Limits | None
+    deprecated: bool
+    deprecation_message: str
+    sunset_date: date | None
 
 
 @dataclass(frozen=True, slots=True)
