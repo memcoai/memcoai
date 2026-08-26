@@ -17,8 +17,8 @@ from .fake_server import Harness
 
 
 def test_auth_metadata_is_bearer_with_a_capital_b(client: Memco, harness: Harness):
-    # The server does a case-sensitive CutPrefix(v, "Bearer "), so the exact
-    # spelling of this header is load-bearing.
+    # The scheme prefix is matched case-sensitively, so the exact spelling of
+    # this header is load-bearing.
     client.memory.list_domains()
     assert harness.memory.metadata[-1]["authorization"] == f"Bearer {TOKEN}"
 
@@ -40,8 +40,8 @@ def test_caller_metadata_cannot_displace_the_credential(client: Memco, harness: 
 
 
 def test_the_credential_is_withheld_from_the_health_probe(harness: Harness):
-    # Health bypasses auth server-side, so sending the token there buys nothing
-    # and widens its exposure to load balancers and sidecars that log headers.
+    # The health endpoint takes no credential, so sending one there buys
+    # nothing and widens its exposure to anything that logs request headers.
     with Memco(token=TOKEN, host=harness.address, tls=False):
         pass
     assert harness.health.metadata, "the health probe did not run"
@@ -84,8 +84,8 @@ def test_check_health_false_skips_the_probe(harness: Harness):
 
 
 def test_credentials_are_not_verified_by_default(harness: Harness):
-    # ListDomains is rate-limited, so a construction probe would spend one of
-    # the caller's per-minute tokens. It must not fire unless asked for.
+    # A construction probe would make an extra request every time a client is
+    # built. It must not fire unless asked for.
     with Memco(token=TOKEN, host=harness.address, tls=False):
         pass
     assert harness.memory.calls == []
@@ -133,10 +133,16 @@ def test_no_raw_grpc_error_escapes(client: Memco, harness: Harness):
 # --- validation fires before any RPC -------------------------------------
 
 
-def test_oversized_query_never_reaches_the_server(client: Memco, harness: Harness):
+def test_blank_query_never_reaches_the_server(client: Memco, harness: Harness):
     with pytest.raises(errors.MemcoInvalidRequestError):
-        client.memory.search("q" * 1001, domain="coding")
+        client.memory.search("   ", domain="coding")
     assert harness.memory.calls == []
+
+
+def test_an_over_long_query_is_left_for_the_service_to_judge(client: Memco, harness: Harness):
+    # The SDK must not invent a limit: it would go stale against the service.
+    client.memory.search("q" * 100_000, domain="coding")
+    assert harness.memory.calls == ["Search"]
 
 
 def test_missing_scope_never_reaches_the_server(client: Memco, harness: Harness):
@@ -217,7 +223,7 @@ def test_revert_not_found_is_a_value_not_an_exception(client: Memco, harness: Ha
 def test_context_manager_closes_the_channel(harness: Harness):
     with Memco(token=TOKEN, host=harness.address, tls=False) as connected:
         connected.memory.list_domains()
-    with pytest.raises(errors.ClientConfigError, match="closed"):
+    with pytest.raises(errors.MemcoConfigError, match="closed"):
         connected.memory.list_domains()
 
 

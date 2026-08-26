@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 import os
+import pathlib
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from .errors import ClientConfigError
+from .errors import MemcoConfigError
 
 DEFAULT_HOST = "grpc.spark.memco.ai"
 """Endpoint used when neither an argument nor ``MEMCO_API_HOST`` supplies one."""
@@ -33,12 +35,12 @@ class ClientConfig:
     """Fully resolved settings for one client.
 
     Attributes:
-        token: The credential sent as ``authorization: Bearer <token>``. This is
-            either a static Memco API key or a WorkOS JWT; the service accepts
-            both in the same header. Excluded from ``repr`` so it cannot reach a
-            log or a crash report: error trackers such as Sentry capture local
-            variables by default, and this object is live while the channel is
-            being dialled.
+        token: The credential sent as ``authorization: Bearer <token>``. This
+            is either a Memco API key or a session token issued for your
+            account; the service accepts both in the same header. Excluded from
+            ``repr`` so it cannot reach a log or a crash report: error trackers
+            such as Sentry capture local variables by default, and this object is
+            live while the channel is being dialled.
         host: Hostname of the service, without a port.
         port: TCP port of the service.
         tls: Whether to dial over TLS using the system trust store.
@@ -55,10 +57,40 @@ class ClientConfig:
     def target(self) -> str:
         """The ``host:port`` string to dial.
 
+        An IPv6 literal is re-bracketed. :attr:`host` holds the bare address, so
+        joining it to the port with a colon would produce something no resolver
+        can parse, and the failure would be reported as a name-resolution error
+        rather than as the malformed address it is.
+
         Returns:
-            The gRPC target, for example ``grpc.spark.memco.ai:443``.
+            The gRPC target, for example ``grpc.spark.memco.ai:443`` or
+            ``[2001:db8::1]:443``.
         """
-        return f"{self.host}:{self.port}"
+        host = f"[{self.host}]" if ":" in self.host else self.host
+        return f"{host}:{self.port}"
+
+
+def _caller_stacklevel() -> int:
+    """Find the stack depth of the first frame outside this package.
+
+    A fixed ``stacklevel`` cannot be right for both ``resolve()`` called
+    directly and ``resolve()`` reached through a client constructor. Attributing
+    the warning to a module inside this package would hide it: Python shows a
+    :class:`DeprecationWarning` by default only when it is attributed to
+    ``__main__``.
+
+    Returns:
+        The ``stacklevel`` naming the caller's own frame.
+    """
+    package = str(pathlib.Path(__file__).parent)
+    frame = inspect.currentframe()
+    level = 1
+    while frame is not None:
+        frame = frame.f_back
+        level += 1
+        if frame is not None and not frame.f_code.co_filename.startswith(package):
+            return level - 1
+    return 2
 
 
 def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
@@ -72,12 +104,12 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
         The resolved, whitespace-stripped credential.
 
     Raises:
-        ClientConfigError: If no non-blank credential is available.
+        MemcoConfigError: If no non-blank credential is available.
     """
     if token is not None and token.strip():
         return token.strip()
     if token is not None and not token.strip():
-        raise ClientConfigError(
+        raise MemcoConfigError(
             f"the token passed to the client is blank: pass a real token or set {TOKEN_ENV}"
         )
 
@@ -91,11 +123,11 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
             f"{LEGACY_TOKEN_ENV} is deprecated and will be removed in a future release; "
             f"rename it to {TOKEN_ENV}.",
             DeprecationWarning,
-            stacklevel=3,
+            stacklevel=_caller_stacklevel(),
         )
         return legacy
 
-    raise ClientConfigError(f"no API token: pass token=... or set {TOKEN_ENV}")
+    raise MemcoConfigError(f"no API token: pass token=... or set {TOKEN_ENV}")
 
 
 def _port(text: str, host: str) -> int:
@@ -109,16 +141,16 @@ def _port(text: str, host: str) -> int:
         The port number.
 
     Raises:
-        ClientConfigError: If it is not an integer in 1-65535.
+        MemcoConfigError: If it is not an integer in 1-65535.
     """
     try:
         port = int(text)
     except ValueError:
-        raise ClientConfigError(
+        raise MemcoConfigError(
             f"host {host!r} has an unparseable port: {text!r} is not an integer"
         ) from None
     if not 1 <= port <= 65535:  # noqa: PLR2004 - the TCP port range is not a magic number
-        raise ClientConfigError(f"host {host!r} has a port outside the range 1-65535: {port}")
+        raise MemcoConfigError(f"host {host!r} has a port outside the range 1-65535: {port}")
     return port
 
 
@@ -138,19 +170,21 @@ def _split_host_port(host: str) -> tuple[str, int]:
         :data:`DEFAULT_PORT`.
 
     Raises:
-        ClientConfigError: If the brackets are unbalanced, if text follows the
+        MemcoConfigError: If the brackets are unbalanced, if text follows the
             closing bracket without a port, or if a port is present but is not
             an integer in 1-65535.
     """
     if host.startswith("["):
         closing = host.find("]")
         if closing == -1:
-            raise ClientConfigError(f"host {host!r} opens a bracket that is never closed")
+            raise MemcoConfigError(f"host {host!r} opens a bracket that is never closed")
         name, rest = host[1:closing], host[closing + 1 :]
+        if not name:
+            raise MemcoConfigError(f"host {host!r} has no address inside its brackets")
         if not rest:
             return name, DEFAULT_PORT
         if not rest.startswith(":"):
-            raise ClientConfigError(f"host {host!r} has unexpected text after the closing bracket")
+            raise MemcoConfigError(f"host {host!r} has unexpected text after the closing bracket")
         return name, _port(rest[1:], host)
 
     # More than one colon and no brackets: a bare IPv6 literal, which cannot
@@ -161,6 +195,11 @@ def _split_host_port(host: str) -> tuple[str, int]:
     name, separator, port_text = host.rpartition(":")
     if not separator:
         return host, DEFAULT_PORT
+    if not name.strip():
+        # ":50051" is what f"{os.environ.get('MY_HOST', '')}:{port}" produces.
+        # Left alone it dials an empty host and surfaces as a retryable
+        # transport failure rather than the configuration error it is.
+        raise MemcoConfigError(f"host {host!r} has a port but no hostname")
     return name, _port(port_text, host)
 
 
@@ -196,7 +235,7 @@ def resolve(
         The resolved configuration.
 
     Raises:
-        ClientConfigError: If no credential is available, if the host is blank or
+        MemcoConfigError: If no credential is available, if the host is blank or
             carries an invalid port, or if ``timeout`` is not positive.
 
     Example:
@@ -206,7 +245,7 @@ def resolve(
     environment = os.environ if env is None else env
 
     if timeout <= 0:
-        raise ClientConfigError(f"timeout must be positive, got {timeout!r}")
+        raise MemcoConfigError(f"timeout must be positive, got {timeout!r}")
 
     resolved_token = _resolve_token(token, environment)
 
@@ -215,7 +254,7 @@ def resolve(
     # produce, and falling through would send the credential to the production
     # endpoint the caller never named.
     if host is not None and not host.strip():
-        raise ClientConfigError(
+        raise MemcoConfigError(
             f"the host passed to the client is blank: pass a real host or set {HOST_ENV}"
         )
     resolved_host = (host or environment.get(HOST_ENV, "").strip() or DEFAULT_HOST).strip()
@@ -235,12 +274,12 @@ def deadline(timeout: float | None, default: float) -> float:
         The deadline in seconds.
 
     Raises:
-        ClientConfigError: If a deadline was given but is not positive. A
+        MemcoConfigError: If a deadline was given but is not positive. A
             zero or negative deadline is silently useless — the call expires
             before it is sent — so it is rejected rather than substituted.
     """
     if timeout is None:
         return default
     if timeout <= 0:
-        raise ClientConfigError(f"timeout must be positive, got {timeout!r}")
+        raise MemcoConfigError(f"timeout must be positive, got {timeout!r}")
     return timeout

@@ -107,7 +107,7 @@ ignore = [
 # clearer inline than hoisted to constants. The credentials are fixtures.
 "tests/*" = [
     "ANN", "ARG", "D100", "D101", "D102", "D103", "D104", "D105",
-    "PLR2004", "S101", "S105", "S106", "SLF001",
+    "PLR2004", "S101", "S105", "S106", "S301", "SLF001",
 ]
 # Examples are meant to be read and run: printing is their output, and the
 # error-handling example returns early from each branch on purpose.

@@ -6,7 +6,7 @@ import pathlib
 import pytest
 
 from memco._provenance import parse, provenance
-from memco.errors import ClientConfigError
+from memco.errors import MemcoConfigError
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -78,7 +78,7 @@ server_commit: REAL
     ],
 )
 def test_malformed_descriptor_raises_rather_than_guessing(text):
-    with pytest.raises(ClientConfigError):
+    with pytest.raises(MemcoConfigError):
         parse(text)
 
 
@@ -86,12 +86,12 @@ def test_malformed_descriptor_raises_rather_than_guessing(text):
 
 
 def test_a_key_merely_ending_in_path_is_not_a_path():
-    with pytest.raises(ClientConfigError):
+    with pytest.raises(MemcoConfigError):
         parse("server_commit: c\nprotos:\n  - filepath: /etc/passwd\n    sha256: deadbeef\n")
 
 
 def test_a_key_merely_ending_in_sha256_is_not_a_checksum():
-    with pytest.raises(ClientConfigError):
+    with pytest.raises(MemcoConfigError):
         parse("server_commit: c\nprotos:\n  - path: a.proto\n    xsha256: FORGED\n")
 
 
@@ -150,12 +150,12 @@ def test_a_hash_inside_quotes_is_not_a_comment():
 
 
 def test_a_block_scalar_is_rejected_rather_than_misread():
-    with pytest.raises(ClientConfigError, match="block scalar"):
+    with pytest.raises(MemcoConfigError, match="block scalar"):
         parse("server_commit: |\n  abc\nprotos:\n  - path: a\n    sha256: b\n")
 
 
 def test_a_duplicated_field_in_one_entry_is_rejected():
-    with pytest.raises(ClientConfigError, match="twice"):
+    with pytest.raises(MemcoConfigError, match="twice"):
         parse("server_commit: c\nprotos:\n  - path: a\n    sha256: b\n    sha256: c\n")
 
 
@@ -172,3 +172,27 @@ def test_the_packaged_licence_matches_the_repository_root():
     assert packaged.read_text() == root.read_text(), (
         "python/LICENSE has drifted from the repository LICENSE; copy it across"
     )
+
+
+@pytest.mark.parametrize(
+    ("style", "text"),
+    [
+        ("dash alone", "server_commit: c\nprotos:\n  -\n    path: a.proto\n    sha256: b\n"),
+        ("inline", "server_commit: c\nprotos:\n  - path: a.proto\n    sha256: b\n"),
+        ("flush left", "server_commit: c\nprotos:\n- path: a.proto\n  sha256: b\n"),
+        ("wide dash", "server_commit: c\nprotos:\n  -   path: a.proto\n      sha256: b\n"),
+    ],
+)
+def test_every_sequence_style_a_yaml_emitter_produces_parses(style, text):
+    # The repository's other reader (scripts/verify_provenance.py) accepts all
+    # of these, and the two must not disagree about one file.
+    assert [(r.path, r.sha256) for r in parse(text).protos] == [("a.proto", "b")]
+
+
+def test_several_dash_alone_entries_stay_separate():
+    parsed = parse(
+        "server_commit: c\nprotos:\n"
+        "  -\n    path: a\n    sha256: b\n"
+        "  -\n    path: c\n    sha256: d\n"
+    )
+    assert [(r.path, r.sha256) for r in parsed.protos] == [("a", "b"), ("c", "d")]

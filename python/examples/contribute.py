@@ -21,12 +21,12 @@ def main() -> None:
         # operation rather than the memory it will become.
         created = client.memory.create_memory(
             query="how do I authenticate against the Memco memory API",
-            title="The memory API takes a Bearer token, case-sensitively",
+            title="Retries must not be applied to memory writes",
             content=(
-                "The credential travels as `authorization: Bearer <token>`. The server "
-                "matches the scheme with a case-sensitive prefix check, so a lowercase "
-                "`bearer` is rejected as an invalid credential. The same header carries "
-                "either a static API key or a WorkOS JWT."
+                "A write is accepted asynchronously and its operation id identifies "
+                "that one acceptance, so retrying a write that appears to fail can "
+                "record it twice. Retry the read operations instead, and use the "
+                "returned operation id to undo a write you did not mean to make."
             ),
             session_id=session.session_id,
             tags=[Tag(type="language", value="python"), Tag(type="task", value="implementation")],
@@ -44,10 +44,11 @@ def main() -> None:
         enriched = client.memory.enrich_memory(
             memory_idx="new",
             session_id=session.session_id,
-            title="Health checks bypass the auth chain",
+            title="A connection check does not prove the credential works",
             content=(
-                "grpc.health.v1.Health/Check is served outside the authentication "
-                "interceptor, so it verifies connectivity but cannot validate a token."
+                "Constructing a client verifies it can reach the service, but that "
+                "check carries no credential. A bad token surfaces on the first real "
+                "call unless verify_credentials is set."
             ),
         )
         print(f"enriched: {enriched.operation_id}")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from types import TracebackType
 from typing import Any
@@ -15,7 +16,7 @@ from ._channel import build_async_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
 from ._provenance import provenance as _provenance
-from .errors import ClientConfigError, MemcoUnhealthyError, from_rpc_error
+from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
 from .operations import AsyncMemoryOperations
 from .types import Provenance
 
@@ -63,7 +64,7 @@ class AsyncMemco:
 
     Args:
         token: Credential to authenticate with, either a static Memco API key or
-            a WorkOS JWT. When omitted, ``MEMCO_API_TOKEN`` is used, falling back
+            a session token. When omitted, ``MEMCO_API_TOKEN`` is used, falling back
             to the deprecated ``MEMCO_API_KEY`` with a warning.
         host: Service endpoint, optionally including a port. When omitted,
             ``MEMCO_API_HOST`` is used, falling back to ``grpc.spark.memco.ai``.
@@ -72,13 +73,13 @@ class AsyncMemco:
         check_health: Whether :meth:`connect` probes the health endpoint.
         verify_credentials: Whether :meth:`connect` also calls
             :meth:`~memco.operations.MemoryOperations.list_domains` to prove
-            the credential works. Off by default because that call is
-            rate-limited.
+            the credential works. Off by default because it makes an
+            additional request every time a client is connected.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`.
 
     Raises:
-        ClientConfigError: If no credential is available or the host is unusable.
+        MemcoConfigError: If no credential is available or the host is unusable.
 
     Attributes:
         memory: The memory operations, as
@@ -114,6 +115,17 @@ class AsyncMemco:
         self._channel: Any = None
         self._stub: Any = None
         self._health: Any = None
+        # The loop the channel was built on. A channel cannot move between
+        # loops, so a client reused across two asyncio.run() calls has to
+        # rebuild rather than fail with a bare RuntimeError.
+        self._loop: asyncio.AbstractEventLoop | None = None
+        # close() waits for these rather than cancelling them: a cancellation
+        # is a BaseException that neither `except MemcoError` nor
+        # `except Exception` catches, and inside a gather it is
+        # indistinguishable from the caller cancelling the task.
+        self._inflight = 0
+        self._idle = asyncio.Event()
+        self._idle.set()
         self.memory = AsyncMemoryOperations(_LazyStub(self), self._call)
         """The memory operations. See :class:`~memco.operations.AsyncMemoryOperations`."""
 
@@ -125,14 +137,24 @@ class AsyncMemco:
         Called from inside the running event loop, never from ``__init__``.
 
         Raises:
-            ClientConfigError: If the client has been closed.
+            MemcoConfigError: If the client has been closed.
         """
         if self._closed:
-            raise ClientConfigError("this client is closed; create a new one to make more calls")
+            raise MemcoConfigError("this client is closed; create a new one to make more calls")
+        running = asyncio.get_running_loop()
+        if self._channel is not None and self._loop is not running:
+            # The loop it was bound to has gone. Drop the channel rather than
+            # touch it: its transport belongs to a loop that is already closed.
+            self._channel = None
+            self._stub = None
+            self._health = None
         if self._channel is None:
             self._channel = build_async_channel(self._config)
+            self._loop = running
             self._stub = _pbg.MemoryServiceStub(self._channel)
             self._health = health_pb2_grpc.HealthStub(self._channel)
+            self._idle = asyncio.Event()
+            self._idle.set()
 
     async def connect(self) -> AsyncMemco:
         """Verify the connection, running the checks the constructor could not.
@@ -161,6 +183,17 @@ class AsyncMemco:
             raise
         return self
 
+    async def _drain(self) -> None:
+        """Wait for in-flight calls to finish.
+
+        Closing while a call is in flight would cancel it, and a
+        :class:`asyncio.CancelledError` is caught by neither ``except
+        MemcoError`` nor ``except Exception`` — inside a gather it looks exactly
+        like the caller cancelling the task.
+        """
+        if self._inflight:
+            await self._idle.wait()
+
     async def _reset(self) -> None:
         """Tear the channel down without closing the client.
 
@@ -171,19 +204,24 @@ class AsyncMemco:
             channel, self._channel = self._channel, None
             self._stub = None
             self._health = None
+            self._loop = None
+            await self._drain()
             await channel.close(grace=None)
 
     async def close(self) -> None:
         """Close the underlying channel.
 
         Safe to call more than once. After closing, any further call raises
-        :class:`~memco.errors.ClientConfigError`.
+        :class:`~memco.errors.MemcoConfigError`.
         """
         if self._closed:
             return
         self._closed = True
         if self._channel is not None:
+            await self._drain()
             await self._channel.close(grace=None)
+            self._channel = None
+            self._loop = None
 
     async def __aenter__(self) -> AsyncMemco:
         """Enter an async context manager, connecting and verifying.
@@ -247,18 +285,25 @@ class AsyncMemco:
             The response message.
 
         Raises:
-            ClientConfigError: If the client has been closed.
+            MemcoConfigError: If the client has been closed.
             MemcoAPIError: If the service returned an error status.
         """
         self._open()
+        deadline = _deadline(timeout, self._config.timeout)
+        self._inflight += 1
+        self._idle.clear()
         try:
-            return await method(request, timeout=_deadline(timeout, self._config.timeout))
+            return await method(request, timeout=deadline)
         except grpc.RpcError as exc:
             raise from_rpc_error(exc) from exc
         except grpc.aio.UsageError as exc:
             # close() flips the flag and then tears the channel down, so a call
             # that passed the check above can still land on a dead channel.
             # UsageError is not an RpcError, so it would otherwise escape raw.
-            raise ClientConfigError(
+            raise MemcoConfigError(
                 "this client is closed; create a new one to make more calls"
             ) from exc
+        finally:
+            self._inflight -= 1
+            if not self._inflight:
+                self._idle.set()

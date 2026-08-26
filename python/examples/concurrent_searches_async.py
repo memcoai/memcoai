@@ -19,7 +19,7 @@ from memco.types import SearchResult
 QUERIES = [
     "how does gRPC health checking work",
     "what does a case-sensitive Bearer prefix imply for clients",
-    "how are rate limits distinguished from usage quotas",
+    "how should a client tell a transient failure from a permanent one",
     "when should a write be retried",
 ]
 

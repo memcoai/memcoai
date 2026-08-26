@@ -235,15 +235,25 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Import the generated modules against ${{ matrix.label }} pins
+      # The generated client lives inside the package now, so importing it
+      # runs memco/__init__.py and needs the package installed, not just its
+      # two generated-code dependencies.
+      - name: Import against ${{ matrix.label }} pins
         run: |
-          uv run --no-project --python 3.12 \
-            $(for pin in ${{ matrix.pins }}; do printf -- '--with %s ' "$pin"; done) \
-            python -c "
-          import google.protobuf, grpc
-          from memco.memory.v1 import memory_pb2 as pb, memory_pb2_grpc
-          print('protobuf', google.protobuf.__version__, 'grpcio', grpc.__version__, '->', pb.DESCRIPTOR.name)
-          "
+          uv venv --python 3.12 /tmp/compat
+          uv pip install --python /tmp/compat/bin/python .
+          uv pip install --python /tmp/compat/bin/python ${{ matrix.pins }}
+          cd /tmp
+          /tmp/compat/bin/python - <<'PY'
+          import google.protobuf
+          import grpc
+
+          import memco
+          from memco.memory.v1 import memory_pb2 as pb
+
+          print("protobuf", google.protobuf.__version__, "grpcio", grpc.__version__)
+          print("->", pb.DESCRIPTOR.name, "| client:", memco.Memco.__name__)
+          PY
 
   # ---- live, merge to main only ------------------------------------------
 

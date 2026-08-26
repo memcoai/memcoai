@@ -2,7 +2,7 @@
 
 Every failure reaching a caller is one of these. Transport and protocol failures
 arrive as :class:`MemcoAPIError` subclasses chosen by the gRPC status code;
-problems with the client's own configuration arrive as :class:`ClientConfigError`
+problems with the client's own configuration arrive as :class:`MemcoConfigError`
 before any request is sent.
 
 The hierarchy is arranged so a caller can be as coarse or as precise as it likes::
@@ -20,13 +20,14 @@ The hierarchy is arranged so a caller can be as coarse or as precise as it likes
 from __future__ import annotations
 
 import enum
+from typing import Any
 
 import grpc
 
 __all__ = [
-    "ClientConfigError",
     "MemcoAPIError",
     "MemcoAuthenticationError",
+    "MemcoConfigError",
     "MemcoError",
     "MemcoInternalError",
     "MemcoInvalidRequestError",
@@ -49,7 +50,7 @@ class MemcoError(Exception):
     """
 
 
-class ClientConfigError(MemcoError):
+class MemcoConfigError(MemcoError):
     """The client was configured incorrectly and no request was attempted.
 
     Raised for a missing credential, an unparseable host or port, or a
@@ -58,7 +59,7 @@ class ClientConfigError(MemcoError):
     Example:
         >>> Memco(token=None)  # with no MEMCO_API_TOKEN set
         Traceback (most recent call last):
-        ClientConfigError: no API token: pass token=... or set MEMCO_API_TOKEN
+        MemcoConfigError: no API token: pass token=... or set MEMCO_API_TOKEN
     """
 
 
@@ -95,6 +96,19 @@ class MemcoAPIError(MemcoError):
         self.code = code
         self.message = message
         self.debug_error_string = debug_error_string
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Support pickling and copying.
+
+        The default reconstructs an exception from ``args``, which holds only
+        the formatted message here. Without this, letting one of these
+        propagate out of a worker process raises an opaque ``TypeError`` in
+        place of the real error.
+
+        Returns:
+            The callable and arguments that rebuild this exception.
+        """
+        return (self.__class__, (self.code, self.message, self.debug_error_string))
 
 
 class MemcoAuthenticationError(MemcoAPIError):

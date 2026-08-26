@@ -45,9 +45,11 @@ sits alongside the generated tree.
 
 If you believe the generated code or the contract itself is wrong, open an issue
 describing the problem rather than editing the output. `make provenance` checks
-that the checked-in generated code, the dependency floors it declares, and the
-contract it claims to come from all agree; if that fails on a clean checkout,
-that is worth an issue on its own.
+that the contract's checksum matches what each descriptor records, that they
+agree on one server commit, and that the declared dependency floors match what
+the generated modules assert at import. It does not verify the generated code
+itself byte for byte. If it fails on a clean checkout, that is worth an issue on
+its own.
 
 ## Development setup
 
@@ -61,9 +63,11 @@ make install
 make check
 ```
 
-`make check` runs exactly what CI runs: lint, strict type checking, the test
-suites, the provenance check, and a documentation build. If it is green locally
-it will be green in CI.
+`make check` runs lint, strict type checking, the test suites, the provenance
+check, and a documentation build — the parts of CI that run on every push. CI
+additionally runs the suite across every supported runtime, builds and installs
+the distributables, and checks the dependency bounds; `make test-all` and
+`make build` cover most of that locally.
 
 The repository root fans out to every language directory that carries a
 `Makefile`, so `make test` covers everything present. `make help` lists the

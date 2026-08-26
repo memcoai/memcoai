@@ -5,7 +5,6 @@ configuration from the environment:
 
 ```bash
 export MEMCO_API_TOKEN=...
-export MEMCO_API_HOST=grpc-pr-800.preview.spark.memco.ai   # optional
 
 uv run --with memco python examples/quickstart.py
 ```

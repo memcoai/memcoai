@@ -61,7 +61,7 @@ async with AsyncMemco() as client:
 ```
 
 Runnable programs covering the common workflows are in
-[`examples/`](examples/).
+[`examples/`](https://github.com/memcoai/memco/blob/main/python/examples/).
 
 **See more → [docs.memco.ai](https://docs.memco.ai)**
 
@@ -76,17 +76,17 @@ Arguments win over the environment, which wins over the defaults.
 | TLS | `tls` | — | `True` |
 | Deadline | `timeout` | — | 30 seconds |
 
-The credential is either a static Memco API key or a WorkOS JWT; both go in the
-same header. `MEMCO_API_KEY` is still honoured but warns.
+The credential is either a Memco API key or a session token issued for your
+account; both go in the same header. `MEMCO_API_KEY` is still honoured but warns.
 
 Constructing a `Memco` probes the service's health endpoint, so a bad host,
 port or TLS setting fails immediately rather than on your first call.
 `AsyncMemco` cannot do this in `__init__` — it probes on `connect()`, which
 `async with` calls for you.
 
-That probe is unauthenticated, so it cannot check your credential. Pass
-`verify_credentials=True` if you want that too, bearing in mind it spends one of
-your per-minute rate-limit tokens each time a client is built.
+That probe does not carry your credential, so it cannot check it. Pass
+`verify_credentials=True` if you want that too, bearing in mind it makes an
+additional request every time a client is built.
 
 ```python
 Memco(token="...", host="localhost:50051", tls=False, check_health=False)
@@ -114,7 +114,7 @@ reaches you.
 
 ```
 MemcoError
-├── ClientConfigError                  bad configuration; no request was sent
+├── MemcoConfigError                  bad configuration; no request was sent
 └── MemcoAPIError                     the service returned an error status
     ├── MemcoAuthenticationError      credential missing, expired or rejected
     ├── MemcoPermissionError          credential lacks the scope or role
@@ -131,7 +131,7 @@ Two behaviours worth knowing:
 
 **Some limits are checked locally.** Oversized fields and missing argument
 combinations raise `MemcoInvalidRequestError` before any request is sent, so a
-malformed call costs no round trip and no rate-limit budget.
+malformed call costs no round trip.
 
 **Not every "not found" is an error.** `revert_memory` reports a missing,
 expired or moderated operation through `RevertResult.outcome` rather than
@@ -143,7 +143,7 @@ if result.outcome is RevertOutcome.EXPIRED:
     print("outside the revert window")
 ```
 
-[`examples/handling_errors.py`](examples/handling_errors.py) works through every
+[`examples/handling_errors.py`](https://github.com/memcoai/memco/blob/main/python/examples/handling_errors.py) works through every
 failure mode and what to do about each.
 
 ## Provenance
@@ -172,9 +172,9 @@ make check                  # lint, typecheck, test, docs — everything CI runs
 make -C python docs-serve   # build the reference and read it locally
 ```
 
-The generated client under `client/` is produced from the service contract and
-is replaced wholesale when regenerated; the hand-written SDK is in
-`memco/client/`.
+The generated client under `memco/memory/` is produced from the service
+contract and is replaced wholesale when regenerated; everything else in
+`memco/` is hand-written.
 
 ## Licence
 

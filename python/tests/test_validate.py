@@ -3,58 +3,54 @@
 import grpc
 import pytest
 
+import memco
 from memco import _validate as v
 from memco.errors import MemcoInvalidRequestError
 from memco.types import FeedbackRating
 
 
-def test_query_cap():
-    v.check_query("a" * v.MAX_QUERY)
-    with pytest.raises(MemcoInvalidRequestError, match="query"):
-        v.check_query("a" * (v.MAX_QUERY + 1))
+def test_blank_values_are_rejected():
+    for check, field in (
+        (v.check_query, "query"),
+        (v.check_title, "title"),
+        (v.check_content, "content"),
+        (v.check_idx, "idx"),
+        (v.check_session_id, "session_id"),
+        (v.check_domain, "domain"),
+        (v.check_operation_id, "operation_id"),
+    ):
+        with pytest.raises(MemcoInvalidRequestError, match=field):
+            check("   ")
 
 
-def test_blank_query_rejected():
-    with pytest.raises(MemcoInvalidRequestError, match="query"):
-        v.check_query("   ")
+def test_length_is_not_checked_locally():
+    # The service owns its limits. A value compiled in here would go stale the
+    # moment the service changed one, and an older SDK would reject requests
+    # the service would now accept.
+    v.check_query("q" * 100_000)
+    v.check_title("t" * 100_000)
+    v.check_content("c" * 100_000)
+    v.check_idx("i" * 100_000)
 
 
-@pytest.mark.parametrize("field", ["title", "content"])
-def test_title_and_content_cap_independently(field):
-    check = getattr(v, f"check_{field}")
-    check("a" * v.MAX_TEXT)
-    with pytest.raises(MemcoInvalidRequestError, match=field):
-        check("a" * (v.MAX_TEXT + 1))
+def test_batch_size_is_not_checked_locally():
+    v.check_sources([f"src-{i}" for i in range(1000)])
+    v.check_feedback([FeedbackRating(idx="i", relevant=True, correct=True)] * 1000)
 
 
-def test_idx_cap():
-    v.check_idx("m" * v.MAX_IDX)
-    with pytest.raises(MemcoInvalidRequestError, match="idx"):
-        v.check_idx("m" * (v.MAX_IDX + 1))
-    with pytest.raises(MemcoInvalidRequestError, match="idx"):
-        v.check_idx("")
-
-
-def test_sources_cap():
-    v.check_sources(["s"] * v.MAX_SOURCES)
-    with pytest.raises(MemcoInvalidRequestError, match="sources"):
-        v.check_sources(["s"] * (v.MAX_SOURCES + 1))
-
-
-def test_feedback_cap_and_comment_cap():
-    ratings = [FeedbackRating(idx="i", relevant=True, correct=True)] * v.MAX_FEEDBACK
-    v.check_feedback(ratings)
-    with pytest.raises(MemcoInvalidRequestError, match="feedback"):
-        v.check_feedback([*ratings, FeedbackRating(idx="i", relevant=True, correct=True)])
-    with pytest.raises(MemcoInvalidRequestError, match="comment"):
-        v.check_feedback(
-            [FeedbackRating(idx="i", relevant=True, correct=True, comment="c" * (v.MAX_TEXT + 1))]
-        )
+def test_no_numeric_limit_is_exported():
+    assert not [name for name in dir(memco) if name.startswith("MAX_")]
+    assert not [name for name in dir(v) if name.startswith("MAX_")]
 
 
 def test_feedback_must_not_be_empty():
     with pytest.raises(MemcoInvalidRequestError, match="feedback"):
         v.check_feedback([])
+
+
+def test_feedback_entries_are_still_checked_for_structure():
+    with pytest.raises(MemcoInvalidRequestError, match="feedback idx"):
+        v.check_feedback([FeedbackRating(idx="", relevant=True, correct=True)])
 
 
 def test_scope_requires_domain_or_session():
@@ -79,9 +75,9 @@ def test_memory_idx_accepts_the_new_sentinel_and_a_handle():
 
 
 def test_memory_idx_sentinel_is_case_sensitive():
-    # "New" is not the sentinel; it is treated as a handle and length-checked.
-    with pytest.raises(MemcoInvalidRequestError, match="memory_idx"):
-        v.check_memory_idx("N" * (v.MAX_IDX + 1))
+    # "New" is not the sentinel; it is treated as an ordinary handle, which is
+    # only rejected here when blank.
+    v.check_memory_idx("New")
 
 
 def test_errors_carry_invalid_argument_status():

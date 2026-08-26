@@ -87,7 +87,7 @@ class MemoryOperations:
             The open session.
 
         Raises:
-            MemcoInvalidRequestError: If the domain is blank or too long.
+            MemcoInvalidRequestError: If the domain is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
@@ -116,8 +116,8 @@ class MemoryOperations:
 
         Args:
             query: A question, statement or task description, in plain language.
-                At most 1000 characters. Keyword and semantic search are both
-                applied, so one concept per query works best.
+                Keyword and semantic search are both applied, so one
+                concept per query works best. The service caps its length.
             domain: Slug of the domain to search. Required unless ``session_id``
                 is given.
             session_id: An open session to record this search under.
@@ -130,7 +130,7 @@ class MemoryOperations:
             The memories selected, with guidance on adding to and rating them.
 
         Raises:
-            MemcoInvalidRequestError: If the query is blank or over the limit, or
+            MemcoInvalidRequestError: If the query is blank, or
                 if neither a domain nor a session was given.
             MemcoAPIError: If the service returns an error status.
 
@@ -163,7 +163,7 @@ class MemoryOperations:
             The memory and its insights.
 
         Raises:
-            MemcoInvalidRequestError: If the handle is blank or too long.
+            MemcoInvalidRequestError: If the handle is blank.
             MemcoNotFoundError: If the handle resolves to nothing visible.
             MemcoAPIError: If the service returns an error status.
 
@@ -172,7 +172,7 @@ class MemoryOperations:
             >>> [insight.title for insight in memory.insights]
         """
         response = self._call(self._stub.GetMemory, _requests.get_memory_request(idx), timeout)
-        return _convert.to_memory(response.memory)
+        return _convert.to_memory(_requests.require_memory(response, idx))
 
     def create_memory(
         self,
@@ -193,10 +193,9 @@ class MemoryOperations:
         operation id with :meth:`revert_memory` to undo it.
 
         Args:
-            query: What someone would search to find this memory later. At most
-                1000 characters.
-            title: Short title. At most 5000 characters.
-            content: The knowledge itself. At most 5000 characters. Be specific:
+            query: What someone would search to find this memory later.
+            title: Short title.
+            content: The knowledge itself. Be specific:
                 exact names, values and procedures are what make an entry worth
                 reading.
             domain: Slug of the domain to write to. Required unless
@@ -212,7 +211,7 @@ class MemoryOperations:
             was accepted but cannot be undone.
 
         Raises:
-            MemcoInvalidRequestError: If a field is blank or over its limit, or
+            MemcoInvalidRequestError: If a field is blank, or
                 if neither a domain nor a session was given.
             MemcoAPIError: If the service returns an error status.
 
@@ -261,11 +260,11 @@ class MemoryOperations:
                 case-sensitive.
             session_id: The session the memory was returned under. Required: it
                 supplies the domain.
-            title: Short title for the addition. At most 5000 characters.
-            content: The knowledge being added. At most 5000 characters. Say
+            title: Short title for the addition.
+            content: The knowledge being added. Say
                 only what is not already there.
             tags: Tags describing the addition.
-            sources: Handles of the memories this addition draws on. At most 20.
+            sources: Handles of the memories this addition draws on.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
@@ -274,15 +273,15 @@ class MemoryOperations:
             The accepted write.
 
         Raises:
-            MemcoInvalidRequestError: If a field is blank or over its limit.
+            MemcoInvalidRequestError: If a field is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
             >>> client.memory.enrich_memory(
             ...     memory_idx="memory-9fg6vc-2",
             ...     session_id=session.session_id,
-            ...     title="Health checks bypass the auth chain",
-            ...     content="Check() is unauthenticated, so it cannot validate a token.",
+            ...     title="A connection check does not prove the credential works",
+            ...     content="That check carries no credential, so a bad token surfaces later.",
             ... )
         """
         request = _requests.enrich_memory_request(
@@ -311,17 +310,17 @@ class MemoryOperations:
 
         Args:
             session_id: The session whose search is being rated.
-            feedback: One rating per result. At most 10. Each handle must be
-                copied exactly from a search result; a memory's own handle rates
-                every insight under it.
+            feedback: One rating per result. Each handle must be copied exactly
+                from a search result; a memory's own handle rates every insight
+                under it.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
 
         Raises:
-            MemcoInvalidRequestError: If the batch is empty, over the limit, or
-                holds an invalid rating.
+            MemcoInvalidRequestError: If the batch is empty or holds an invalid
+                rating.
             MemcoAPIError: If the service returns an error status.
 
         Example:
@@ -353,7 +352,7 @@ class MemoryOperations:
             What the revert actually removed.
 
         Raises:
-            MemcoInvalidRequestError: If the operation id is blank or too long.
+            MemcoInvalidRequestError: If the operation id is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
@@ -429,7 +428,7 @@ class AsyncMemoryOperations:
             The open session.
 
         Raises:
-            MemcoInvalidRequestError: If the domain is blank or too long.
+            MemcoInvalidRequestError: If the domain is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
@@ -459,8 +458,8 @@ class AsyncMemoryOperations:
 
         Args:
             query: A question, statement or task description, in plain language.
-                At most 1000 characters. Keyword and semantic search are both
-                applied, so one concept per query works best.
+                Keyword and semantic search are both applied, so one
+                concept per query works best. The service caps its length.
             domain: Slug of the domain to search. Required unless ``session_id``
                 is given.
             session_id: An open session to record this search under.
@@ -473,7 +472,7 @@ class AsyncMemoryOperations:
             The memories selected, with guidance on adding to and rating them.
 
         Raises:
-            MemcoInvalidRequestError: If the query is blank or over the limit, or
+            MemcoInvalidRequestError: If the query is blank, or
                 if neither a domain nor a session was given.
             MemcoAPIError: If the service returns an error status.
 
@@ -506,7 +505,7 @@ class AsyncMemoryOperations:
             The memory and its insights.
 
         Raises:
-            MemcoInvalidRequestError: If the handle is blank or too long.
+            MemcoInvalidRequestError: If the handle is blank.
             MemcoNotFoundError: If the handle resolves to nothing visible.
             MemcoAPIError: If the service returns an error status.
 
@@ -517,7 +516,7 @@ class AsyncMemoryOperations:
         response = await self._call(
             self._stub.GetMemory, _requests.get_memory_request(idx), timeout
         )
-        return _convert.to_memory(response.memory)
+        return _convert.to_memory(_requests.require_memory(response, idx))
 
     async def create_memory(
         self,
@@ -538,10 +537,9 @@ class AsyncMemoryOperations:
         operation id with :meth:`revert_memory` to undo it.
 
         Args:
-            query: What someone would search to find this memory later. At most
-                1000 characters.
-            title: Short title. At most 5000 characters.
-            content: The knowledge itself. At most 5000 characters. Be specific:
+            query: What someone would search to find this memory later.
+            title: Short title.
+            content: The knowledge itself. Be specific:
                 exact names, values and procedures are what make an entry worth
                 reading.
             domain: Slug of the domain to write to. Required unless
@@ -557,7 +555,7 @@ class AsyncMemoryOperations:
             was accepted but cannot be undone.
 
         Raises:
-            MemcoInvalidRequestError: If a field is blank or over its limit, or
+            MemcoInvalidRequestError: If a field is blank, or
                 if neither a domain nor a session was given.
             MemcoAPIError: If the service returns an error status.
 
@@ -606,10 +604,10 @@ class AsyncMemoryOperations:
                 case-sensitive.
             session_id: The session the memory was returned under. Required: it
                 supplies the domain.
-            title: Short title for the addition. At most 5000 characters.
-            content: The knowledge being added. At most 5000 characters. Say
+            title: Short title for the addition.
+            content: The knowledge being added. Say
                 only what is not already there.
-            sources: Handles of the memories this addition draws on. At most 20.
+            sources: Handles of the memories this addition draws on.
             tags: Tags describing the addition.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
@@ -619,15 +617,15 @@ class AsyncMemoryOperations:
             The accepted write.
 
         Raises:
-            MemcoInvalidRequestError: If a field is blank or over its limit.
+            MemcoInvalidRequestError: If a field is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
             >>> await client.memory.enrich_memory(
             ...     memory_idx="memory-9fg6vc-2",
             ...     session_id=session.session_id,
-            ...     title="Health checks bypass the auth chain",
-            ...     content="Check() is unauthenticated, so it cannot validate a token.",
+            ...     title="A connection check does not prove the credential works",
+            ...     content="That check carries no credential, so a bad token surfaces later.",
             ... )
         """
         request = _requests.enrich_memory_request(
@@ -656,17 +654,17 @@ class AsyncMemoryOperations:
 
         Args:
             session_id: The session whose search is being rated.
-            feedback: One rating per result. At most 10. Each handle must be
-                copied exactly from a search result; a memory's own handle rates
-                every insight under it.
+            feedback: One rating per result. Each handle must be copied exactly
+                from a search result; a memory's own handle rates every insight
+                under it.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
 
         Raises:
-            MemcoInvalidRequestError: If the batch is empty, over the limit, or
-                holds an invalid rating.
+            MemcoInvalidRequestError: If the batch is empty or holds an invalid
+                rating.
             MemcoAPIError: If the service returns an error status.
 
         Example:
@@ -702,7 +700,7 @@ class AsyncMemoryOperations:
             What the revert actually removed.
 
         Raises:
-            MemcoInvalidRequestError: If the operation id is blank or too long.
+            MemcoInvalidRequestError: If the operation id is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:

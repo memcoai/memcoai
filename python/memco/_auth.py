@@ -29,11 +29,11 @@ is rejected as an invalid credential.
 UNAUTHENTICATED_PREFIX = "/grpc.health.v1."
 """Methods the credential is deliberately withheld from.
 
-The health service bypasses authentication on the server, so sending the
-credential there would achieve nothing and would widen its exposure: health
-endpoints are the ones routinely reached by load balancers and sidecars, which
-log request headers far more liberally than the application path does, and the
-probe fires on every client construction before the caller has made a request.
+The health endpoint takes no credential, so sending one there would achieve
+nothing and would widen its exposure: health endpoints are routinely reached by
+infrastructure that logs request headers more liberally than an application
+path does, and the probe fires on every client construction before the caller
+has made a request.
 """
 
 __all__ = ["AUTH_HEADER", "AUTH_SCHEME", "AsyncAuthInterceptor", "AuthInterceptor"]

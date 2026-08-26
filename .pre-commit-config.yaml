@@ -1,23 +1,30 @@
 # Install once with:  pre-commit install
 # Run over everything: pre-commit run --all-files
 #
-# Generated code under <lang>/client/ is the export's to produce and is never
-# reformatted here, so every hook excludes it.
+# Generated code is the export's to produce and is never reformatted here, so
+# the hooks that would rewrite it exclude it individually. There is deliberately
+# no top-level `exclude`: pre-commit applies that to the file list before a
+# hook's own `files` is consulted, which would leave the provenance hook unable
+# to fire on the very paths it exists to watch.
 
-exclude: '^(proto/|[a-z]+/client/|python/memco/memory/)'
+# Paths the export owns. Kept as an anchor so each hook can reuse it.
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: &generated '^(proto/|[a-z]+/client/|python/memco/memory/)'
       - id: end-of-file-fixer
+        exclude: *generated
       - id: check-yaml
+        exclude: *generated
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: *generated
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.4
@@ -25,8 +32,10 @@ repos:
       - id: ruff-check
         args: [--fix]
         files: ^python/
+        exclude: *generated
       - id: ruff-format
         files: ^python/
+        exclude: *generated
 
   # Run from the project's own environment so it sees the installed package and
   # the generated stubs, which an isolated hook environment would not.
@@ -45,8 +54,4 @@ repos:
         entry: python3 scripts/verify_provenance.py
         language: system
         pass_filenames: false
-        # The top-level exclude filters the file list before per-hook `files`
-        # is applied, and it removes exactly the paths this hook watches. An
-        # empty exclude opts back in.
-        exclude: '^$'
-        files: '^(proto/|[a-z]+/client/|python/memco/memory/|python/requirements\.txt|python/pyproject\.toml)'
+        files: '^(proto/|[a-z]+/client/|python/memco/memory/|python/memco/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'

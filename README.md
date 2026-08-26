@@ -111,8 +111,8 @@ See [`python/README.md`](python/README.md) for the full guide and
 ```
 proto/            the service contract, for reference
 python/           the Python SDK
-  memco/client/     hand-written SDK
-  client/           generated gRPC client
+  memco/            hand-written SDK
+  memco/memory/     generated gRPC client
 go/, nodejs/      generated gRPC clients
 ```
 

@@ -6,7 +6,7 @@ review unnoticed:
 
 1. The contract's SHA-256 matches the checksum every ``SDK_PROVENANCE.yaml``
    records, and all of them name the same server commit.
-2. ``python/client/requirements.txt`` matches the ``requires.python`` block in
+2. ``python/requirements.txt`` matches the ``requires.python`` block in
    the descriptor.
 3. Both match the floors the generated modules assert at import time.
 

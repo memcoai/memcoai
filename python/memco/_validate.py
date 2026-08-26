@@ -1,16 +1,19 @@
-"""Memco-side argument checks performed before any request is sent.
+"""Client-side argument checks performed before any request is sent.
 
-These limits mirror the ones the service enforces. Checking them here turns a
-wasted round trip into an immediate error naming the offending field, and keeps
-a malformed request from consuming the caller's rate-limit budget.
+Only **structural** rules live here: a blank value, a missing required
+combination of arguments, an empty batch. Those follow from the shape of the
+contract and cannot go out of date.
 
-They are a snapshot of the contract as of this release, so a service that later
-raises a limit needs a new SDK release before callers can use the extra room.
-Structural checks — blank values, missing argument combinations, batch sizes —
-carry no such risk.
+Numeric limits — how long a query may be, how many ratings fit in one call —
+are deliberately **not** checked here. The service owns those, and a value
+compiled into the SDK goes stale the moment the service changes one: an older
+client would keep rejecting requests the service would now accept, locally,
+with no way for the caller to tell why. Until the limits are delivered by the
+service itself they are its business alone, and an over-long field is reported
+by the service rather than guessed at here.
 
-Every failure raises :class:`~memco.errors.MemcoInvalidRequestError` with
-an ``INVALID_ARGUMENT`` status, so a caller handles a local rejection and a
+Every failure raises :class:`~memco.errors.MemcoInvalidRequestError` with an
+``INVALID_ARGUMENT`` status, so a caller handles a local rejection and a
 server-side one the same way.
 """
 
@@ -20,36 +23,17 @@ from collections.abc import Iterable, Sequence
 
 import grpc
 
-from .errors import MemcoInvalidRequestError
-from .types import FeedbackRating
-
-MAX_QUERY = 1000
-"""Maximum length of a search or memory query, in characters."""
-
-MAX_TEXT = 5000
-"""Maximum length of a title, a content body, or a feedback comment."""
-
-MAX_IDX = 64
-"""Maximum length of a handle such as an idx or a memory handle."""
-
-MAX_SOURCES = 20
-"""Maximum number of source handles on an enrichment."""
-
-MAX_FEEDBACK = 10
-"""Maximum number of ratings in a single feedback call."""
+from memco.errors import MemcoInvalidRequestError
+from memco.types import FeedbackRating, Tag
 
 NEW_MEMORY = "new"
 """Sentinel opening a new memory instead of enriching an existing one.
 
 Case-sensitive: ``"New"`` is treated as an ordinary handle, not the sentinel.
+This is a value the contract defines, not a limit the service tunes.
 """
 
 __all__ = [
-    "MAX_FEEDBACK",
-    "MAX_IDX",
-    "MAX_QUERY",
-    "MAX_SOURCES",
-    "MAX_TEXT",
     "NEW_MEMORY",
     "check_content",
     "check_domain",
@@ -61,11 +45,13 @@ __all__ = [
     "check_scope",
     "check_session_id",
     "check_sources",
+    "check_tags",
     "check_title",
+    "reject",
 ]
 
 
-def _reject(message: str) -> MemcoInvalidRequestError:
+def reject(message: str) -> MemcoInvalidRequestError:
     """Build the rejection raised by every check in this module.
 
     Args:
@@ -78,21 +64,22 @@ def _reject(message: str) -> MemcoInvalidRequestError:
     return MemcoInvalidRequestError(grpc.StatusCode.INVALID_ARGUMENT, message)
 
 
-def _check_text(value: str, field: str, limit: int) -> None:
-    """Require a non-blank string within a length limit.
+def _check_present(value: str | None, field: str) -> None:
+    """Require a non-blank string.
+
+    ``None`` is rejected explicitly rather than allowed to raise an
+    :class:`AttributeError`: an un-revertible write reports its operation id as
+    ``None``, and the documented flow feeds that straight back in.
 
     Args:
         value: The value supplied by the caller.
         field: Field name, used verbatim in the error message.
-        limit: Maximum permitted length in characters.
 
     Raises:
-        MemcoInvalidRequestError: If the value is blank or too long.
+        MemcoInvalidRequestError: If the value is ``None`` or blank.
     """
-    if not value.strip():
-        raise _reject(f"{field} must not be empty")
-    if len(value) > limit:
-        raise _reject(f"{field} is {len(value)} characters, which exceeds the limit of {limit}")
+    if value is None or not value.strip():
+        raise reject(f"{field} must not be empty")
 
 
 def check_query(query: str) -> None:
@@ -102,9 +89,9 @@ def check_query(query: str) -> None:
         query: The query text.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_QUERY`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    _check_text(query, "query", MAX_QUERY)
+    _check_present(query, "query")
 
 
 def check_title(title: str) -> None:
@@ -114,9 +101,9 @@ def check_title(title: str) -> None:
         title: The title text.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_TEXT`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    _check_text(title, "title", MAX_TEXT)
+    _check_present(title, "title")
 
 
 def check_content(content: str) -> None:
@@ -126,9 +113,9 @@ def check_content(content: str) -> None:
         content: The content text.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_TEXT`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    _check_text(content, "content", MAX_TEXT)
+    _check_present(content, "content")
 
 
 def check_idx(idx: str, field: str = "idx") -> None:
@@ -137,13 +124,12 @@ def check_idx(idx: str, field: str = "idx") -> None:
     Args:
         idx: The handle, copied exactly from an earlier result.
         field: Name to report in the error. Pass the caller's own argument name
-            so the message points at the argument the user actually wrote,
-            rather than at this function's generic one.
+            so the message points at the argument the user actually wrote.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_IDX`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    _check_text(idx, field, MAX_IDX)
+    _check_present(idx, field)
 
 
 def check_session_id(session_id: str) -> None:
@@ -153,9 +139,9 @@ def check_session_id(session_id: str) -> None:
         session_id: The session handle.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_IDX`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    _check_text(session_id, "session_id", MAX_IDX)
+    _check_present(session_id, "session_id")
 
 
 def check_domain(domain: str) -> None:
@@ -165,9 +151,9 @@ def check_domain(domain: str) -> None:
         domain: The slug, as returned by ``list_domains``.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_IDX`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    check_idx(domain, "domain")
+    _check_present(domain, "domain")
 
 
 def check_operation_id(operation_id: str) -> None:
@@ -177,9 +163,9 @@ def check_operation_id(operation_id: str) -> None:
         operation_id: The id a create or enrich returned.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or longer than :data:`MAX_IDX`.
+        MemcoInvalidRequestError: If it is blank.
     """
-    check_idx(operation_id, "operation_id")
+    _check_present(operation_id, "operation_id")
 
 
 def check_memory_idx(memory_idx: str) -> None:
@@ -190,12 +176,11 @@ def check_memory_idx(memory_idx: str) -> None:
             sentinel is case-sensitive.
 
     Raises:
-        MemcoInvalidRequestError: If it is blank or, when not the sentinel,
-            longer than :data:`MAX_IDX`.
+        MemcoInvalidRequestError: If it is blank.
     """
     if memory_idx == NEW_MEMORY:
         return
-    _check_text(memory_idx, "memory_idx", MAX_IDX)
+    _check_present(memory_idx, "memory_idx")
 
 
 def check_scope(*, domain: str | None, session_id: str | None) -> None:
@@ -210,33 +195,64 @@ def check_scope(*, domain: str | None, session_id: str | None) -> None:
 
     Raises:
         MemcoInvalidRequestError: If neither was given, or if a value that was
-            given is blank or too long.
+            given is blank.
     """
     if not (domain or session_id):
-        raise _reject("pass a domain or a session_id: a request needs one of them to name a domain")
+        raise reject("pass a domain or a session_id: a request needs one of them to name a domain")
     if domain is not None:
         check_domain(domain)
     if session_id is not None:
         check_session_id(session_id)
 
 
-def check_sources(sources: Iterable[str] | None) -> None:
-    """Validate the source handles cited by an enrichment.
+def check_tags(tags: Iterable[Tag] | None) -> list[Tag]:
+    """Validate the tags on a search or a write, and materialise them.
+
+    A blank tag is worth catching: a tag type that *filters* rather than boosts
+    narrows a search to nothing, so an empty one returns no memories at all and
+    is indistinguishable from "nothing is known about this".
+
+    Args:
+        tags: The tags supplied by the caller, if any.
+
+    Returns:
+        The tags as a list, empty when none were given.
+
+    Raises:
+        MemcoInvalidRequestError: If a tag's type or value is blank.
+    """
+    materialised = list(tags or ())
+    for tag in materialised:
+        _check_present(tag.type, "tag type")
+        _check_present(tag.value, "tag value")
+    return materialised
+
+
+def check_sources(sources: Iterable[str] | None) -> list[str]:
+    """Validate the source handles cited by an enrichment, and materialise them.
+
+    Materialising here rather than at the call site is what makes the bare-string
+    guard below reachable, and it consumes a one-shot iterable exactly once.
 
     Args:
         sources: Handles of the memories this addition draws on, if any.
 
+    Returns:
+        The handles as a list, empty when none were given.
+
     Raises:
-        MemcoInvalidRequestError: If there are more than :data:`MAX_SOURCES`, or
-            if any handle is blank or too long.
+        MemcoInvalidRequestError: If a bare string was passed instead of a
+            sequence, or if any handle is blank.
     """
-    if sources is None:
-        return
-    items = list(sources)
-    if len(items) > MAX_SOURCES:
-        raise _reject(f"sources has {len(items)} entries, which exceeds the limit of {MAX_SOURCES}")
-    for source in items:
+    if isinstance(sources, str):
+        # A str satisfies Iterable[str], so neither the annotation nor the type
+        # checker catches this; iterating it would cite one memory per
+        # character and attribute the write to handles that do not exist.
+        raise reject("sources must be a sequence of handles, not a single string")
+    materialised = list(sources or ())
+    for source in materialised:
         check_idx(source, "sources entry")
+    return materialised
 
 
 def check_feedback(feedback: Sequence[FeedbackRating]) -> None:
@@ -246,20 +262,10 @@ def check_feedback(feedback: Sequence[FeedbackRating]) -> None:
         feedback: The ratings to record.
 
     Raises:
-        MemcoInvalidRequestError: If the batch is empty, holds more than
-            :data:`MAX_FEEDBACK` ratings, or contains a rating whose handle or
-            comment is invalid.
+        MemcoInvalidRequestError: If the batch is empty or holds a rating whose
+            handle is blank.
     """
     if not feedback:
-        raise _reject("feedback must contain at least one rating")
-    if len(feedback) > MAX_FEEDBACK:
-        raise _reject(
-            f"feedback has {len(feedback)} entries, which exceeds the limit of {MAX_FEEDBACK}"
-        )
+        raise reject("feedback must contain at least one rating")
     for rating in feedback:
         check_idx(rating.idx, "feedback idx")
-        if rating.comment is not None and len(rating.comment) > MAX_TEXT:
-            raise _reject(
-                f"feedback comment is {len(rating.comment)} characters, "
-                f"which exceeds the limit of {MAX_TEXT}"
-            )

@@ -57,10 +57,7 @@ def main() -> None:
                     )
                 )
 
-        # At most 10 ratings per call, so send them in batches.
-        recorded = client.memory.share_feedback(
-            session_id=session.session_id, feedback=ratings[:10]
-        )
+        recorded = client.memory.share_feedback(session_id=session.session_id, feedback=ratings)
         print(f"\nrecorded {len(recorded.entries)} rating(s)")
         for entry in recorded.entries:
             if entry.advice:

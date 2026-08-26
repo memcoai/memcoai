@@ -7,24 +7,55 @@ how they await the response.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import cast
+from collections.abc import Callable, Iterable, Sequence
+from typing import TypeVar, cast
+
+import grpc
+from google.protobuf.message import Message
 
 from memco.memory.v1 import memory_pb2 as _pb
 
 from . import _validate
+from .errors import MemcoNotFoundError
 from .types import DataSource, FeedbackRating, Tag
+
+_M = TypeVar("_M", bound=Message)
 
 __all__ = [
     "create_memory_request",
     "enrich_memory_request",
     "get_memory_request",
     "list_domains_request",
+    "require_memory",
     "revert_memory_request",
     "search_request",
     "share_feedback_request",
     "start_session_request",
 ]
+
+
+def _built(build: Callable[[], _M]) -> _M:
+    """Construct a request message, reporting a rejected value as a typed error.
+
+    protobuf refuses text it cannot encode — a lone surrogate, which arrives
+    routinely from a mis-decoded filename or scraped JSON — with a
+    :class:`UnicodeEncodeError`. Message construction happens outside the RPC
+    call, so that would escape untyped and defeat the guarantee that every
+    failure is a :class:`~memco.errors.MemcoError`.
+
+    Args:
+        build: Callable constructing the message.
+
+    Returns:
+        The constructed message.
+
+    Raises:
+        MemcoInvalidRequestError: If a field value cannot be serialised.
+    """
+    try:
+        return build()
+    except (UnicodeError, ValueError) as exc:
+        raise _validate.reject(f"a field value cannot be sent: {exc}") from exc
 
 
 def _tags(tags: Iterable[Tag] | None) -> list[_pb.Tag]:
@@ -36,8 +67,11 @@ def _tags(tags: Iterable[Tag] | None) -> list[_pb.Tag]:
 
     Returns:
         The wire messages, empty when no tags were given.
+
+    Raises:
+        MemcoInvalidRequestError: If a tag's type or value is blank.
     """
-    return [tag.to_proto() for tag in (tags or ())]
+    return [tag.to_proto() for tag in _validate.check_tags(tags)]
 
 
 def _source(source: DataSource) -> _pb.DataSource:
@@ -76,7 +110,7 @@ def revert_memory_request(operation_id: str) -> _pb.RevertMemoryRequest:
         MemcoInvalidRequestError: If the operation id is blank or too long.
     """
     _validate.check_operation_id(operation_id)
-    return _pb.RevertMemoryRequest(op_id=operation_id)
+    return _built(lambda: _pb.RevertMemoryRequest(op_id=operation_id))
 
 
 def start_session_request(domain: str) -> _pb.StartSessionRequest:
@@ -92,7 +126,7 @@ def start_session_request(domain: str) -> _pb.StartSessionRequest:
         MemcoInvalidRequestError: If the domain is blank or too long.
     """
     _validate.check_domain(domain)
-    return _pb.StartSessionRequest(domain=domain)
+    return _built(lambda: _pb.StartSessionRequest(domain=domain))
 
 
 def search_request(
@@ -120,8 +154,10 @@ def search_request(
     """
     _validate.check_query(query)
     _validate.check_scope(domain=domain, session_id=session_id)
-    return _pb.SearchRequest(
-        query=query, domain=domain or "", session_id=session_id or "", tags=_tags(tags)
+    return _built(
+        lambda: _pb.SearchRequest(
+            query=query, domain=domain or "", session_id=session_id or "", tags=_tags(tags)
+        )
     )
 
 
@@ -138,7 +174,7 @@ def get_memory_request(idx: str) -> _pb.GetMemoryRequest:
         MemcoInvalidRequestError: If the handle is blank or too long.
     """
     _validate.check_idx(idx)
-    return _pb.GetMemoryRequest(idx=idx)
+    return _built(lambda: _pb.GetMemoryRequest(idx=idx))
 
 
 def create_memory_request(
@@ -173,14 +209,16 @@ def create_memory_request(
     _validate.check_title(title)
     _validate.check_content(content)
     _validate.check_scope(domain=domain, session_id=session_id)
-    return _pb.CreateMemoryRequest(
-        query=query,
-        title=title,
-        content=content,
-        domain=domain or "",
-        session_id=session_id or "",
-        tags=_tags(tags),
-        source=_source(source),
+    return _built(
+        lambda: _pb.CreateMemoryRequest(
+            query=query,
+            title=title,
+            content=content,
+            domain=domain or "",
+            session_id=session_id or "",
+            tags=_tags(tags),
+            source=_source(source),
+        )
     )
 
 
@@ -217,16 +255,17 @@ def enrich_memory_request(
     _validate.check_session_id(session_id)
     _validate.check_title(title)
     _validate.check_content(content)
-    materialised = list(sources or ())
-    _validate.check_sources(materialised)
-    return _pb.EnrichMemoryRequest(
-        memory_idx=memory_idx,
-        session_id=session_id,
-        title=title,
-        content=content,
-        tags=_tags(tags),
-        sources=materialised,
-        source=_source(source),
+    materialised = _validate.check_sources(sources)
+    return _built(
+        lambda: _pb.EnrichMemoryRequest(
+            memory_idx=memory_idx,
+            session_id=session_id,
+            title=title,
+            content=content,
+            tags=_tags(tags),
+            sources=materialised,
+            source=_source(source),
+        )
     )
 
 
@@ -247,6 +286,31 @@ def share_feedback_request(
     """
     _validate.check_session_id(session_id)
     _validate.check_feedback(feedback)
-    return _pb.ShareFeedbackRequest(
-        session_id=session_id, feedback=[rating.to_proto() for rating in feedback]
+    return _built(
+        lambda: _pb.ShareFeedbackRequest(
+            session_id=session_id, feedback=[rating.to_proto() for rating in feedback]
+        )
     )
+
+
+def require_memory(response: _pb.GetMemoryResponse, idx: str) -> _pb.MemoryResult:
+    """Return the memory a ``GetMemory`` response carries.
+
+    A singular message field has no presence at the accessor, so an unset one
+    reads back as a default instance. Converting that would hand the caller a
+    memory with every field empty, indistinguishable from a real one, instead of
+    reporting that the handle resolved to nothing.
+
+    Args:
+        response: The generated response.
+        idx: The handle that was requested, for the error message.
+
+    Returns:
+        The memory message.
+
+    Raises:
+        MemcoNotFoundError: If the response carries no memory.
+    """
+    if not response.HasField("memory"):
+        raise MemcoNotFoundError(grpc.StatusCode.NOT_FOUND, f"no memory was returned for {idx!r}")
+    return response.memory

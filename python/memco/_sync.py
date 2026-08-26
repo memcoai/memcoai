@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Any, TypeVar
@@ -15,7 +16,7 @@ from ._channel import build_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
 from ._provenance import provenance as _provenance
-from .errors import ClientConfigError, MemcoUnhealthyError, from_rpc_error
+from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
 from .operations import MemoryOperations
 from .types import Provenance
 
@@ -37,7 +38,7 @@ class Memco:
 
     Args:
         token: Credential to authenticate with, either a static Memco API key or
-            a WorkOS JWT. When omitted, ``MEMCO_API_TOKEN`` is used, falling back
+            a session token. When omitted, ``MEMCO_API_TOKEN`` is used, falling back
             to the deprecated ``MEMCO_API_KEY`` with a warning.
         host: Service endpoint, optionally including a port such as
             ``localhost:50051``. When omitted, ``MEMCO_API_HOST`` is used,
@@ -52,13 +53,12 @@ class Memco:
         verify_credentials: Whether to additionally call
             :meth:`~memco.operations.MemoryOperations.list_domains` on
             construction to prove the credential works. Off by default because
-            that call is rate-limited and would spend one of the caller's
-            per-minute tokens every time a client is built.
+            it makes an additional request every time a client is built.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`; supplying one is mainly useful in tests.
 
     Raises:
-        ClientConfigError: If no credential is available or the host is unusable.
+        MemcoConfigError: If no credential is available or the host is unusable.
         MemcoUnavailableError: If the service cannot be reached.
         MemcoUnhealthyError: If the service reports that it is not serving.
         MemcoAuthenticationError: If ``verify_credentials`` is set and the
@@ -92,6 +92,13 @@ class Memco:
         self._channel = build_channel(self._config)
         self._health = health_pb2_grpc.HealthStub(self._channel)
         self._closed = False
+        # close() must not destroy the channel while a call is in flight: grpc
+        # registers a call handle per method, and invoking one that was not
+        # already warmed dereferences the destroyed channel and takes the
+        # process down. A pre-check cannot prevent that, because the crash
+        # happens inside the call rather than as an exception.
+        self._state = threading.Condition()
+        self._inflight = 0
         self.memory = MemoryOperations(_pbg.MemoryServiceStub(self._channel), self._call)
         """The memory operations. See :class:`~memco.operations.MemoryOperations`."""
         try:
@@ -108,12 +115,18 @@ class Memco:
     def close(self) -> None:
         """Close the underlying channel.
 
-        Safe to call more than once. After closing, any further call raises
-        :class:`~memco.errors.ClientConfigError`.
+        Blocks until any in-flight call has finished, so a client shared between
+        threads can be closed from one of them safely. Safe to call more than
+        once. After closing, any further call raises
+        :class:`~memco.errors.MemcoConfigError`.
         """
-        if not self._closed:
+        with self._state:
+            if self._closed:
+                return
             self._closed = True
-            self._channel.close()
+            while self._inflight:
+                self._state.wait()
+        self._channel.close()
 
     def __enter__(self) -> Memco:
         """Enter a context manager.
@@ -177,20 +190,20 @@ class Memco:
             The response message.
 
         Raises:
-            ClientConfigError: If the client has been closed.
+            MemcoConfigError: If the client has been closed.
             MemcoAPIError: If the service returned an error status.
         """
-        if self._closed:
-            raise ClientConfigError("this client is closed; create a new one to make more calls")
         deadline = _deadline(timeout, self._config.timeout)
+        with self._state:
+            if self._closed:
+                raise MemcoConfigError("this client is closed; create a new one to make more calls")
+            self._inflight += 1
         try:
             return method(request, timeout=deadline)
         except grpc.RpcError as exc:
             raise from_rpc_error(exc) from exc
-        except ValueError as exc:
-            # close() flips the flag and then tears the channel down, so a call
-            # that passed the check above can still land on a dead channel.
-            # grpc signals that with a bare ValueError, which would escape raw.
-            raise ClientConfigError(
-                "this client is closed; create a new one to make more calls"
-            ) from exc
+        finally:
+            with self._state:
+                self._inflight -= 1
+                if self._closed and not self._inflight:
+                    self._state.notify_all()

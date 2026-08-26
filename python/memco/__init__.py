@@ -34,7 +34,7 @@ The rest of the surface is grouped by concern:
 
 Configuration comes from arguments first and the environment second:
 
-* ``MEMCO_API_TOKEN`` — the credential, either a static API key or a WorkOS JWT.
+* ``MEMCO_API_TOKEN`` — the credential: an API key or a session token.
   The older ``MEMCO_API_KEY`` still works but warns.
 * ``MEMCO_API_HOST`` — the endpoint, defaulting to ``grpc.spark.memco.ai:443``.
 
@@ -51,14 +51,7 @@ from ._aio import AsyncMemco
 from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
 from ._provenance import provenance
 from ._sync import Memco
-from ._validate import (
-    MAX_FEEDBACK,
-    MAX_IDX,
-    MAX_QUERY,
-    MAX_SOURCES,
-    MAX_TEXT,
-    NEW_MEMORY,
-)
+from ._validate import NEW_MEMORY
 
 # Read from the installed metadata so there is one source of truth: a release
 # that bumps pyproject.toml cannot leave this behind.
@@ -68,11 +61,6 @@ __all__ = [
     "DEFAULT_HOST",
     "DEFAULT_PORT",
     "DEFAULT_TIMEOUT",
-    "MAX_FEEDBACK",
-    "MAX_IDX",
-    "MAX_QUERY",
-    "MAX_SOURCES",
-    "MAX_TEXT",
     "NEW_MEMORY",
     "AsyncMemco",
     "Memco",

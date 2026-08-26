@@ -140,3 +140,18 @@ def test_feedback_rating_round_trips_through_the_wire():
         .to_proto()
         .HasField("comment")
     )
+
+
+# --- the hand-written enums must not drift from the contract -------------
+
+
+def test_data_source_matches_the_contract():
+    for member in types.DataSource:
+        assert pb.DataSource.Name(member.value) == f"DATA_SOURCE_{member.name}"
+    assert len(types.DataSource) == len(pb.DataSource.keys())
+
+
+def test_revert_outcome_matches_the_contract():
+    for member in types.RevertOutcome:
+        assert pb.RevertOutcome.Name(member.value) == f"REVERT_OUTCOME_{member.name}"
+    assert len(types.RevertOutcome) == len(pb.RevertOutcome.keys())

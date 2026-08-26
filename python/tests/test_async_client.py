@@ -98,7 +98,7 @@ async def test_server_errors_arrive_typed(
 
 async def test_validation_fires_before_any_rpc(async_client: AsyncMemco, harness: Harness):
     with pytest.raises(errors.MemcoInvalidRequestError):
-        await async_client.memory.search("q" * 1001, domain="coding")
+        await async_client.memory.search("   ", domain="coding")
     assert harness.memory.calls == []
 
 
@@ -145,7 +145,7 @@ async def test_all_eight_operations_round_trip(async_client: AsyncMemco, harness
 async def test_context_manager_closes_the_channel(harness: Harness):
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False) as connected:
         await connected.memory.list_domains()
-    with pytest.raises(errors.ClientConfigError, match="closed"):
+    with pytest.raises(errors.MemcoConfigError, match="closed"):
         await connected.memory.list_domains()
 
 

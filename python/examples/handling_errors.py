@@ -13,9 +13,9 @@ import time
 
 from memco import Memco
 from memco.errors import (
-    ClientConfigError,
     MemcoAPIError,
     MemcoAuthenticationError,
+    MemcoConfigError,
     MemcoInvalidRequestError,
     MemcoNotFoundError,
     MemcoPermissionError,
@@ -35,9 +35,13 @@ def connect() -> Memco | None:
     """
     try:
         return Memco()
-    except ClientConfigError as exc:
+    except MemcoConfigError as exc:
         # Nothing was sent: no token, or an unusable host or port.
         print(f"configuration problem: {exc}")
+    except MemcoTimeoutError as exc:
+        # Neither a MemcoUnavailableError nor a MemcoConfigError, so it needs
+        # its own branch even in a connection helper.
+        print(f"timed out reaching the service: {exc}")
     except MemcoUnhealthyError as exc:
         # The service answered and said it is not ready. The endpoint, TLS and
         # credential are all fine; the backend is not taking traffic.
@@ -120,10 +124,10 @@ def main() -> None:
     with client:
         search_with_retry(client, "how does authentication work", "coding")
 
-        # Local validation fires before anything is sent, so an oversized field
-        # costs no round trip and no rate-limit budget.
+        # Structural problems are caught before anything is sent. Field length
+        # limits belong to the service, so an over-long value is reported by it.
         try:
-            client.memory.search("q" * 2000, domain="coding")
+            client.memory.search("", domain="coding")
         except MemcoInvalidRequestError as exc:
             print(f"caught locally, nothing sent: {exc.message}")
 
