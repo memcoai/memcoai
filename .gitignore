@@ -18,6 +18,7 @@ Thumbs.db
 *.iml
 *.iws
 /out/
+.editorconfig
 
 # --- Python ---
 __pycache__/
@@ -61,11 +62,13 @@ go.work.sum
 *.so
 coverage.out
 
-# --- Shared build output (Python sdists/wheels, Node bundles) ---
+# --- Shared build output (Python sdists/wheels, Node bundles, Sphinx) ---
 build/
+_build/
 dist/
 coverage/
 
 # NOTE: generated gRPC/protobuf client code (*.pb.go, *_pb2.py, *_pb2_grpc.py,
 # *_pb.js, *_pb.d.ts) is intentionally NOT ignored. This repo publishes those
 # clients; a `go get` / `pip install` consumer cannot run codegen.
+

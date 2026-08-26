@@ -1,0 +1,48 @@
+# Install once with:  pre-commit install
+# Run over everything: pre-commit run --all-files
+#
+# Generated code under <lang>/client/ is the export's to produce and is never
+# reformatted here, so every hook excludes it.
+
+exclude: '^(proto/|[a-z]+/client/)'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^python/
+      - id: ruff-format
+        files: ^python/
+
+  # Run from the project's own environment so it sees the installed package and
+  # the generated stubs, which an isolated hook environment would not.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict)
+        entry: bash -c 'cd python && uv run mypy'
+        language: system
+        types: [python]
+        files: ^python/
+        pass_filenames: false
+
+      - id: provenance
+        name: generated client matches its contract
+        entry: python3 scripts/verify_provenance.py
+        language: system
+        pass_filenames: false
+        files: '^(proto/|[a-z]+/client/|python/pyproject\.toml)'

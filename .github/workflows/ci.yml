@@ -1,0 +1,285 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Public repository: grant nothing by default, and let a fork PR run every
+# hermetic job without needing a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.9.7"
+
+jobs:
+  # ---- cheap, runs on every push -----------------------------------------
+
+  provenance:
+    name: Provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      # Standard library only, so this needs no dependency install at all.
+      - run: python scripts/verify_provenance.py
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev
+      - run: uv run mypy
+
+  test:
+    name: Test (3.12)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev
+      - run: uv run pytest -q
+
+  # ---- longer, pull requests and main only -------------------------------
+
+  test-matrix:
+    name: Test (${{ matrix.python }})
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -q
+
+  build:
+    name: Build and install
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Build the wheel
+        run: uv build --wheel
+
+      # Validated with `packaging`, the same parser PyPI's own index uses.
+      # `twine check` is not used here: hatchling emits Metadata-Version 2.5 and
+      # no released twine reads it yet, so twine would reject a valid wheel.
+      - name: Check distribution metadata
+        run: |
+          uv run --no-project --with packaging python - <<'PY'
+          import glob
+          import zipfile
+
+          from packaging.metadata import Metadata
+
+          archive = zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0])
+          name = next(n for n in archive.namelist() if n.endswith("METADATA"))
+          parsed = Metadata.from_email(archive.read(name), validate=True)
+          print("metadata valid:", parsed.name, parsed.version)
+          PY
+
+      # The generated code and the SDK are two PEP 420 namespace portions that
+      # are merged at build time. That merge half-works silently: one portion
+      # alone imports fine, so only an install proves the wheel is whole.
+      - name: Install into a clean environment and prove the merge
+        run: |
+          uv venv --python 3.12 /tmp/verify
+          uv pip install --no-cache --python /tmp/verify/bin/python dist/*.whl
+          uv pip install --no-cache --python /tmp/verify/bin/python mypy types-protobuf
+          cd /tmp
+          /tmp/verify/bin/python - <<'PY'
+          import importlib.resources as resources
+
+          import memco.client as mc
+          from memco.memory.v1 import memory_pb2 as pb
+
+          assert pb.DESCRIPTOR.name == "memco/memory/v1/memory.proto"
+          assert mc.provenance().server_commit, "provenance descriptor missing from the wheel"
+          assert (resources.files("memco") / "py.typed").is_file(), "py.typed did not ship"
+          print("wheel is whole:", len(mc.__all__), "public symbols")
+          PY
+
+      # Importing one known module would not notice a future generated
+      # subpackage being dropped from the wheel, so compare against the source.
+      - name: Every generated module reached the wheel
+        run: |
+          python - <<'PY'
+          import glob
+          import pathlib
+          import zipfile
+
+          source = {
+              str(p.relative_to("client")).replace("\\", "/")
+              for p in pathlib.Path("client/memco").rglob("*")
+              if p.is_file() and p.suffix in {".py", ".pyi"}
+          }
+          shipped = set(zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0]).namelist())
+          missing = sorted(source - shipped)
+          assert not missing, f"generated modules absent from the wheel: {missing}"
+          print(f"all {len(source)} generated modules shipped")
+          PY
+
+      # A missing py.typed makes every annotation invisible downstream without
+      # failing anything, so assert a consumer actually sees the types.
+      - name: Prove the installed package is seen as typed
+        run: |
+          cd /tmp
+          cat > consumer.py <<'PY'
+          from memco.client import Client
+
+          wrong: int = Client(token="t", check_health=False).provenance().server_commit
+          PY
+          /tmp/verify/bin/python -m mypy consumer.py 2>&1 | tee out.txt
+          grep -q 'Incompatible types in assignment' out.txt \
+            || { echo "installed package is not seen as typed"; exit 1; }
+
+  docs:
+    name: Docs
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      # -W turns warnings into errors, so a cross-reference that stops
+      # resolving fails here rather than rotting in the published reference.
+      - run: uv run --extra docs sphinx-build -b html -W --keep-going docs docs/_build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: docs
+          path: python/docs/_build
+
+  runtime-compat:
+    name: Runtime compat (${{ matrix.label }})
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The floors the generated code asserts at import time.
+          - label: oldest
+            pins: "grpcio==1.76.0 protobuf==6.31.1"
+          # protobuf's cross-version guarantee covers gencode on the next major.
+          # This is what makes the "<8" upper bound a verified fact rather than
+          # an assumption; narrow requirements.txt if it ever fails.
+          - label: newest
+            pins: "grpcio protobuf>=7,<8"
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Import the generated modules against ${{ matrix.label }} pins
+        run: |
+          PYTHONPATH=client uv run --no-project --python 3.12 \
+            $(for pin in ${{ matrix.pins }}; do printf -- '--with %s ' "$pin"; done) \
+            python -c "
+          import google.protobuf, grpc
+          from memco.memory.v1 import memory_pb2 as pb, memory_pb2_grpc
+          print('protobuf', google.protobuf.__version__, 'grpcio', grpc.__version__, '->', pb.DESCRIPTOR.name)
+          "
+
+  # ---- live, merge to main only ------------------------------------------
+
+  integration:
+    name: Live smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The preview endpoint is tied to a server pull request and will change.
+    # Keep it a repository variable so moving it needs no code change.
+    environment: integration
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          # This job runs with a live API token in its environment; it has no
+          # reason to also hold a push credential in .git/config.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --extra dev
+      - name: Exercise the real service
+        env:
+          MEMCO_API_HOST: ${{ vars.MEMCO_API_HOST }}
+          MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+        run: |
+          uv run python - <<'PY'
+          from memco.client import Client, provenance
+
+          with Client() as client:
+              print("contract:", provenance().server_commit)
+              domains = client.list_domains().domains
+              print("domains:", [d.slug for d in domains])
+              assert domains, "the service returned no domains"
+              session = client.start_session(domains[0].slug)
+              result = client.search("gRPC health checking", session_id=session.session_id)
+              print("search returned", len(result.memories), "memories")
+          PY

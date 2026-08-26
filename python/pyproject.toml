@@ -1,0 +1,131 @@
+[build-system]
+requires = ["hatchling>=1.25", "hatch-requirements-txt>=0.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "memco"
+version = "0.1.0"
+description = "Python SDK for Memco Shared Memory."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "mypy>=1.11",
+    "types-protobuf",
+    "ruff>=0.6",
+]
+docs = [
+    "sphinx>=7.3",
+    "furo>=2024.1",
+]
+
+# The generated code is a PEP 420 namespace portion under client/; the SDK is a
+# second portion under memco/. They are merged into one package here, by a
+# whole-tree map that also picks up any future generated subpackage.
+# `memco/` deliberately has no __init__.py: a regular package there wins the
+# import path scan and makes the generated portion invisible.
+[tool.hatch.build.targets.wheel]
+packages = ["memco"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"client/memco" = "memco"
+"client/SDK_PROVENANCE.yaml" = "memco/SDK_PROVENANCE.yaml"
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["client/requirements.txt", "deps/sdk.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Generated code is the export's to lint, not ours.
+extend-exclude = ["client"]
+
+[tool.ruff.lint]
+select = [
+    "A",      # shadowed builtins
+    "ANN",    # missing annotations
+    "ARG",    # unused arguments
+    "B",      # likely bugs
+    "C4",     # comprehension rewrites
+    "DTZ",    # naive datetimes
+    "E",      # pycodestyle
+    "EM",     # exception messages assigned to a name first
+    "ERA",    # commented-out code
+    "F",      # pyflakes
+    "I",      # import sorting
+    "ISC",    # implicit string concatenation
+    "N",      # naming
+    "PIE",    # misc lints
+    "PL",     # pylint
+    "PT",     # pytest style
+    "PTH",    # pathlib over os.path
+    "RET",    # return simplifications
+    "RUF",    # ruff's own
+    "S",      # security (bandit)
+    "SIM",    # simplifications
+    "SLF",    # private member access
+    "T20",    # stray print/pprint
+    "TID",    # tidy imports
+    "TRY",    # exception antipatterns
+    "UP",     # pyupgrade
+    "W",      # pycodestyle warnings
+    "D",      # docstrings
+]
+ignore = [
+    # The class docstring documents the constructor; a separate __init__
+    # docstring would duplicate it.
+    "D107",
+    # Long messages read better inline than hoisted to a variable first.
+    "EM101",
+    "EM102",
+    "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: names are the documentation, asserts are the point, and reaching into
+# a private attribute is how several regressions are provoked.
+# Tests: names are the documentation, asserts are the point, reaching into a
+# private attribute is how several regressions are provoked, unused fixture
+# arguments are how fixtures are requested, and literal expectations are
+# clearer inline than hoisted to constants. The credentials are fixtures.
+"tests/*" = [
+    "ANN", "ARG", "D100", "D101", "D102", "D103", "D104", "D105",
+    "PLR2004", "S101", "S105", "S106", "SLF001",
+]
+# Examples are meant to be read and run: printing is their output.
+# Examples are meant to be read and run: printing is their output, and the
+# error-handling example returns early from each branch on purpose.
+"examples/*" = ["T20", "INP001", "PLR0911", "TRY300"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.mypy]
+strict = true
+files = ["memco/client", "tests"]
+mypy_path = "client"
+namespace_packages = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["grpc.*", "grpc_health.*", "memco.memory.*"]
+ignore_missing_imports = true
+
+# Test functions carry no annotations by convention; everything they call is
+# still checked against the SDK's own strict types.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
