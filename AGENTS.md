@@ -6,7 +6,17 @@ repository conventions, the architecture skeleton, and how to build and test.
 
 ## Repository
 
-This repository contains the code for the SDK used to build applications using Memco Shared Memory, available through generated GRPC clients.
+This repository is the public home of the official Memco SDKs. Each language directory holds a
+hand-written SDK wrapping a gRPC client generated from the service contract, published to that
+language's package registry for developers who have no access to Memco's servers. The contract and
+the generated clients come from the private server repository and are emptied and rewritten on each
+export, so they are never edited here; everything else is hand-written. The SDK's job is what the
+generated client does not do — resolving credentials and endpoints, verifying the connection,
+presenting results as the language's own types, turning every failure into a typed error, and
+surfacing what the service reports about its limits and deprecations. That boundary is the thing to
+hold on to: anything a caller can observe is this repository's concern, and anything only the
+service can decide stays the service's, because an SDK that hardcodes a value the service owns goes
+stale and starts refusing work the service would have accepted.
 
 ## Your key considerations
 
