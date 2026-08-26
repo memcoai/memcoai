@@ -6,7 +6,8 @@ health gate; this module owns only the calls.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from . import _convert, _requests
 from .types import (
@@ -48,7 +49,6 @@ class MemoryOperations:
         self._stub = stub
         self._call = call
 
-
     def list_domains(self, *, timeout: float | None = None) -> DomainList:
         """List the memory domains this credential may name.
 
@@ -69,9 +69,7 @@ class MemoryOperations:
             >>> for domain in client.memory.list_domains().domains:
             ...     print(domain.slug, "-", domain.summary)
         """
-        response = self._call(
-            self._stub.ListDomains, _requests.list_domains_request(), timeout
-        )
+        response = self._call(self._stub.ListDomains, _requests.list_domains_request(), timeout)
         return _convert.to_domain_list(response)
 
     def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
@@ -146,9 +144,7 @@ class MemoryOperations:
             ...     for insight in memory.insights:
             ...         print(insight.title, insight.updated)
         """
-        request = _requests.search_request(
-            query, domain=domain, session_id=session_id, tags=tags
-        )
+        request = _requests.search_request(query, domain=domain, session_id=session_id, tags=tags)
         return _convert.to_search_result(self._call(self._stub.Search, request, timeout))
 
     def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
@@ -393,7 +389,6 @@ class AsyncMemoryOperations:
         self._stub = stub
         self._call = call
 
-
     async def list_domains(self, *, timeout: float | None = None) -> DomainList:
         """List the memory domains this credential may name.
 
@@ -492,9 +487,7 @@ class AsyncMemoryOperations:
             ...     for insight in memory.insights:
             ...         print(insight.title, insight.updated)
         """
-        request = _requests.search_request(
-            query, domain=domain, session_id=session_id, tags=tags
-        )
+        request = _requests.search_request(query, domain=domain, session_id=session_id, tags=tags)
         return _convert.to_search_result(await self._call(self._stub.Search, request, timeout))
 
     async def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
@@ -588,9 +581,7 @@ class AsyncMemoryOperations:
             tags=tags,
             source=source,
         )
-        return _convert.to_write_result(
-            await self._call(self._stub.CreateMemory, request, timeout)
-        )
+        return _convert.to_write_result(await self._call(self._stub.CreateMemory, request, timeout))
 
     async def enrich_memory(
         self,
@@ -648,9 +639,7 @@ class AsyncMemoryOperations:
             sources=sources,
             source=source,
         )
-        return _convert.to_write_result(
-            await self._call(self._stub.EnrichMemory, request, timeout)
-        )
+        return _convert.to_write_result(await self._call(self._stub.EnrichMemory, request, timeout))
 
     async def share_feedback(
         self,
@@ -694,7 +683,9 @@ class AsyncMemoryOperations:
             await self._call(self._stub.ShareFeedback, request, timeout)
         )
 
-    async def revert_memory(self, operation_id: str, *, timeout: float | None = None) -> RevertResult:
+    async def revert_memory(
+        self, operation_id: str, *, timeout: float | None = None
+    ) -> RevertResult:
         """Undo one of this caller's own writes.
 
         Every outcome is a successful call. An operation that was not found, has

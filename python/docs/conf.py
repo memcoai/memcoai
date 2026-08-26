@@ -1,9 +1,19 @@
 """Sphinx configuration for the Memco Python SDK reference."""
 
+import pathlib
+import re
 from importlib.metadata import version as _version
 
+# Taken from the licence so the footer cannot drift from the legal notice.
+_LICENCE_YEAR = re.search(
+    r"Copyright \(c\) (\d{4})", (pathlib.Path(__file__).parent.parent / "LICENSE").read_text()
+).group(1)
+
 project = "memco"
-author = "Memco"
+author = "Memco Labs, Inc."
+# Sphinx does not derive the footer notice from `author`; without this it
+# renders a bare "Copyright ©".
+copyright = f"{_LICENCE_YEAR} {author}"  # noqa: A001 - the name Sphinx requires
 release = _version("memco")
 version = release
 
@@ -38,6 +48,11 @@ add_module_names = False
 
 intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
 
+# Report every unresolved cross-reference. Without this, `-W` in CI catches
+# nothing: a broken :class: or :meth: in a docstring resolves to nothing
+# silently and rots in the published reference.
+nitpicky = True
+
 # Third-party types the SDK exposes but does not own. Sphinx cannot resolve
 # them without an inventory, and grpc publishes none.
 nitpick_ignore = [
@@ -45,8 +60,27 @@ nitpick_ignore = [
     ("py:class", "grpc.Channel"),
     ("py:class", "grpc.RpcError"),
     ("py:class", "grpc.ClientCallDetails"),
+    # Generated protobuf types, returned by the to_proto() helpers. They ship
+    # no documentation inventory and are an implementation detail.
+    ("py:class", "memco.memory.v1.memory_pb2.Tag"),
+    ("py:class", "memco.memory.v1.memory_pb2.FeedbackRating"),
+    # Set in __init__ rather than at class level, so napoleon renders them as
+    # instance-variable fields, which are not cross-reference targets.
+    ("py:attr", "MemcoAPIError.code"),
+    ("py:attr", "MemcoAPIError.message"),
 ]
 
 exclude_patterns = ["_build"]
 html_theme = "furo"
 html_title = f"memco {release}"
+
+# The wordmark is near-black, so it needs a light variant to stay visible when
+# the theme switches. Both are shared with the repository READMEs.
+html_static_path = ["../../assets"]
+html_theme_options = {
+    "light_logo": "logo.svg",
+    "dark_logo": "logo-dark.svg",
+    "source_repository": "https://github.com/memcoai/memco/",
+    "source_branch": "main",
+    "source_directory": "python/docs/",
+}

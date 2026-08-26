@@ -63,6 +63,9 @@ jobs:
 
   test:
     name: Test (3.12)
+    # Pinned explicitly: without --python, uv resolves the interpreter from
+    # python/.python-version (the supported floor), so this job would silently
+    # duplicate the matrix's 3.10 run and leave 3.12 untested.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -73,8 +76,8 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - run: uv sync --extra dev
-      - run: uv run pytest -q
+      - run: uv sync --extra dev --python 3.12
+      - run: uv run --python 3.12 pytest -q
 
   # ---- longer, pull requests and main only -------------------------------
 
@@ -85,7 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.13"]
+        python: ["3.10", "3.11", "3.13"]  # 3.12 is covered by the `test` job
     defaults:
       run:
         working-directory: python
@@ -276,10 +279,10 @@ jobs:
 
           with Client() as client:
               print("contract:", provenance().server_commit)
-              domains = client.list_domains().domains
+              domains = client.memory.list_domains().domains
               print("domains:", [d.slug for d in domains])
               assert domains, "the service returned no domains"
-              session = client.start_session(domains[0].slug)
-              result = client.search("gRPC health checking", session_id=session.session_id)
+              session = client.memory.start_session(domains[0].slug)
+              result = client.memory.search("gRPC health checking", session_id=session.session_id)
               print("search returned", len(result.memories), "memories")
           PY

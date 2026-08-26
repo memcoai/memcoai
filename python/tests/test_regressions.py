@@ -7,11 +7,15 @@ import sys
 import threading
 from datetime import date
 
+import grpc
 import pytest
+from grpc_health.v1 import health_pb2
 
 from memco.client import AsyncClient, Client, errors
 from memco.client import _requests as requests
+from memco.client._config import DEFAULT_HOST, DEFAULT_PORT, resolve
 from memco.client._convert import _to_date
+from memco.client._provenance import parse
 from memco.client.types import DataSource, Tag
 
 from .conftest import TOKEN
@@ -214,3 +218,116 @@ def test_async_client_is_not_bound_to_the_wrong_event_loop(
     # A channel bound to a dead loop leaves an un-awaited task behind.
     assert "was never awaited" not in finished.stderr
     assert "attached to a different loop" not in finished.stderr
+
+
+# --- review: a blank host fell through to the production endpoint ---------
+
+
+def test_blank_host_is_rejected_not_silently_defaulted():
+    # `host=os.environ.get("MY_HOST", "")` and an unset CI variable both render
+    # as "". Falling through to the production default would send a live token
+    # somewhere the caller did not choose.
+    with pytest.raises(errors.MemcoConfigError, match="host"):
+        resolve(token="t", host="   ", env={})
+
+
+def test_blank_host_env_var_is_treated_as_unset():
+    cfg = resolve(token="t", env={"MEMCO_API_HOST": ""})
+    assert cfg.host == DEFAULT_HOST
+
+
+# --- review: IPv6 literals were rejected or silently mis-parsed -----------
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("[2001:db8::1]", ("2001:db8::1", DEFAULT_PORT)),
+        ("[2001:db8::1]:50051", ("2001:db8::1", 50051)),
+        ("[::1]", ("::1", DEFAULT_PORT)),
+        ("2001:db8::1", ("2001:db8::1", DEFAULT_PORT)),
+        ("::1", ("::1", DEFAULT_PORT)),
+    ],
+)
+def test_ipv6_hosts_parse(host, expected):
+    cfg = resolve(token="t", host=host, env={})
+    assert (cfg.host, cfg.port) == expected
+
+
+def test_ipv4_and_names_still_parse():
+    assert resolve(token="t", host="localhost:50051", env={}).port == 50051
+    assert resolve(token="t", host="10.0.0.1:443", env={}).host == "10.0.0.1"
+    assert resolve(token="t", host="example.test", env={}).port == DEFAULT_PORT
+
+
+# --- review: an RpcError whose code() returns None escaped untyped --------
+
+
+def test_an_rpc_error_with_no_code_still_becomes_a_memco_error():
+    class Codeless(grpc.RpcError):  # type: ignore[misc]
+        def code(self):
+            return None
+
+        def details(self):
+            return "no code"
+
+    translated = errors.from_rpc_error(Codeless())
+    assert isinstance(translated, errors.MemcoAPIError)
+    assert str(translated)
+
+
+# --- review: connect() closed the client permanently on a failed probe ----
+
+
+async def test_connect_can_be_retried_after_a_transient_failure(harness: Harness):
+    connected = AsyncClient(token=TOKEN, host=harness.address, tls=False)
+    harness.health.status = health_pb2.HealthCheckResponse.NOT_SERVING
+    with pytest.raises(errors.MemcoUnhealthyError):
+        await connected.connect()
+
+    # The docstring promises a repeat simply repeats the checks.
+    harness.health.status = health_pb2.HealthCheckResponse.SERVING
+    await connected.connect()
+    await connected.memory.list_domains()
+    await connected.close()
+
+
+# --- review: quota and rate-limit markers overlapped ---------------------
+
+
+@pytest.mark.parametrize(
+    ("message", "kind"),
+    [
+        ("rate limit exceeded", errors.ResourceExhaustedKind.RATE_LIMIT),
+        ("You've reached your per-minute request limit", errors.ResourceExhaustedKind.RATE_LIMIT),
+        ("You've reached your daily search limit", errors.ResourceExhaustedKind.QUOTA),
+        ("you have reached your daily rate limit", errors.ResourceExhaustedKind.QUOTA),
+        ("monthly quota exhausted", errors.ResourceExhaustedKind.QUOTA),
+        ("something else", errors.ResourceExhaustedKind.UNKNOWN),
+    ],
+)
+def test_rate_limit_and_quota_are_told_apart(message, kind):
+    class Exhausted(grpc.RpcError):  # type: ignore[misc]
+        def code(self):
+            return grpc.StatusCode.RESOURCE_EXHAUSTED
+
+        def details(self):
+            return message
+
+    translated = errors.from_rpc_error(Exhausted())
+    assert isinstance(translated, errors.MemcoResourceExhaustedError)
+    assert translated.kind is kind
+
+
+# --- review: a flush-left protos list read as empty -----------------------
+
+
+def test_a_flush_left_protos_list_parses():
+    # PyYAML's default dump style writes sequences at the parent's indent.
+    parsed = parse("server_commit: c\nprotos:\n- path: a.proto\n  sha256: b\n")
+    assert [(r.path, r.sha256) for r in parsed.protos] == [("a.proto", "b")]
+
+
+def test_extra_spaces_after_the_dash_parse():
+    parsed = parse("server_commit: c\nprotos:\n  -   path: a.proto\n      sha256: b\n")
+    assert parsed.protos[0].path == "a.proto"

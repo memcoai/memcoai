@@ -7,7 +7,8 @@ how they await the response.
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence, cast
+from collections.abc import Iterable, Sequence
+from typing import cast
 
 from memco.memory.v1 import memory_pb2 as _pb
 

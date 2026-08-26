@@ -74,7 +74,7 @@ def _to_date(value: str) -> date | None:
     if not value:
         return None
     try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
+        return datetime.strptime(value, "%Y-%m-%d").date()  # noqa: DTZ007
     except ValueError:
         return None
 

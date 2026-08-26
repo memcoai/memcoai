@@ -16,7 +16,7 @@ server-side one the same way.
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 import grpc
 
@@ -55,8 +55,8 @@ __all__ = [
     "check_domain",
     "check_feedback",
     "check_idx",
-    "check_operation_id",
     "check_memory_idx",
+    "check_operation_id",
     "check_query",
     "check_scope",
     "check_session_id",

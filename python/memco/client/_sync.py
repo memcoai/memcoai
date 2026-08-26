@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from types import TracebackType
-from typing import Any, Callable, Mapping, Sequence, TypeVar
+from typing import Any, TypeVar
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
-
 from memco.memory.v1 import memory_pb2_grpc as _pbg
 
 from ._channel import build_channel
-from ._config import DEFAULT_TIMEOUT, deadline as _deadline, resolve
+from ._config import DEFAULT_TIMEOUT, resolve
+from ._config import deadline as _deadline
+from ._memory import MemoryOperations
 from ._provenance import provenance as _provenance
 from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
-from ._memory import MemoryOperations
 from .types import Provenance
 
 _T = TypeVar("_T")
@@ -48,9 +49,10 @@ class Client:
         check_health: Whether to probe the health endpoint on construction. Set
             to ``False`` to construct without touching the network.
         verify_credentials: Whether to additionally call
-            :meth:`list_domains` on construction to prove the credential works.
-            Off by default because that call is rate-limited and would spend one
-            of the caller's per-minute tokens every time a client is built.
+            :meth:`~memco.client._memory.MemoryOperations.list_domains` on
+            construction to prove the credential works. Off by default because
+            that call is rate-limited and would spend one of the caller's
+            per-minute tokens every time a client is built.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`; supplying one is mainly useful in tests.
 

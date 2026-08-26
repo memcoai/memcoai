@@ -9,7 +9,8 @@ from __future__ import annotations
 import inspect
 from collections.abc import Set as AbstractSet
 
-from memco.client import AsyncClient, Client
+import memco.client as package
+from memco.client import AsyncClient, Client, _memory, errors, types
 from memco.client._memory import AsyncMemoryOperations, MemoryOperations
 
 # Namespaces the client exposes, paired sync-to-async. A second service added
@@ -88,6 +89,21 @@ def test_every_operation_is_documented_with_an_example():
                 doc = inspect.getdoc(getattr(cls, name)) or ""
                 assert "Args:" in doc, f"{cls.__name__}.{name} lacks Args"
                 assert "Example:" in doc, f"{cls.__name__}.{name} lacks an Example"
+
+
+def test_no_public_module_documents_a_flat_call():
+    # The operations moved onto client.memory. Any docstring anywhere in the
+    # public surface that still shows client.<operation>( is a copy-pasteable
+    # AttributeError, and every one of these modules is published by Sphinx.
+    operations = public_methods(MemoryOperations)
+    for module in (package, errors, types, _memory):
+        source = inspect.getsource(module)
+        for number, line in enumerate(source.splitlines(), 1):
+            for operation in operations:
+                flat = f"client.{operation}("
+                assert flat not in line, (
+                    f"{module.__name__}:{number} documents a flat call: {line.strip()}"
+                )
 
 
 def test_examples_use_the_namespaced_call_form():

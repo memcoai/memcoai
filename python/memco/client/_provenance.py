@@ -67,7 +67,7 @@ def _value(raw: str, *, where: str) -> str:
     value = _strip_comment(raw).strip()
     if value in ("|", ">") or value[:2] in ("|-", ">-", "|+", ">+"):
         raise MemcoConfigError(f"{RESOURCE} uses an unsupported block scalar for {where}")
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":  # noqa: PLR2004
         return value[1:-1]
     return value
 
@@ -168,6 +168,9 @@ def parse(text: str) -> Provenance:
 def _read_protos(lines: list[tuple[int, str]], start: int) -> list[ProtoRecord]:
     """Read the ``protos`` list that begins at the given line.
 
+    A YAML sequence may be indented under its key or written flush with it —
+    the latter is what most emitters produce by default — so both are accepted.
+
     Args:
         lines: Every meaningful line of the document.
         start: Index of the ``protos:`` line itself.
@@ -178,11 +181,13 @@ def _read_protos(lines: list[tuple[int, str]], start: int) -> list[ProtoRecord]:
     Raises:
         MemcoConfigError: If an entry lacks a path or a checksum.
     """
-    body = []
+    base = lines[start][0]
+    body: list[tuple[int, str]] = []
     for indent, content in lines[start + 1 :]:
-        if indent == 0:
+        if indent > base or (indent == base and content.startswith("-")):
+            body.append((indent, content))
+        else:
             break
-        body.append((indent, content))
 
     records: list[ProtoRecord] = []
     entry: list[tuple[int, str]] = []
@@ -199,9 +204,12 @@ def _read_protos(lines: list[tuple[int, str]], start: int) -> list[ProtoRecord]:
         records.append(ProtoRecord(path=fields["path"], sha256=fields["sha256"]))
 
     for indent, content in body:
-        if indent == entry_indent and content.startswith("- "):
+        if indent == entry_indent and content.startswith("-"):
             flush()
-            entry = [(indent + 2, content[2:].strip())]
+            # The dash may be followed by any amount of space; the first field
+            # sits wherever that lands, and its siblings align with it.
+            rest = content[1:]
+            entry = [(indent + 1 + (len(rest) - len(rest.lstrip())), rest.strip())]
         elif entry:
             entry.append((indent, content))
     flush()

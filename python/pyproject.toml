@@ -6,8 +6,10 @@ build-backend = "hatchling.build"
 name = "memco"
 version = "0.1.0"
 description = "Python SDK for Memco Shared Memory."
+authors = [{ name = "Memco Labs, Inc." }]
 readme = "README.md"
-license = "Apache-2.0"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
@@ -46,8 +48,10 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-# Generated code is the export's to lint, not ours.
-extend-exclude = ["client"]
+# Generated code is the export's to lint, not ours. The trailing "/**" anchors
+# this to the project root: a bare "client" matches any path segment, so it also
+# excluded memco/client/ and silently left the entire hand-written SDK unlinted.
+extend-exclude = ["client/**"]
 
 [tool.ruff.lint]
 select = [
@@ -88,11 +92,21 @@ ignore = [
     "EM101",
     "EM102",
     "TRY003",
+    # Every wide signature in this package is keyword-only, so the ordering and
+    # readability problem this rule targets does not arise. The operations take
+    # the fields their requests carry.
+    "PLR0913",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests: names are the documentation, asserts are the point, and reaching into
-# a private attribute is how several regressions are provoked.
+# grpc ships no type information, so every signature this SDK exposes to it is
+# `Any` at the boundary: interceptor callbacks whose shape grpc fixes, stub
+# methods, and the channel type itself. Narrowing these would be a fiction.
+"memco/client/_auth.py" = ["ANN401"]
+"memco/client/_channel.py" = ["ANN401"]
+"memco/client/_memory.py" = ["ANN401"]
+"memco/client/_aio.py" = ["ANN401"]
+"memco/client/_sync.py" = ["ANN401"]
 # Tests: names are the documentation, asserts are the point, reaching into a
 # private attribute is how several regressions are provoked, unused fixture
 # arguments are how fixtures are requested, and literal expectations are
@@ -101,7 +115,6 @@ ignore = [
     "ANN", "ARG", "D100", "D101", "D102", "D103", "D104", "D105",
     "PLR2004", "S101", "S105", "S106", "SLF001",
 ]
-# Examples are meant to be read and run: printing is their output.
 # Examples are meant to be read and run: printing is their output, and the
 # error-handling example returns early from each branch on purpose.
 "examples/*" = ["T20", "INP001", "PLR0911", "TRY300"]

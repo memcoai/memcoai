@@ -42,6 +42,8 @@ raw :class:`grpc.RpcError` ever reaches a caller.
 
 from __future__ import annotations
 
+from importlib.metadata import version as _metadata_version
+
 from . import errors, types
 from ._aio import AsyncClient
 from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
@@ -80,8 +82,8 @@ from .types import (
     Insight,
     Instructions,
     Memory,
-    Provenance,
     ProtoRecord,
+    Provenance,
     RevertOutcome,
     RevertResult,
     SearchResult,
@@ -90,7 +92,9 @@ from .types import (
     WriteResult,
 )
 
-__version__ = "0.1.0"
+# Read from the installed metadata so there is one source of truth: a release
+# that bumps pyproject.toml cannot leave this behind.
+__version__ = _metadata_version("memco")
 
 __all__ = [
     "DEFAULT_HOST",
@@ -112,7 +116,6 @@ __all__ = [
     "FeedbackResult",
     "Insight",
     "Instructions",
-    "Memory",
     "MemcoAPIError",
     "MemcoAuthenticationError",
     "MemcoConfigError",
@@ -125,8 +128,9 @@ __all__ = [
     "MemcoTimeoutError",
     "MemcoUnavailableError",
     "MemcoUnhealthyError",
-    "Provenance",
+    "Memory",
     "ProtoRecord",
+    "Provenance",
     "ResourceExhaustedKind",
     "RevertOutcome",
     "RevertResult",

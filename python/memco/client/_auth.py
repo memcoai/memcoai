@@ -10,7 +10,8 @@ development and tests.
 from __future__ import annotations
 
 from collections import namedtuple
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import grpc
 
@@ -94,11 +95,7 @@ def _merged(metadata: Sequence[tuple[str, Any]] | None, token: str) -> list[tupl
     Returns:
         The combined metadata, with exactly one credential entry, last.
     """
-    kept = [
-        (key, value)
-        for key, value in (metadata or ())
-        if key.lower() != AUTH_HEADER
-    ]
+    kept = [(key, value) for key, value in (metadata or ()) if key.lower() != AUTH_HEADER]
     return [*kept, _header(token)]
 
 
@@ -113,7 +110,7 @@ class AuthInterceptor(grpc.UnaryUnaryClientInterceptor):  # type: ignore[misc]
         """
         self._token = token
 
-    def intercept_unary_unary(  # noqa: D102 - signature fixed by grpc
+    def intercept_unary_unary(
         self,
         continuation: Any,
         client_call_details: grpc.ClientCallDetails,
@@ -143,7 +140,7 @@ class AsyncAuthInterceptor(grpc.aio.UnaryUnaryClientInterceptor):  # type: ignor
         """
         self._token = token
 
-    async def intercept_unary_unary(  # noqa: D102 - signature fixed by grpc
+    async def intercept_unary_unary(
         self,
         continuation: Any,
         client_call_details: Any,

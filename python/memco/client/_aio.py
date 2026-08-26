@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
-
 from memco.memory.v1 import memory_pb2_grpc as _pbg
 
 from ._channel import build_async_channel
-from ._config import DEFAULT_TIMEOUT, deadline as _deadline, resolve
+from ._config import DEFAULT_TIMEOUT, resolve
+from ._config import deadline as _deadline
+from ._memory import AsyncMemoryOperations
 from ._provenance import provenance as _provenance
 from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
-from ._memory import AsyncMemoryOperations
 from .types import Provenance
 
 __all__ = ["AsyncClient"]
@@ -45,8 +46,10 @@ class _LazyStub:
         Returns:
             The bound stub method.
         """
-        self._client._open()
-        return getattr(self._client._stub, name)
+        # This stand-in exists to reach the owning client's channel; the
+        # privacy it crosses is its own module's.
+        self._client._open()  # noqa: SLF001
+        return getattr(self._client._stub, name)  # noqa: SLF001
 
 
 class AsyncClient:
@@ -67,8 +70,9 @@ class AsyncClient:
         timeout: Default per-call deadline in seconds.
         check_health: Whether :meth:`connect` probes the health endpoint.
         verify_credentials: Whether :meth:`connect` also calls
-            :meth:`list_domains` to prove the credential works. Off by default
-            because that call is rate-limited.
+            :meth:`~memco.client._memory.MemoryOperations.list_domains` to prove
+            the credential works. Off by default because that call is
+            rate-limited.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`.
 
@@ -150,9 +154,23 @@ class AsyncClient:
             if self._verify_credentials_on_connect:
                 await self.memory.list_domains()
         except BaseException:
-            await self.close()
+            # Drop the channel but stay usable: a failed probe is often a
+            # transient blip, and this method documents itself as repeatable.
+            await self._reset()
             raise
         return self
+
+    async def _reset(self) -> None:
+        """Tear the channel down without closing the client.
+
+        Leaves the client able to open a fresh channel on the next call, which
+        is what makes :meth:`connect` retryable after a transient failure.
+        """
+        if self._channel is not None:
+            channel, self._channel = self._channel, None
+            self._stub = None
+            self._health = None
+            await channel.close(grace=None)
 
     async def close(self) -> None:
         """Close the underlying channel.

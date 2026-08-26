@@ -162,3 +162,13 @@ def test_a_duplicated_field_in_one_entry_is_rejected():
 def test_crlf_line_endings_parse():
     p = parse("server_commit: c\r\nprotos:\r\n  - path: a\r\n    sha256: b\r\n")
     assert (p.server_commit, p.protos[0].path) == ("c", "a")
+
+
+def test_the_packaged_licence_matches_the_repository_root():
+    # The wheel needs its own copy — a path outside the project root produces a
+    # malformed archive entry — so this guards the two against drifting apart.
+    packaged = REPO / "python" / "LICENSE"
+    root = REPO / "LICENSE"
+    assert packaged.read_text() == root.read_text(), (
+        "python/LICENSE has drifted from the repository LICENSE; copy it across"
+    )

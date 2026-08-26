@@ -1,51 +1,102 @@
-# memco
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img alt="Memco" src="assets/logo.svg" width="360">
+  </picture>
+</p>
 
-Official SDKs for [Memco Shared Memory](https://memco.ai), a persistent store
-your team and its agents share.
+<p align="center">
+  Official SDKs for <b>Memco Shared Memory</b>.<br>
+  <a href="https://memco.ai">memco.ai</a> &middot;
+  <a href="https://docs.memco.ai">docs.memco.ai</a>
+</p>
 
-| Language | Package | Status |
+---
+
+## What is Memco Shared Memory?
+
+Memco Shared Memory is a persistent, searchable memory that your team and its AI
+agents share.
+
+Agents normally start every conversation from nothing. They rediscover the same
+constraints, repeat the same mistakes, and lose whatever they worked out the
+moment the session ends. Shared Memory is where that knowledge goes instead: an
+agent searches it before starting work, and writes back what it learned when it
+finishes. What one agent establishes, every teammate's agent can find.
+
+It stores the things that are expensive to rediscover — how an internal system
+actually behaves, why a decision was made, a bug's root cause, a convention that
+is not written down anywhere else. Memory is partitioned into **domains**, each
+with its own subject matter and tag vocabulary, and every result carries a
+reliability signal built from what readers reported back about it.
+
+**You need an account and an API key to use these SDKs.** Create one at
+[memco.ai](https://memco.ai).
+
+## SDKs
+
+| Language | Package | Install |
 |---|---|---|
-| Python | [`memco`](python/) | v1 — memory operations |
-| Go | [`github.com/memcoai/memco/go/memco`](go/) | generated client only |
-| Node | [`memco`](nodejs/) | generated client only |
+| Python | [`memco`](python/) | `pip install memco` |
 
-## Layout
+The generated gRPC clients for [Go](go/) and [Node](nodejs/) are also published
+here and can be used directly against the API.
+
+## Quick start
+
+```python
+from memco.client import Client
+
+with Client() as client:                       # reads MEMCO_API_TOKEN
+    session = client.memory.start_session("coding")
+
+    result = client.memory.search(
+        "how should a client authenticate against the memory API",
+        session_id=session.session_id,
+    )
+    for memory in result.memories:
+        for insight in memory.insights:
+            print(insight.title, insight.updated)
+```
+
+See [`python/README.md`](python/README.md) for the full guide and
+[`python/examples/`](python/examples/) for runnable programs.
+
+**See more → [docs.memco.ai](https://docs.memco.ai)**
+
+## Repository layout
 
 ```
-proto/            the contract, for reference — SDKs do not generate from it
-python/  memco/client/**   the SDK          client/**   generated
-go/      memco/*.go        the SDK          client/**   generated
-nodejs/  src/**            the SDK          client/**   generated
+proto/            the service contract, for reference
+python/           the Python SDK
+  memco/client/     hand-written SDK
+  client/           generated gRPC client
+go/, nodejs/      generated gRPC clients
 ```
 
-Everything under `proto/` and `<lang>/client/` is written by the server
-repository's SDK export and is emptied and rewritten on each run. Nothing
-outside those paths is ever generated, and nothing inside them should be edited
-by hand.
+Everything under `proto/` and `<language>/client/` is generated from the service
+contract and is replaced wholesale each time it is regenerated. Please do not
+edit those by hand — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Development
+## Contributing
+
+Bug reports and pull requests are welcome. Please read
+[CONTRIBUTING.md](CONTRIBUTING.md) first — it covers how to set up the
+development environment, which files are generated and must not be edited, and
+what a change needs before it can be merged.
 
 ```bash
-make install   # create every development environment
-make check     # lint, typecheck, test, provenance, docs — everything CI runs
-make help      # every target, and which languages are covered
+make install   # set up every development environment
+make check     # lint, typecheck, test, docs — everything CI runs
+make help      # every target
 ```
 
-The root `Makefile` holds nothing language-specific: it discovers every
-directory carrying a `Makefile` and fans the shared targets out to each. A new
-language joins by adding its own, with no change at the root. For anything
-outside the shared set, address one directly:
+## Support
 
-```bash
-make -C python docs-serve
-make -C python help
-```
+- Documentation — [docs.memco.ai](https://docs.memco.ai)
+- Questions about your account, plans or API keys — [memco.ai](https://memco.ai)
+- Bugs and feature requests in these SDKs — [open an issue](https://github.com/memcoai/memco/issues)
 
-`scripts/verify_provenance.py` checks that the checked-in generated code, the
-dependency floors it declares, and the contract it claims to come from all
-agree. CI runs it on every push, and `make check` runs it locally.
+## Licence
 
-## Getting started
-
-See [`python/README.md`](python/README.md) and the runnable
-[`python/examples/`](python/examples/).
+[MIT](LICENSE) &copy; Memco Labs, Inc.

@@ -22,9 +22,7 @@ def build_channel(config: ClientConfig) -> grpc.Channel:
         A channel that adds the credential to every call.
     """
     if config.tls:
-        channel: grpc.Channel = grpc.secure_channel(
-            config.target, grpc.ssl_channel_credentials()
-        )
+        channel: grpc.Channel = grpc.secure_channel(config.target, grpc.ssl_channel_credentials())
     else:
         channel = grpc.insecure_channel(config.target)
     return grpc.intercept_channel(channel, AuthInterceptor(config.token))

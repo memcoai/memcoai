@@ -108,6 +108,9 @@ def main() -> int:
     print(f"contract {PROTO.relative_to(ROOT)} sha256={digest[:16]}...")
 
     check(bool(descriptors), "at least one SDK_PROVENANCE.yaml is present")
+    if not descriptors:
+        print(f"\n{len(failures)} check(s) failed")
+        return 1
 
     print("\n1. contract checksum and server commit")
     commits = set()
@@ -128,6 +131,21 @@ def main() -> int:
     check(len(commits) <= 1, f"all descriptors name one server_commit (found {len(commits)})")
 
     print("\n2. python requirements match the descriptor")
+    # Guarded like the contract above: a missing portion should be reported as
+    # a failed check, not an unhandled traceback that hides section 1's results.
+    required = [
+        PYTHON_CLIENT / "requirements.txt",
+        PYTHON_CLIENT / "SDK_PROVENANCE.yaml",
+        PYTHON_CLIENT / "memco/memory/v1/memory_pb2_grpc.py",
+        PYTHON_CLIENT / "memco/memory/v1/memory_pb2.py",
+    ]
+    missing = [path for path in required if not path.is_file()]
+    for path in missing:
+        check(False, f"{path.relative_to(ROOT)} is present")
+    if missing:
+        print(f"\n{len(failures)} check(s) failed")
+        return 1
+
     requirements = (PYTHON_CLIENT / "requirements.txt").read_text(encoding="utf-8")
     descriptor_text = block(
         (PYTHON_CLIENT / "SDK_PROVENANCE.yaml").read_text(encoding="utf-8"), "requires", "python"

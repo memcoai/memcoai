@@ -1,12 +1,26 @@
-# memco
+<p align="center">
+  <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memco/main/assets/logo.svg" width="320">
+</p>
 
-Python SDK for [Memco Shared Memory](https://memco.ai) — a persistent store your
-team and its agents share.
+<p align="center">
+  Python SDK for <b>Memco Shared Memory</b>.<br>
+  <a href="https://memco.ai">memco.ai</a> &middot;
+  <a href="https://docs.memco.ai">docs.memco.ai</a>
+</p>
 
-It wraps the generated gRPC client with connection handling, credential
-management, typed results and typed errors. Every method is available
-synchronously and asynchronously, and the package is fully typed: `py.typed`
-ships, so mypy and pyright see your calls.
+---
+
+Memco Shared Memory is a persistent, searchable memory that your team and its AI
+agents share. An agent searches it before starting work and writes back what it
+learned when it finishes, so what one agent establishes, every teammate's agent
+can find.
+
+This package wraps the generated gRPC client with connection handling,
+credential management, typed results and typed errors. Every operation is
+available synchronously and asynchronously, and the package is fully typed —
+`py.typed` ships, so mypy and pyright check your calls.
+
+**You need an account and an API key.** Create one at [memco.ai](https://memco.ai).
 
 ## Install
 
@@ -46,6 +60,11 @@ async with AsyncClient() as client:
     result = await client.memory.search("...", session_id=session.session_id)
 ```
 
+Runnable programs covering the common workflows are in
+[`examples/`](examples/).
+
+**See more → [docs.memco.ai](https://docs.memco.ai)**
+
 ## Configuration
 
 Arguments win over the environment, which wins over the defaults.
@@ -57,14 +76,15 @@ Arguments win over the environment, which wins over the defaults.
 | TLS | `tls` | — | `True` |
 | Deadline | `timeout` | — | 30 seconds |
 
-The credential is either a static Memco API key or a WorkOS JWT; the service
-accepts both in the same header. `MEMCO_API_KEY` is still honoured but warns.
+The credential is either a static Memco API key or a WorkOS JWT; both go in the
+same header. `MEMCO_API_KEY` is still honoured but warns.
 
 Constructing a `Client` probes the service's health endpoint, so a bad host,
 port or TLS setting fails immediately rather than on your first call.
 `AsyncClient` cannot do this in `__init__` — it probes on `connect()`, which
-`async with` calls for you. That probe is
-unauthenticated and therefore cannot check the credential — pass
+`async with` calls for you.
+
+That probe is unauthenticated, so it cannot check your credential. Pass
 `verify_credentials=True` if you want that too, bearing in mind it spends one of
 your per-minute rate-limit tokens each time a client is built.
 
@@ -115,7 +135,7 @@ malformed call costs no round trip and no rate-limit budget.
 
 **Not every "not found" is an error.** `revert_memory` reports a missing,
 expired or moderated operation through `RevertResult.outcome` rather than
-raising, because each describes caller-visible state rather than a failure.
+raising, because each describes state you can act on rather than a failure.
 
 ```python
 result = client.memory.revert_memory("create-8fj2k1")
@@ -123,35 +143,38 @@ if result.outcome is RevertOutcome.EXPIRED:
     print("outside the revert window")
 ```
 
+[`examples/handling_errors.py`](examples/handling_errors.py) works through every
+failure mode and what to do about each.
+
 ## Provenance
 
-The package records which version of the contract its generated client was
-built from:
+The package records which version of the service contract its generated client
+was built from:
 
 ```python
 from memco.client import provenance
 
-provenance().server_commit  # '762721a87ab0d58313d1c4b23d8b344b740f90ab'
+provenance().server_commit  # the commit this wheel was built from
 provenance().protos[0].path  # 'memco/memory/v1/memory.proto'
 ```
 
-## Development
+## Contributing
 
-The generated client under `client/` is written by the server repository's SDK
-export and must not be edited by hand. The SDK itself lives in `memco/client/`.
-The two are separate PEP 420 namespace portions merged into one package at build
-time.
-
-Tasks run from the repository root, which fans out to every language, or from
-here for the Python-specific ones:
+Bug reports and pull requests are welcome, and you do not need access to Memco's
+servers to work on this — the test suite runs against an in-process gRPC server,
+so everything passes offline. See
+[CONTRIBUTING.md](https://github.com/memcoai/memco/blob/main/CONTRIBUTING.md).
 
 ```bash
-make check                  # from the root: everything CI runs, every language
-make -C python test-all     # the suite on 3.10 through 3.13
-make -C python docs-serve   # build the reference and serve it locally
-make -C python help         # every Python target
+make install                # from the repository root
+make check                  # lint, typecheck, test, docs — everything CI runs
+make -C python docs-serve   # build the reference and read it locally
 ```
 
-Tests run against a real in-process gRPC server; nothing is mocked. Examples
-live in [`examples/`](examples/), and the reference is generated from the
-docstrings into `docs/_build`.
+The generated client under `client/` is produced from the service contract and
+is replaced wholesale when regenerated; the hand-written SDK is in
+`memco/client/`.
+
+## Licence
+
+[MIT](https://github.com/memcoai/memco/blob/main/LICENSE) &copy; Memco Labs, Inc.

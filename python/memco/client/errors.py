@@ -8,7 +8,7 @@ before any request is sent.
 The hierarchy is arranged so a caller can be as coarse or as precise as it likes::
 
     try:
-        result = client.search("how does X work", domain="coding")
+        result = client.memory.search("how does X work", domain="coding")
     except MemcoResourceExhaustedError:   # just this one condition
         ...
     except MemcoAPIError:             # anything the server reported
@@ -163,7 +163,7 @@ class MemcoResourceExhaustedError(MemcoAPIError):
 
     Example:
         >>> try:
-        ...     client.search("...", domain="coding")
+        ...     client.memory.search("...", domain="coding")
         ... except MemcoResourceExhaustedError as exc:
         ...     if exc.kind is ResourceExhaustedKind.RATE_LIMIT:
         ...         time.sleep(60)
@@ -223,8 +223,11 @@ class MemcoInternalError(MemcoAPIError):
     """
 
 
-_RATE_LIMIT_MARKERS = ("rate limit",)
-_QUOTA_MARKERS = ("daily", "quota", "reached your")
+# A quota is scoped to a billing period, so a period word is what separates it
+# from a short-window rate limit. Checked first: "daily rate limit" is a quota,
+# even though it also contains "rate limit".
+_QUOTA_MARKERS = ("daily", "weekly", "monthly", "quota")
+_RATE_LIMIT_MARKERS = ("rate limit", "per-minute", "per minute", "per-second", "too many requests")
 
 _STATUS_TO_ERROR: dict[grpc.StatusCode, type[MemcoAPIError]] = {
     grpc.StatusCode.UNAUTHENTICATED: MemcoAuthenticationError,
@@ -248,10 +251,10 @@ def _classify_exhaustion(message: str) -> ResourceExhaustedKind:
         message matches no known pattern.
     """
     lowered = message.lower()
-    if any(marker in lowered for marker in _RATE_LIMIT_MARKERS):
-        return ResourceExhaustedKind.RATE_LIMIT
     if any(marker in lowered for marker in _QUOTA_MARKERS):
         return ResourceExhaustedKind.QUOTA
+    if any(marker in lowered for marker in _RATE_LIMIT_MARKERS):
+        return ResourceExhaustedKind.RATE_LIMIT
     return ResourceExhaustedKind.UNKNOWN
 
 
@@ -276,10 +279,12 @@ def from_rpc_error(err: grpc.RpcError) -> MemcoAPIError:
         ... except grpc.RpcError as exc:
         ...     raise from_rpc_error(exc) from exc
     """
-    code = err.code() if callable(getattr(err, "code", None)) else grpc.StatusCode.UNKNOWN
+    code = err.code() if callable(getattr(err, "code", None)) else None
+    if not isinstance(code, grpc.StatusCode):
+        # A code of None would reach MemcoAPIError and fail on code.name, which
+        # is worse than the raw error this function exists to replace.
+        code = grpc.StatusCode.UNKNOWN
     details = err.details() if callable(getattr(err, "details", None)) else None
-    debug = (
-        err.debug_error_string() if callable(getattr(err, "debug_error_string", None)) else None
-    )
+    debug = err.debug_error_string() if callable(getattr(err, "debug_error_string", None)) else None
     cls = _STATUS_TO_ERROR.get(code, MemcoInternalError)
     return cls(code, details or "", debug)

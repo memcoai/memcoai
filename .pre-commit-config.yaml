@@ -45,4 +45,8 @@ repos:
         entry: python3 scripts/verify_provenance.py
         language: system
         pass_filenames: false
+        # The top-level exclude filters the file list before per-hook `files`
+        # is applied, and it removes exactly the paths this hook watches. An
+        # empty exclude opts back in.
+        exclude: '^$'
         files: '^(proto/|[a-z]+/client/|python/pyproject\.toml)'

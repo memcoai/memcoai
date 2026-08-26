@@ -1,8 +1,19 @@
 memco
 =====
 
-Python SDK for Memco Shared Memory — a persistent store your team and its
-agents share.
+Python SDK for `Memco Shared Memory <https://memco.ai>`_.
+
+Memco Shared Memory is a persistent, searchable memory that your team and its AI
+agents share. An agent searches it before starting work and writes back what it
+learned when it finishes, so what one agent establishes, every teammate's agent
+can find.
+
+You need an account and an API key to use this SDK. Create one at
+`memco.ai <https://memco.ai>`_.
+
+.. code-block:: bash
+
+   pip install memco
 
 .. code-block:: python
 
@@ -20,8 +31,10 @@ agents share.
 
 The memory operations live on :attr:`~memco.client.Client.memory`.
 
-Every failure is a subclass of :class:`~memco.client.MemcoError`, so no raw
+Every failure is a subclass of :class:`~memco.client.errors.MemcoError`, so no raw
 ``grpc.RpcError`` ever reaches a caller.
+
+See more at `docs.memco.ai <https://docs.memco.ai>`_.
 
 .. toctree::
    :maxdepth: 2
