@@ -22,7 +22,10 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROTO = ROOT / "proto" / "memco" / "memory" / "v1" / "memory.proto"
-PYTHON_CLIENT = ROOT / "python" / "client"
+# Python's generated client lives inside the package it ships in; Go and Node
+# keep theirs under <lang>/client/.
+PYTHON_ROOT = ROOT / "python"
+PYTHON_GENERATED = PYTHON_ROOT / "memco" / "memory"
 CONTRACT_PATH = "memco/memory/v1/memory.proto"
 
 failures: list[str] = []
@@ -104,7 +107,9 @@ def main() -> int:
         return 1
 
     digest = hashlib.sha256(PROTO.read_bytes()).hexdigest()
-    descriptors = sorted(ROOT.glob("*/client/SDK_PROVENANCE.yaml"))
+    descriptors = sorted(
+        [*ROOT.glob("*/client/SDK_PROVENANCE.yaml"), *ROOT.glob("python/memco/SDK_PROVENANCE.yaml")]
+    )
     print(f"contract {PROTO.relative_to(ROOT)} sha256={digest[:16]}...")
 
     check(bool(descriptors), "at least one SDK_PROVENANCE.yaml is present")
@@ -134,10 +139,10 @@ def main() -> int:
     # Guarded like the contract above: a missing portion should be reported as
     # a failed check, not an unhandled traceback that hides section 1's results.
     required = [
-        PYTHON_CLIENT / "requirements.txt",
-        PYTHON_CLIENT / "SDK_PROVENANCE.yaml",
-        PYTHON_CLIENT / "memco/memory/v1/memory_pb2_grpc.py",
-        PYTHON_CLIENT / "memco/memory/v1/memory_pb2.py",
+        PYTHON_ROOT / "requirements.txt",
+        PYTHON_ROOT / "memco" / "SDK_PROVENANCE.yaml",
+        PYTHON_GENERATED / "v1" / "memory_pb2_grpc.py",
+        PYTHON_GENERATED / "v1" / "memory_pb2.py",
     ]
     missing = [path for path in required if not path.is_file()]
     for path in missing:
@@ -146,9 +151,9 @@ def main() -> int:
         print(f"\n{len(failures)} check(s) failed")
         return 1
 
-    requirements = (PYTHON_CLIENT / "requirements.txt").read_text(encoding="utf-8")
+    requirements = (PYTHON_ROOT / "requirements.txt").read_text(encoding="utf-8")
     descriptor_text = block(
-        (PYTHON_CLIENT / "SDK_PROVENANCE.yaml").read_text(encoding="utf-8"), "requires", "python"
+        (PYTHON_ROOT / "memco" / "SDK_PROVENANCE.yaml").read_text(encoding="utf-8"), "requires", "python"
     )
     pins: dict[str, str] = {}
     for line in requirements.splitlines():
@@ -165,7 +170,7 @@ def main() -> int:
         )
 
     print("\n3. requirements match what the generated modules assert")
-    grpc_module = (PYTHON_CLIENT / "memco/memory/v1/memory_pb2_grpc.py").read_text("utf-8")
+    grpc_module = (PYTHON_GENERATED / "v1" / "memory_pb2_grpc.py").read_text("utf-8")
     stamped = re.search(r"GRPC_GENERATED_VERSION = '([^']+)'", grpc_module)
     check(stamped is not None, "memory_pb2_grpc.py stamps a grpcio version")
     if stamped:
@@ -174,7 +179,7 @@ def main() -> int:
             f"grpcio floor {pins.get('grpcio')!r} matches stamp >={stamped.group(1)}",
         )
 
-    pb_module = (PYTHON_CLIENT / "memco/memory/v1/memory_pb2.py").read_text("utf-8")
+    pb_module = (PYTHON_GENERATED / "v1" / "memory_pb2.py").read_text("utf-8")
     version = re.search(
         r"ValidateProtobufRuntimeVersion\(\s*[\w.]+,\s*(\d+),\s*(\d+),\s*(\d+)", pb_module
     )

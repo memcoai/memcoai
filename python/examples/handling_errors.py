@@ -11,11 +11,11 @@ Run it with::
 
 import time
 
-from memco.client import (
-    Client,
+from memco import Memco
+from memco.errors import (
+    ClientConfigError,
     MemcoAPIError,
     MemcoAuthenticationError,
-    MemcoConfigError,
     MemcoInvalidRequestError,
     MemcoNotFoundError,
     MemcoPermissionError,
@@ -27,15 +27,15 @@ from memco.client import (
 )
 
 
-def connect() -> Client | None:
+def connect() -> Memco | None:
     """Build a client, reporting anything that stops it connecting.
 
     Returns:
         The connected client, or ``None`` if it could not be built.
     """
     try:
-        return Client()
-    except MemcoConfigError as exc:
+        return Memco()
+    except ClientConfigError as exc:
         # Nothing was sent: no token, or an unusable host or port.
         print(f"configuration problem: {exc}")
     except MemcoUnhealthyError as exc:
@@ -49,7 +49,7 @@ def connect() -> Client | None:
     return None
 
 
-def search_with_retry(client: Client, query: str, domain: str) -> None:
+def search_with_retry(client: Memco, query: str, domain: str) -> None:
     """Search, handling each failure the way that failure deserves.
 
     Args:

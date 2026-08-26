@@ -8,15 +8,15 @@ Run it with::
 
 import asyncio
 
-from memco.client import AsyncClient
+from memco import AsyncMemco
 
 
 async def main() -> None:
     """Run the example."""
-    # AsyncClient cannot probe the service in __init__, because that needs a
+    # AsyncMemco cannot probe the service in __init__, because that needs a
     # running event loop. `async with` calls connect() for you; construct it
     # inside the loop that will use it.
-    async with AsyncClient() as client:
+    async with AsyncMemco() as client:
         domains = (await client.memory.list_domains()).domains
         print(f"{len(domains)} domain(s) available:")
         for domain in domains:

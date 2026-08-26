@@ -7,7 +7,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from .errors import MemcoConfigError
+from .errors import ClientConfigError
 
 DEFAULT_HOST = "grpc.spark.memco.ai"
 """Endpoint used when neither an argument nor ``MEMCO_API_HOST`` supplies one."""
@@ -72,12 +72,12 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
         The resolved, whitespace-stripped credential.
 
     Raises:
-        MemcoConfigError: If no non-blank credential is available.
+        ClientConfigError: If no non-blank credential is available.
     """
     if token is not None and token.strip():
         return token.strip()
     if token is not None and not token.strip():
-        raise MemcoConfigError(
+        raise ClientConfigError(
             f"the token passed to the client is blank: pass a real token or set {TOKEN_ENV}"
         )
 
@@ -95,7 +95,7 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
         )
         return legacy
 
-    raise MemcoConfigError(f"no API token: pass token=... or set {TOKEN_ENV}")
+    raise ClientConfigError(f"no API token: pass token=... or set {TOKEN_ENV}")
 
 
 def _port(text: str, host: str) -> int:
@@ -109,16 +109,16 @@ def _port(text: str, host: str) -> int:
         The port number.
 
     Raises:
-        MemcoConfigError: If it is not an integer in 1-65535.
+        ClientConfigError: If it is not an integer in 1-65535.
     """
     try:
         port = int(text)
     except ValueError:
-        raise MemcoConfigError(
+        raise ClientConfigError(
             f"host {host!r} has an unparseable port: {text!r} is not an integer"
         ) from None
     if not 1 <= port <= 65535:  # noqa: PLR2004 - the TCP port range is not a magic number
-        raise MemcoConfigError(f"host {host!r} has a port outside the range 1-65535: {port}")
+        raise ClientConfigError(f"host {host!r} has a port outside the range 1-65535: {port}")
     return port
 
 
@@ -138,19 +138,19 @@ def _split_host_port(host: str) -> tuple[str, int]:
         :data:`DEFAULT_PORT`.
 
     Raises:
-        MemcoConfigError: If the brackets are unbalanced, if text follows the
+        ClientConfigError: If the brackets are unbalanced, if text follows the
             closing bracket without a port, or if a port is present but is not
             an integer in 1-65535.
     """
     if host.startswith("["):
         closing = host.find("]")
         if closing == -1:
-            raise MemcoConfigError(f"host {host!r} opens a bracket that is never closed")
+            raise ClientConfigError(f"host {host!r} opens a bracket that is never closed")
         name, rest = host[1:closing], host[closing + 1 :]
         if not rest:
             return name, DEFAULT_PORT
         if not rest.startswith(":"):
-            raise MemcoConfigError(f"host {host!r} has unexpected text after the closing bracket")
+            raise ClientConfigError(f"host {host!r} has unexpected text after the closing bracket")
         return name, _port(rest[1:], host)
 
     # More than one colon and no brackets: a bare IPv6 literal, which cannot
@@ -196,7 +196,7 @@ def resolve(
         The resolved configuration.
 
     Raises:
-        MemcoConfigError: If no credential is available, if the host is blank or
+        ClientConfigError: If no credential is available, if the host is blank or
             carries an invalid port, or if ``timeout`` is not positive.
 
     Example:
@@ -206,7 +206,7 @@ def resolve(
     environment = os.environ if env is None else env
 
     if timeout <= 0:
-        raise MemcoConfigError(f"timeout must be positive, got {timeout!r}")
+        raise ClientConfigError(f"timeout must be positive, got {timeout!r}")
 
     resolved_token = _resolve_token(token, environment)
 
@@ -215,7 +215,7 @@ def resolve(
     # produce, and falling through would send the credential to the production
     # endpoint the caller never named.
     if host is not None and not host.strip():
-        raise MemcoConfigError(
+        raise ClientConfigError(
             f"the host passed to the client is blank: pass a real host or set {HOST_ENV}"
         )
     resolved_host = (host or environment.get(HOST_ENV, "").strip() or DEFAULT_HOST).strip()
@@ -235,12 +235,12 @@ def deadline(timeout: float | None, default: float) -> float:
         The deadline in seconds.
 
     Raises:
-        MemcoConfigError: If a deadline was given but is not positive. A
+        ClientConfigError: If a deadline was given but is not positive. A
             zero or negative deadline is silently useless — the call expires
             before it is sent — so it is rejected rather than substituted.
     """
     if timeout is None:
         return default
     if timeout <= 0:
-        raise MemcoConfigError(f"timeout must be positive, got {timeout!r}")
+        raise ClientConfigError(f"timeout must be positive, got {timeout!r}")
     return timeout

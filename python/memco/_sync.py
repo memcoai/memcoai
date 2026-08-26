@@ -8,22 +8,23 @@ from typing import Any, TypeVar
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
+
 from memco.memory.v1 import memory_pb2_grpc as _pbg
 
 from ._channel import build_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
-from ._memory import MemoryOperations
 from ._provenance import provenance as _provenance
-from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
+from .errors import ClientConfigError, MemcoUnhealthyError, from_rpc_error
+from .operations import MemoryOperations
 from .types import Provenance
 
 _T = TypeVar("_T")
 
-__all__ = ["Client"]
+__all__ = ["Memco"]
 
 
-class Client:
+class Memco:
     """Synchronous client for Memco Shared Memory.
 
     Opens one gRPC channel and holds it until closed, so a single client should
@@ -49,7 +50,7 @@ class Client:
         check_health: Whether to probe the health endpoint on construction. Set
             to ``False`` to construct without touching the network.
         verify_credentials: Whether to additionally call
-            :meth:`~memco.client._memory.MemoryOperations.list_domains` on
+            :meth:`~memco.operations.MemoryOperations.list_domains` on
             construction to prove the credential works. Off by default because
             that call is rate-limited and would spend one of the caller's
             per-minute tokens every time a client is built.
@@ -57,7 +58,7 @@ class Client:
             :data:`os.environ`; supplying one is mainly useful in tests.
 
     Raises:
-        MemcoConfigError: If no credential is available or the host is unusable.
+        ClientConfigError: If no credential is available or the host is unusable.
         MemcoUnavailableError: If the service cannot be reached.
         MemcoUnhealthyError: If the service reports that it is not serving.
         MemcoAuthenticationError: If ``verify_credentials`` is set and the
@@ -65,10 +66,10 @@ class Client:
 
     Attributes:
         memory: The memory operations, as
-            :class:`~memco.client._memory.MemoryOperations`.
+            :class:`~memco.operations.MemoryOperations`.
 
     Example:
-        >>> with Client() as client:
+        >>> with Memco() as client:
         ...     session = client.memory.start_session("coding")
         ...     result = client.memory.search("how does gRPC health checking work",
         ...                                   session_id=session.session_id)
@@ -92,7 +93,7 @@ class Client:
         self._health = health_pb2_grpc.HealthStub(self._channel)
         self._closed = False
         self.memory = MemoryOperations(_pbg.MemoryServiceStub(self._channel), self._call)
-        """The memory operations. See :class:`~memco.client._memory.MemoryOperations`."""
+        """The memory operations. See :class:`~memco.operations.MemoryOperations`."""
         try:
             if check_health:
                 self._check_health()
@@ -108,13 +109,13 @@ class Client:
         """Close the underlying channel.
 
         Safe to call more than once. After closing, any further call raises
-        :class:`~memco.client.errors.MemcoConfigError`.
+        :class:`~memco.errors.ClientConfigError`.
         """
         if not self._closed:
             self._closed = True
             self._channel.close()
 
-    def __enter__(self) -> Client:
+    def __enter__(self) -> Memco:
         """Enter a context manager.
 
         Returns:
@@ -176,11 +177,11 @@ class Client:
             The response message.
 
         Raises:
-            MemcoConfigError: If the client has been closed.
+            ClientConfigError: If the client has been closed.
             MemcoAPIError: If the service returned an error status.
         """
         if self._closed:
-            raise MemcoConfigError("this client is closed; create a new one to make more calls")
+            raise ClientConfigError("this client is closed; create a new one to make more calls")
         deadline = _deadline(timeout, self._config.timeout)
         try:
             return method(request, timeout=deadline)
@@ -190,6 +191,6 @@ class Client:
             # close() flips the flag and then tears the channel down, so a call
             # that passed the check above can still land on a dead channel.
             # grpc signals that with a bare ValueError, which would escape raw.
-            raise MemcoConfigError(
+            raise ClientConfigError(
                 "this client is closed; create a new one to make more calls"
             ) from exc

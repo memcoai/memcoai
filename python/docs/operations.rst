@@ -6,8 +6,8 @@ Memory
 
 Reached as ``client.memory``.
 
-.. autoclass:: memco.client._memory.MemoryOperations
+.. autoclass:: memco.operations.MemoryOperations
    :members:
 
-.. autoclass:: memco.client._memory.AsyncMemoryOperations
+.. autoclass:: memco.operations.AsyncMemoryOperations
    :members:

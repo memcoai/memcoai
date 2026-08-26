@@ -2,13 +2,13 @@
 
 Kept in one place so the protobuf layer never leaks past the client methods.
 Every function here takes a generated message and returns an immutable
-dataclass from :mod:`memco.client.types`.
+dataclass from :mod:`memco.types`.
 
 Two conventions apply throughout:
 
 * An empty protobuf string becomes ``None`` where absence is meaningful — an
   un-minted operation id, a missing notice, reference or advice.
-* An empty :class:`~memco.client.types.Instructions` part stays an empty string,
+* An empty :class:`~memco.types.Instructions` part stays an empty string,
   because the contract documents "nothing to say" as a real state there.
 """
 
@@ -269,7 +269,7 @@ def to_revert_result(message: _pb.RevertMemoryResponse) -> RevertResult:
     Returns:
         The immutable equivalent, with the outcome as a typed enum. An outcome
         this SDK does not recognise folds to
-        :attr:`~memco.client.types.RevertOutcome.UNSPECIFIED`.
+        :attr:`~memco.types.RevertOutcome.UNSPECIFIED`.
     """
     return RevertResult(
         operation_id=_optional(message.operation_id),

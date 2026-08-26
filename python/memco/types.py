@@ -127,7 +127,7 @@ class Tag:
     The service lowercases each field and folds hyphens to underscores, so
     ``"Go"`` and ``"go"`` name the same tag. Which types exist, which of them
     narrow results rather than boost them, and which carry a version are all
-    per-domain; :meth:`~memco.client._memory.MemoryOperations.list_domains` describes them.
+    per-domain; :meth:`~memco.operations.MemoryOperations.list_domains` describes them.
 
     Attributes:
         type: The tag's category, such as ``"language"`` or ``"framework"``.
@@ -286,7 +286,7 @@ class Memory:
             memory under. When set, the memory is already in the caller's context
             under that handle and no insights are repeated here; pass this
             result's own :attr:`idx` to
-            :meth:`~memco.client._memory.MemoryOperations.get_memory` to read it again.
+            :meth:`~memco.operations.MemoryOperations.get_memory` to read it again.
     """
 
     idx: str
@@ -326,7 +326,7 @@ class WriteResult:
 
     Attributes:
         operation_id: Handle addressing the write, for
-            :meth:`~memco.client._memory.MemoryOperations.revert_memory`. ``None`` when no handle
+            :meth:`~memco.operations.MemoryOperations.revert_memory`. ``None`` when no handle
             could be minted: the content is worth more than the ability to undo
             it, so a numbering failure degrades to an un-revertible write rather
             than a rejected one.

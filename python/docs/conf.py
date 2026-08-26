@@ -5,9 +5,11 @@ import re
 from importlib.metadata import version as _version
 
 # Taken from the licence so the footer cannot drift from the legal notice.
-_LICENCE_YEAR = re.search(
-    r"Copyright \(c\) (\d{4})", (pathlib.Path(__file__).parent.parent / "LICENSE").read_text()
-).group(1)
+_LICENCE = (pathlib.Path(__file__).parent.parent / "LICENSE").read_text()
+_MATCH = re.search(r"Copyright \(c\) (\d{4})", _LICENCE)
+if _MATCH is None:
+    raise RuntimeError("LICENSE carries no copyright year for the documentation footer")
+_LICENCE_YEAR = _MATCH.group(1)
 
 project = "memco"
 author = "Memco Labs, Inc."

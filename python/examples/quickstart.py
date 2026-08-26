@@ -6,7 +6,7 @@ Run it with::
     python examples/quickstart.py
 """
 
-from memco.client import Client
+from memco import Memco
 
 
 def main() -> None:
@@ -14,7 +14,7 @@ def main() -> None:
     # Reads MEMCO_API_TOKEN and MEMCO_API_HOST. Constructing the client probes
     # the service's health endpoint, so a bad endpoint fails here rather than
     # on the first real call.
-    with Client() as client:
+    with Memco() as client:
         domains = client.memory.list_domains().domains
         print(f"{len(domains)} domain(s) available:")
         for domain in domains:

@@ -11,12 +11,12 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
-from memco.client import AsyncClient, Client, errors
-from memco.client import _requests as requests
-from memco.client._config import DEFAULT_HOST, DEFAULT_PORT, resolve
-from memco.client._convert import _to_date
-from memco.client._provenance import parse
-from memco.client.types import DataSource, Tag
+from memco import AsyncMemco, Memco, errors
+from memco import _requests as requests
+from memco._config import DEFAULT_HOST, DEFAULT_PORT, resolve
+from memco._convert import _to_date
+from memco._provenance import parse
+from memco.types import DataSource, Tag
 
 from .conftest import TOKEN
 from .fake_server import Harness
@@ -25,20 +25,20 @@ from .fake_server import Harness
 
 
 @pytest.mark.parametrize("domain", ["   ", "d" * 65])
-def test_search_validates_the_domain_it_was_given(client: Client, harness: Harness, domain):
+def test_search_validates_the_domain_it_was_given(client: Memco, harness: Harness, domain):
     with pytest.raises(errors.MemcoInvalidRequestError, match="domain"):
         client.memory.search("q", domain=domain)
     assert harness.memory.calls == []
 
 
 @pytest.mark.parametrize("session_id", ["   ", "s" * 65])
-def test_create_validates_the_session_it_was_given(client: Client, harness: Harness, session_id):
+def test_create_validates_the_session_it_was_given(client: Memco, harness: Harness, session_id):
     with pytest.raises(errors.MemcoInvalidRequestError, match="session_id"):
         client.memory.create_memory(query="q", title="t", content="c", session_id=session_id)
     assert harness.memory.calls == []
 
 
-def test_search_validates_the_session_it_was_given(client: Client, harness: Harness):
+def test_search_validates_the_session_it_was_given(client: Memco, harness: Harness):
     with pytest.raises(errors.MemcoInvalidRequestError, match="session_id"):
         client.memory.search("q", session_id="s" * 65)
     assert harness.memory.calls == []
@@ -47,22 +47,22 @@ def test_search_validates_the_session_it_was_given(client: Client, harness: Harn
 # --- M5: a per-call timeout of 0 was silently replaced by the default -----
 
 
-def test_zero_timeout_is_rejected_not_silently_widened(client: Client, harness: Harness):
+def test_zero_timeout_is_rejected_not_silently_widened(client: Memco, harness: Harness):
     # Asking for an immediate deadline and getting 30s is the opposite of the
     # request, so it must be an error rather than a substitution.
-    with pytest.raises(errors.MemcoConfigError, match="timeout"):
+    with pytest.raises(errors.ClientConfigError, match="timeout"):
         client.memory.list_domains(timeout=0)
     assert harness.memory.calls == []
 
 
-def test_negative_timeout_is_rejected(client: Client, harness: Harness):
-    with pytest.raises(errors.MemcoConfigError, match="timeout"):
+def test_negative_timeout_is_rejected(client: Memco, harness: Harness):
+    with pytest.raises(errors.ClientConfigError, match="timeout"):
         client.memory.list_domains(timeout=-5)
     assert harness.memory.calls == []
 
 
-async def test_zero_timeout_is_rejected_on_the_async_client(async_client: AsyncClient):
-    with pytest.raises(errors.MemcoConfigError, match="timeout"):
+async def test_zero_timeout_is_rejected_on_the_async_client(async_client: AsyncMemco):
+    with pytest.raises(errors.ClientConfigError, match="timeout"):
         await async_client.memory.list_domains(timeout=0)
 
 
@@ -110,7 +110,7 @@ def test_the_documented_date_grammar_still_parses():
 
 
 def test_calling_a_closed_client_raises_a_memco_error(harness: Harness):
-    connected = Client(token=TOKEN, host=harness.address, tls=False)
+    connected = Memco(token=TOKEN, host=harness.address, tls=False)
     connected._closed = True  # the pre-check still guards this path
     with pytest.raises(errors.MemcoError):
         connected.memory.list_domains()
@@ -123,7 +123,7 @@ def test_a_call_that_races_close_still_raises_a_memco_error(harness: Harness):
     # documents itself as thread-safe, so this is supported usage.
     escaped: list[BaseException] = []
 
-    def hammer(connected: Client) -> None:
+    def hammer(connected: Memco) -> None:
         for _ in range(40):
             try:
                 connected.memory.list_domains()
@@ -134,7 +134,7 @@ def test_a_call_that_races_close_still_raises_a_memco_error(harness: Harness):
                 return
 
     for _ in range(5):
-        connected = Client(token=TOKEN, host=harness.address, tls=False)
+        connected = Memco(token=TOKEN, host=harness.address, tls=False)
         threads = [threading.Thread(target=hammer, args=(connected,)) for _ in range(8)]
         for thread in threads:
             thread.start()
@@ -146,7 +146,7 @@ def test_a_call_that_races_close_still_raises_a_memco_error(harness: Harness):
 
 
 async def test_an_async_call_that_races_close_still_raises_a_memco_error(harness: Harness):
-    connected = AsyncClient(token=TOKEN, host=harness.address, tls=False)
+    connected = AsyncMemco(token=TOKEN, host=harness.address, tls=False)
     await connected.connect()
     await connected._channel.close(grace=None)
     with pytest.raises(errors.MemcoError):
@@ -164,9 +164,8 @@ LOOP_SCRIPT = """
 import asyncio
 import sys
 
-from memco.client import AsyncClient
-
-client = AsyncClient(token="t", host=sys.argv[1], tls=False)   # no loop exists yet
+from memco import AsyncMemco
+client = AsyncMemco(token="t", host=sys.argv[1], tls=False)   # no loop exists yet
 
 
 async def main() -> int:
@@ -181,10 +180,9 @@ LATER_SCRIPT = """
 import asyncio
 import sys
 
-from memco.client import AsyncClient
-
+from memco import AsyncMemco
 asyncio.run(asyncio.sleep(0))          # leaves no current loop behind
-client = AsyncClient(token="t", host=sys.argv[1], tls=False)
+client = AsyncMemco(token="t", host=sys.argv[1], tls=False)
 
 
 async def main() -> str:
@@ -227,7 +225,7 @@ def test_blank_host_is_rejected_not_silently_defaulted():
     # `host=os.environ.get("MY_HOST", "")` and an unset CI variable both render
     # as "". Falling through to the production default would send a live token
     # somewhere the caller did not choose.
-    with pytest.raises(errors.MemcoConfigError, match="host"):
+    with pytest.raises(errors.ClientConfigError, match="host"):
         resolve(token="t", host="   ", env={})
 
 
@@ -280,7 +278,7 @@ def test_an_rpc_error_with_no_code_still_becomes_a_memco_error():
 
 
 async def test_connect_can_be_retried_after_a_transient_failure(harness: Harness):
-    connected = AsyncClient(token=TOKEN, host=harness.address, tls=False)
+    connected = AsyncMemco(token=TOKEN, host=harness.address, tls=False)
     harness.health.status = health_pb2.HealthCheckResponse.NOT_SERVING
     with pytest.raises(errors.MemcoUnhealthyError):
         await connected.connect()

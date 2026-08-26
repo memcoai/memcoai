@@ -1,4 +1,4 @@
-"""Client-side argument checks performed before any request is sent.
+"""Memco-side argument checks performed before any request is sent.
 
 These limits mirror the ones the service enforces. Checking them here turns a
 wasted round trip into an immediate error naming the offending field, and keeps
@@ -9,7 +9,7 @@ raises a limit needs a new SDK release before callers can use the extra room.
 Structural checks — blank values, missing argument combinations, batch sizes —
 carry no such risk.
 
-Every failure raises :class:`~memco.client.errors.MemcoInvalidRequestError` with
+Every failure raises :class:`~memco.errors.MemcoInvalidRequestError` with
 an ``INVALID_ARGUMENT`` status, so a caller handles a local rejection and a
 server-side one the same way.
 """

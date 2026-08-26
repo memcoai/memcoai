@@ -5,8 +5,8 @@ import pathlib
 
 import pytest
 
-from memco.client._provenance import parse, provenance
-from memco.client.errors import MemcoConfigError
+from memco._provenance import parse, provenance
+from memco.errors import ClientConfigError
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -78,7 +78,7 @@ server_commit: REAL
     ],
 )
 def test_malformed_descriptor_raises_rather_than_guessing(text):
-    with pytest.raises(MemcoConfigError):
+    with pytest.raises(ClientConfigError):
         parse(text)
 
 
@@ -86,12 +86,12 @@ def test_malformed_descriptor_raises_rather_than_guessing(text):
 
 
 def test_a_key_merely_ending_in_path_is_not_a_path():
-    with pytest.raises(MemcoConfigError):
+    with pytest.raises(ClientConfigError):
         parse("server_commit: c\nprotos:\n  - filepath: /etc/passwd\n    sha256: deadbeef\n")
 
 
 def test_a_key_merely_ending_in_sha256_is_not_a_checksum():
-    with pytest.raises(MemcoConfigError):
+    with pytest.raises(ClientConfigError):
         parse("server_commit: c\nprotos:\n  - path: a.proto\n    xsha256: FORGED\n")
 
 
@@ -150,12 +150,12 @@ def test_a_hash_inside_quotes_is_not_a_comment():
 
 
 def test_a_block_scalar_is_rejected_rather_than_misread():
-    with pytest.raises(MemcoConfigError, match="block scalar"):
+    with pytest.raises(ClientConfigError, match="block scalar"):
         parse("server_commit: |\n  abc\nprotos:\n  - path: a\n    sha256: b\n")
 
 
 def test_a_duplicated_field_in_one_entry_is_rejected():
-    with pytest.raises(MemcoConfigError, match="twice"):
+    with pytest.raises(ClientConfigError, match="twice"):
         parse("server_commit: c\nprotos:\n  - path: a\n    sha256: b\n    sha256: c\n")
 
 

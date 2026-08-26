@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import pytest
 
-from memco.client import AsyncClient, Client
+from memco import AsyncMemco, Memco
 
 from .fake_server import Harness
 
@@ -31,16 +31,16 @@ def harness() -> Iterator[Harness]:
 
 
 @pytest.fixture
-def client(harness: Harness) -> Iterator[Client]:
+def client(harness: Harness) -> Iterator[Memco]:
     """A synchronous client connected to the fixture server over plaintext."""
-    with Client(token=TOKEN, host=harness.address, tls=False) as connected:
+    with Memco(token=TOKEN, host=harness.address, tls=False) as connected:
         yield connected
 
 
 @pytest.fixture
-async def async_client(harness: Harness) -> AsyncIterator[AsyncClient]:
+async def async_client(harness: Harness) -> AsyncIterator[AsyncMemco]:
     """An asynchronous client connected to the fixture server over plaintext."""
-    connected = AsyncClient(token=TOKEN, host=harness.address, tls=False)
+    connected = AsyncMemco(token=TOKEN, host=harness.address, tls=False)
     await connected.connect()
     try:
         yield connected

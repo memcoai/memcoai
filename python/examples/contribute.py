@@ -6,14 +6,15 @@ Run it with::
     python examples/contribute.py
 """
 
-from memco.client import Client, RevertOutcome, Tag
+from memco import Memco
+from memco.types import RevertOutcome, Tag
 
 DOMAIN = "coding"
 
 
 def main() -> None:
     """Run the example."""
-    with Client() as client:
+    with Memco() as client:
         session = client.memory.start_session(DOMAIN)
 
         # Writes are accepted asynchronously, so the result addresses the

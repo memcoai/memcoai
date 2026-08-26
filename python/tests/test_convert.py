@@ -4,10 +4,9 @@ import dataclasses
 from datetime import date
 
 import pytest
-from memco.memory.v1 import memory_pb2 as pb
 
-from memco.client import types
-from memco.client._convert import (
+from memco import types
+from memco._convert import (
     to_domain_list,
     to_feedback_result,
     to_memory,
@@ -16,6 +15,7 @@ from memco.client._convert import (
     to_session,
     to_write_result,
 )
+from memco.memory.v1 import memory_pb2 as pb
 
 
 def test_enums_fold_unknown_wire_values_to_unspecified():

@@ -2,7 +2,7 @@
 
 Every failure reaching a caller is one of these. Transport and protocol failures
 arrive as :class:`MemcoAPIError` subclasses chosen by the gRPC status code;
-problems with the client's own configuration arrive as :class:`MemcoConfigError`
+problems with the client's own configuration arrive as :class:`ClientConfigError`
 before any request is sent.
 
 The hierarchy is arranged so a caller can be as coarse or as precise as it likes::
@@ -24,9 +24,9 @@ import enum
 import grpc
 
 __all__ = [
+    "ClientConfigError",
     "MemcoAPIError",
     "MemcoAuthenticationError",
-    "MemcoConfigError",
     "MemcoError",
     "MemcoInternalError",
     "MemcoInvalidRequestError",
@@ -49,16 +49,16 @@ class MemcoError(Exception):
     """
 
 
-class MemcoConfigError(MemcoError):
+class ClientConfigError(MemcoError):
     """The client was configured incorrectly and no request was attempted.
 
     Raised for a missing credential, an unparseable host or port, or a
     non-positive timeout. It never indicates a problem with the service.
 
     Example:
-        >>> Client(token=None)  # with no MEMCO_API_TOKEN set
+        >>> Memco(token=None)  # with no MEMCO_API_TOKEN set
         Traceback (most recent call last):
-        MemcoConfigError: no API token: pass token=... or set MEMCO_API_TOKEN
+        ClientConfigError: no API token: pass token=... or set MEMCO_API_TOKEN
     """
 
 
@@ -126,8 +126,8 @@ class MemcoNotFoundError(MemcoAPIError):
 
     Note:
         Not every "not found" condition is an error. ``revert_memory`` reports a
-        missing operation as a successful :class:`~memco.client.types.RevertResult`
-        carrying :attr:`~memco.client.types.RevertOutcome.NOT_FOUND`, because that
+        missing operation as a successful :class:`~memco.types.RevertResult`
+        carrying :attr:`~memco.types.RevertOutcome.NOT_FOUND`, because that
         is caller-visible state rather than a service failure.
     """
 

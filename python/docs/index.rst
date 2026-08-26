@@ -17,9 +17,8 @@ You need an account and an API key to use this SDK. Create one at
 
 .. code-block:: python
 
-   from memco.client import Client
-
-   with Client() as client:                 # reads MEMCO_API_TOKEN
+   from memco import Memco
+   with Memco() as client:                 # reads MEMCO_API_TOKEN
        session = client.memory.start_session("coding")
        result = client.memory.search(
            "how should a client authenticate against the memory API",
@@ -29,9 +28,9 @@ You need an account and an API key to use this SDK. Create one at
            for insight in memory.insights:
                print(insight.title, insight.updated)
 
-The memory operations live on :attr:`~memco.client.Client.memory`.
+The memory operations live on :attr:`~memco.Memco.memory`.
 
-Every failure is a subclass of :class:`~memco.client.errors.MemcoError`, so no raw
+Every failure is a subclass of :class:`~memco.errors.MemcoError`, so no raw
 ``grpc.RpcError`` ever reaches a caller.
 
 See more at `docs.memco.ai <https://docs.memco.ai>`_.

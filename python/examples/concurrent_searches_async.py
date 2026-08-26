@@ -12,7 +12,9 @@ Run it with::
 
 import asyncio
 
-from memco.client import AsyncClient, MemcoAPIError, SearchResult
+from memco import AsyncMemco
+from memco.errors import MemcoAPIError
+from memco.types import SearchResult
 
 QUERIES = [
     "how does gRPC health checking work",
@@ -22,7 +24,7 @@ QUERIES = [
 ]
 
 
-async def search(client: AsyncClient, query: str, session_id: str) -> tuple[str, str]:
+async def search(client: AsyncMemco, query: str, session_id: str) -> tuple[str, str]:
     """Run one search, turning a failure into a reportable result.
 
     Args:
@@ -43,7 +45,7 @@ async def search(client: AsyncClient, query: str, session_id: str) -> tuple[str,
 
 async def main() -> None:
     """Run the example."""
-    async with AsyncClient() as client:
+    async with AsyncMemco() as client:
         session = await client.memory.start_session("coding")
 
         # All four run concurrently over the single channel.

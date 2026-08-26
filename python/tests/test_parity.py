@@ -9,9 +9,9 @@ from __future__ import annotations
 import inspect
 from collections.abc import Set as AbstractSet
 
-import memco.client as package
-from memco.client import AsyncClient, Client, _memory, errors, types
-from memco.client._memory import AsyncMemoryOperations, MemoryOperations
+import memco as package
+from memco import AsyncMemco, Memco, errors, operations, types
+from memco.operations import AsyncMemoryOperations, MemoryOperations
 
 # Namespaces the client exposes, paired sync-to-async. A second service added
 # here is automatically held to the same parity rules.
@@ -43,24 +43,24 @@ def assert_signatures_match(sync: type, asynchronous: type, names: set[str]) -> 
 
 
 def test_both_clients_expose_the_same_lifecycle():
-    assert public_methods(Client, CLIENT_SKIP) == public_methods(AsyncClient, CLIENT_SKIP)
+    assert public_methods(Memco, CLIENT_SKIP) == public_methods(AsyncMemco, CLIENT_SKIP)
 
 
 def test_client_lifecycle_signatures_match():
-    assert_signatures_match(Client, AsyncClient, public_methods(Client, CLIENT_SKIP))
+    assert_signatures_match(Memco, AsyncMemco, public_methods(Memco, CLIENT_SKIP))
 
 
 def test_constructors_match():
-    assert list(inspect.signature(Client.__init__).parameters) == list(
-        inspect.signature(AsyncClient.__init__).parameters
+    assert list(inspect.signature(Memco.__init__).parameters) == list(
+        inspect.signature(AsyncMemco.__init__).parameters
     )
 
 
 def test_every_namespace_is_exposed_on_both_clients():
     # Constructing against a dead port does no I/O once the health probe is
     # off, so this checks the wiring without needing a server.
-    sync = Client(token="t", host="localhost:1", tls=False, check_health=False)
-    asynchronous = AsyncClient(token="t", host="localhost:1", tls=False, check_health=False)
+    sync = Memco(token="t", host="localhost:1", tls=False, check_health=False)
+    asynchronous = AsyncMemco(token="t", host="localhost:1", tls=False, check_health=False)
     try:
         for sync_ns, async_ns in NAMESPACES:
             attribute = sync_ns.__name__.replace("Operations", "").lower()
@@ -95,11 +95,11 @@ def test_no_public_module_documents_a_flat_call():
     # The operations moved onto client.memory. Any docstring anywhere in the
     # public surface that still shows client.<operation>( is a copy-pasteable
     # AttributeError, and every one of these modules is published by Sphinx.
-    operations = public_methods(MemoryOperations)
-    for module in (package, errors, types, _memory):
+    names = public_methods(MemoryOperations)
+    for module in (package, errors, types, operations):
         source = inspect.getsource(module)
         for number, line in enumerate(source.splitlines(), 1):
-            for operation in operations:
+            for operation in names:
                 flat = f"client.{operation}("
                 assert flat not in line, (
                     f"{module.__name__}:{number} documents a flat call: {line.strip()}"

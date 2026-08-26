@@ -15,7 +15,7 @@ from __future__ import annotations
 import functools
 from importlib import resources
 
-from .errors import MemcoConfigError
+from .errors import ClientConfigError
 from .types import ProtoRecord, Provenance
 
 RESOURCE = "SDK_PROVENANCE.yaml"
@@ -60,13 +60,13 @@ def _value(raw: str, *, where: str) -> str:
         The bare value, with any surrounding quotes removed.
 
     Raises:
-        MemcoConfigError: If the value is a block scalar. ``|`` and ``>`` put
+        ClientConfigError: If the value is a block scalar. ``|`` and ``>`` put
             the content on following lines, which this reader does not model,
             and returning the indicator itself would be silently wrong.
     """
     value = _strip_comment(raw).strip()
     if value in ("|", ">") or value[:2] in ("|-", ">-", "|+", ">+"):
-        raise MemcoConfigError(f"{RESOURCE} uses an unsupported block scalar for {where}")
+        raise ClientConfigError(f"{RESOURCE} uses an unsupported block scalar for {where}")
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":  # noqa: PLR2004
         return value[1:-1]
     return value
@@ -103,7 +103,7 @@ def _entry_fields(body: list[tuple[int, str]]) -> dict[str, str]:
         The entry's ``path`` and ``sha256``, where present.
 
     Raises:
-        MemcoConfigError: If the entry names either key twice.
+        ClientConfigError: If the entry names either key twice.
     """
     fields: dict[str, str] = {}
     base = body[0][0] if body else 0
@@ -114,7 +114,7 @@ def _entry_fields(body: list[tuple[int, str]]) -> dict[str, str]:
         if not separator or key not in ("path", "sha256"):
             continue
         if key in fields:
-            raise MemcoConfigError(f"{RESOURCE} has a protos entry naming {key} twice")
+            raise ClientConfigError(f"{RESOURCE} has a protos entry naming {key} twice")
         fields[key] = _value(rest, where=key)
     return fields
 
@@ -138,7 +138,7 @@ def parse(text: str) -> Provenance:
         The parsed provenance.
 
     Raises:
-        MemcoConfigError: If the server commit is missing, no contract files are
+        ClientConfigError: If the server commit is missing, no contract files are
             listed, or an entry lacks or repeats a path or checksum. A malformed
             descriptor means the package was assembled wrongly, so guessing
             would hide a real packaging fault.
@@ -159,9 +159,9 @@ def parse(text: str) -> Provenance:
             protos = _read_protos(lines, position)
 
     if not commit:
-        raise MemcoConfigError(f"{RESOURCE} is missing server_commit")
+        raise ClientConfigError(f"{RESOURCE} is missing server_commit")
     if not protos:
-        raise MemcoConfigError(f"{RESOURCE} lists no protos")
+        raise ClientConfigError(f"{RESOURCE} lists no protos")
     return Provenance(server_commit=commit, protos=tuple(protos))
 
 
@@ -179,7 +179,7 @@ def _read_protos(lines: list[tuple[int, str]], start: int) -> list[ProtoRecord]:
         One record per entry.
 
     Raises:
-        MemcoConfigError: If an entry lacks a path or a checksum.
+        ClientConfigError: If an entry lacks a path or a checksum.
     """
     base = lines[start][0]
     body: list[tuple[int, str]] = []
@@ -198,7 +198,7 @@ def _read_protos(lines: list[tuple[int, str]], start: int) -> list[ProtoRecord]:
             return
         fields = _entry_fields(entry)
         if not fields.get("path") or not fields.get("sha256"):
-            raise MemcoConfigError(
+            raise ClientConfigError(
                 f"{RESOURCE} has a protos entry missing path or sha256: {entry!r}"
             )
         records.append(ProtoRecord(path=fields["path"], sha256=fields["sha256"]))
@@ -226,7 +226,7 @@ def provenance() -> Provenance:
         The provenance recorded when this package was built.
 
     Raises:
-        MemcoConfigError: If the descriptor is missing from the installed
+        ClientConfigError: If the descriptor is missing from the installed
             package or does not match the expected shape.
 
     Example:
@@ -236,7 +236,7 @@ def provenance() -> Provenance:
     try:
         text = (resources.files("memco") / RESOURCE).read_text(encoding="utf-8")
     except (FileNotFoundError, ModuleNotFoundError) as exc:
-        raise MemcoConfigError(
+        raise ClientConfigError(
             f"{RESOURCE} is missing from the installed memco package; the wheel was built wrongly"
         ) from exc
     return parse(text)

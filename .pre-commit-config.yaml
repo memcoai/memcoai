@@ -4,7 +4,7 @@
 # Generated code under <lang>/client/ is the export's to produce and is never
 # reformatted here, so every hook excludes it.
 
-exclude: '^(proto/|[a-z]+/client/)'
+exclude: '^(proto/|[a-z]+/client/|python/memco/memory/)'
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -49,4 +49,4 @@ repos:
         # is applied, and it removes exactly the paths this hook watches. An
         # empty exclude opts back in.
         exclude: '^$'
-        files: '^(proto/|[a-z]+/client/|python/pyproject\.toml)'
+        files: '^(proto/|[a-z]+/client/|python/memco/memory/|python/requirements\.txt|python/pyproject\.toml)'

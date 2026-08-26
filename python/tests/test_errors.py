@@ -3,7 +3,7 @@
 import grpc
 import pytest
 
-from memco.client import errors
+from memco import errors
 
 
 class FakeRpcError(grpc.RpcError):  # type: ignore[misc]
@@ -82,5 +82,5 @@ def test_only_resource_exhausted_carries_a_kind():
 
 
 def test_config_error_is_not_an_api_error():
-    assert issubclass(errors.MemcoConfigError, errors.MemcoError)
-    assert not issubclass(errors.MemcoConfigError, errors.MemcoAPIError)
+    assert issubclass(errors.ClientConfigError, errors.MemcoError)
+    assert not issubclass(errors.ClientConfigError, errors.MemcoAPIError)

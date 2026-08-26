@@ -11,6 +11,7 @@ from concurrent import futures
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
+
 from memco.memory.v1 import memory_pb2 as pb
 from memco.memory.v1 import memory_pb2_grpc as pbg
 

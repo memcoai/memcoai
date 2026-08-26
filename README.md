@@ -45,9 +45,8 @@ here and can be used directly against the API.
 ## Quick start
 
 ```python
-from memco.client import Client
-
-with Client() as client:                       # reads MEMCO_API_TOKEN
+from memco import Memco
+with Memco() as client:                       # reads MEMCO_API_TOKEN
     session = client.memory.start_session("coding")
 
     result = client.memory.search(

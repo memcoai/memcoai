@@ -147,7 +147,7 @@ jobs:
           /tmp/verify/bin/python - <<'PY'
           import importlib.resources as resources
 
-          import memco.client as mc
+          import memco as mc
           from memco.memory.v1 import memory_pb2 as pb
 
           assert pb.DESCRIPTOR.name == "memco/memory/v1/memory.proto"
@@ -166,8 +166,8 @@ jobs:
           import zipfile
 
           source = {
-              str(p.relative_to("client")).replace("\\", "/")
-              for p in pathlib.Path("client/memco").rglob("*")
+              str(p).replace("\\", "/")
+              for p in pathlib.Path("memco/memory").rglob("*")
               if p.is_file() and p.suffix in {".py", ".pyi"}
           }
           shipped = set(zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0]).namelist())
@@ -182,9 +182,8 @@ jobs:
         run: |
           cd /tmp
           cat > consumer.py <<'PY'
-          from memco.client import Client
-
-          wrong: int = Client(token="t", check_health=False).provenance().server_commit
+          from memco import Memco
+          wrong: int = Memco(token="t", check_health=False).provenance().server_commit
           PY
           /tmp/verify/bin/python -m mypy consumer.py 2>&1 | tee out.txt
           grep -q 'Incompatible types in assignment' out.txt \
@@ -238,7 +237,7 @@ jobs:
           enable-cache: true
       - name: Import the generated modules against ${{ matrix.label }} pins
         run: |
-          PYTHONPATH=client uv run --no-project --python 3.12 \
+          uv run --no-project --python 3.12 \
             $(for pin in ${{ matrix.pins }}; do printf -- '--with %s ' "$pin"; done) \
             python -c "
           import google.protobuf, grpc
@@ -275,9 +274,8 @@ jobs:
           MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
         run: |
           uv run python - <<'PY'
-          from memco.client import Client, provenance
-
-          with Client() as client:
+          from memco import Memco, provenance
+          with Memco() as client:
               print("contract:", provenance().server_commit)
               domains = client.memory.list_domains().domains
               print("domains:", [d.slug for d in domains])

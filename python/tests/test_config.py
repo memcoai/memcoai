@@ -2,8 +2,8 @@
 
 import pytest
 
-from memco.client import errors
-from memco.client._config import DEFAULT_HOST, DEFAULT_PORT, resolve
+from memco import errors
+from memco._config import DEFAULT_HOST, DEFAULT_PORT, resolve
 
 
 def test_explicit_token_wins_over_env():
@@ -27,12 +27,12 @@ def test_memco_api_token_takes_precedence_over_the_deprecated_name():
 
 
 def test_missing_token_raises_config_error():
-    with pytest.raises(errors.MemcoConfigError, match="MEMCO_API_TOKEN"):
+    with pytest.raises(errors.ClientConfigError, match="MEMCO_API_TOKEN"):
         resolve(env={})
 
 
 def test_blank_token_is_treated_as_missing():
-    with pytest.raises(errors.MemcoConfigError):
+    with pytest.raises(errors.ClientConfigError):
         resolve(token="   ", env={})
 
 
@@ -57,12 +57,12 @@ def test_host_may_carry_a_port():
 
 
 def test_unparseable_port_raises_config_error():
-    with pytest.raises(errors.MemcoConfigError, match="port"):
+    with pytest.raises(errors.ClientConfigError, match="port"):
         resolve(token="t", host="localhost:not-a-port", env={})
 
 
 def test_out_of_range_port_raises_config_error():
-    with pytest.raises(errors.MemcoConfigError, match="port"):
+    with pytest.raises(errors.ClientConfigError, match="port"):
         resolve(token="t", host="localhost:99999", env={})
 
 
@@ -73,5 +73,5 @@ def test_tls_and_timeout_defaults():
 
 
 def test_non_positive_timeout_raises_config_error():
-    with pytest.raises(errors.MemcoConfigError, match="timeout"):
+    with pytest.raises(errors.ClientConfigError, match="timeout"):
         resolve(token="t", timeout=0, env={})

@@ -29,10 +29,10 @@ __all__ = ["AsyncMemoryOperations", "MemoryOperations"]
 class MemoryOperations:
     """The eight memory operations, on a synchronous client.
 
-    Reached as :attr:`~memco.client.Client.memory`; not constructed directly.
+    Reached as :attr:`~memco.Memco.memory`; not constructed directly.
 
     Example:
-        >>> with Client() as client:
+        >>> with Memco() as client:
         ...     session = client.memory.start_session("coding")
         ...     result = client.memory.search("how does X work",
         ...                                   session_id=session.session_id)
@@ -204,7 +204,7 @@ class MemoryOperations:
             session_id: The session this was learned during.
             tags: Tags describing the subject and context.
             source: Who produced the content. Defaults to
-                :attr:`~memco.client.types.DataSource.AGENT`.
+                :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -267,7 +267,7 @@ class MemoryOperations:
             tags: Tags describing the addition.
             sources: Handles of the memories this addition draws on. At most 20.
             source: Who produced the content. Defaults to
-                :attr:`~memco.client.types.DataSource.AGENT`.
+                :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -341,12 +341,12 @@ class MemoryOperations:
 
         Every outcome is a successful call. An operation that was not found, has
         expired, or is under moderation is reported through
-        :attr:`~memco.client.types.RevertResult.outcome` rather than raised,
+        :attr:`~memco.types.RevertResult.outcome` rather than raised,
         because each describes caller-visible state rather than a failure.
 
         Args:
             operation_id: The operation id a create or enrich returned, as
-                carried by :attr:`~memco.client.types.WriteResult.operation_id`.
+                carried by :attr:`~memco.types.WriteResult.operation_id`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -368,11 +368,11 @@ class MemoryOperations:
 class AsyncMemoryOperations:
     """The eight memory operations, on an asyncio client.
 
-    Reached as :attr:`~memco.client.AsyncClient.memory`; not constructed
+    Reached as :attr:`~memco.AsyncMemco.memory`; not constructed
     directly. Mirrors :class:`MemoryOperations` method for method.
 
     Example:
-        >>> async with AsyncClient() as client:
+        >>> async with AsyncMemco() as client:
         ...     session = await client.memory.start_session("coding")
         ...     result = await client.memory.search("how does X work",
         ...                                         session_id=session.session_id)
@@ -549,7 +549,7 @@ class AsyncMemoryOperations:
             session_id: The session this was learned during.
             tags: Tags describing the subject and context.
             source: Who produced the content. Defaults to
-                :attr:`~memco.client.types.DataSource.AGENT`.
+                :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -612,7 +612,7 @@ class AsyncMemoryOperations:
             sources: Handles of the memories this addition draws on. At most 20.
             tags: Tags describing the addition.
             source: Who produced the content. Defaults to
-                :attr:`~memco.client.types.DataSource.AGENT`.
+                :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -690,12 +690,12 @@ class AsyncMemoryOperations:
 
         Every outcome is a successful call. An operation that was not found, has
         expired, or is under moderation is reported through
-        :attr:`~memco.client.types.RevertResult.outcome` rather than raised,
+        :attr:`~memco.types.RevertResult.outcome` rather than raised,
         because each describes caller-visible state rather than a failure.
 
         Args:
             operation_id: The operation id a create or enrich returned, as
-                carried by :attr:`~memco.client.types.WriteResult.operation_id`.
+                carried by :attr:`~memco.types.WriteResult.operation_id`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:

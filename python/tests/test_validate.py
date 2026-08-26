@@ -3,9 +3,9 @@
 import grpc
 import pytest
 
-from memco.client import _validate as v
-from memco.client.errors import MemcoInvalidRequestError
-from memco.client.types import FeedbackRating
+from memco import _validate as v
+from memco.errors import MemcoInvalidRequestError
+from memco.types import FeedbackRating
 
 
 def test_query_cap():

@@ -33,9 +33,9 @@ Requires Python 3.10 or newer.
 ## Quick start
 
 ```python
-from memco.client import Client
+from memco import Memco
 
-with Client() as client:  # reads MEMCO_API_TOKEN
+with Memco() as client:  # reads MEMCO_API_TOKEN
     for domain in client.memory.list_domains().domains:
         print(domain.slug, "-", domain.summary)
 
@@ -53,9 +53,9 @@ with Client() as client:  # reads MEMCO_API_TOKEN
 Everything works asynchronously too, with the same method names:
 
 ```python
-from memco.client import AsyncClient
+from memco import AsyncMemco
 
-async with AsyncClient() as client:
+async with AsyncMemco() as client:
     session = await client.memory.start_session("coding")
     result = await client.memory.search("...", session_id=session.session_id)
 ```
@@ -79,9 +79,9 @@ Arguments win over the environment, which wins over the defaults.
 The credential is either a static Memco API key or a WorkOS JWT; both go in the
 same header. `MEMCO_API_KEY` is still honoured but warns.
 
-Constructing a `Client` probes the service's health endpoint, so a bad host,
+Constructing a `Memco` probes the service's health endpoint, so a bad host,
 port or TLS setting fails immediately rather than on your first call.
-`AsyncClient` cannot do this in `__init__` — it probes on `connect()`, which
+`AsyncMemco` cannot do this in `__init__` — it probes on `connect()`, which
 `async with` calls for you.
 
 That probe is unauthenticated, so it cannot check your credential. Pass
@@ -89,7 +89,7 @@ That probe is unauthenticated, so it cannot check your credential. Pass
 your per-minute rate-limit tokens each time a client is built.
 
 ```python
-Client(token="...", host="localhost:50051", tls=False, check_health=False)
+Memco(token="...", host="localhost:50051", tls=False, check_health=False)
 ```
 
 ## Operations
@@ -114,7 +114,7 @@ reaches you.
 
 ```
 MemcoError
-├── MemcoConfigError                  bad configuration; no request was sent
+├── ClientConfigError                  bad configuration; no request was sent
 └── MemcoAPIError                     the service returned an error status
     ├── MemcoAuthenticationError      credential missing, expired or rejected
     ├── MemcoPermissionError          credential lacks the scope or role
@@ -152,7 +152,7 @@ The package records which version of the service contract its generated client
 was built from:
 
 ```python
-from memco.client import provenance
+from memco import provenance
 
 provenance().server_commit  # the commit this wheel was built from
 provenance().protos[0].path  # 'memco/memory/v1/memory.proto'

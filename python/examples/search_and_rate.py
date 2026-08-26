@@ -10,14 +10,15 @@ Run it with::
     python examples/search_and_rate.py
 """
 
-from memco.client import Client, FeedbackRating, Tag
+from memco import Memco
+from memco.types import FeedbackRating, Tag
 
 DOMAIN = "coding"
 
 
 def main() -> None:
     """Run the example."""
-    with Client() as client:
+    with Memco() as client:
         # A session ties related searches together. Reuse its id for every
         # search made for the same task, and for the ratings afterwards.
         session = client.memory.start_session(DOMAIN)

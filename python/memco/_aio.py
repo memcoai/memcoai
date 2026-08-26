@@ -8,17 +8,18 @@ from typing import Any
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
+
 from memco.memory.v1 import memory_pb2_grpc as _pbg
 
 from ._channel import build_async_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
-from ._memory import AsyncMemoryOperations
 from ._provenance import provenance as _provenance
-from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
+from .errors import ClientConfigError, MemcoUnhealthyError, from_rpc_error
+from .operations import AsyncMemoryOperations
 from .types import Provenance
 
-__all__ = ["AsyncClient"]
+__all__ = ["AsyncMemco"]
 
 
 class _LazyStub:
@@ -29,7 +30,7 @@ class _LazyStub:
     stub through it on first use.
     """
 
-    def __init__(self, client: AsyncClient) -> None:
+    def __init__(self, client: AsyncMemco) -> None:
         """Bind to the client that owns the channel.
 
         Args:
@@ -52,10 +53,10 @@ class _LazyStub:
         return getattr(self._client._stub, name)  # noqa: SLF001
 
 
-class AsyncClient:
+class AsyncMemco:
     """Asyncio client for Memco Shared Memory.
 
-    Mirrors :class:`~memco.client.Client` method for method; only the awaiting
+    Mirrors :class:`~memco.Memco` method for method; only the awaiting
     differs. Because opening a connection requires I/O, the health probe cannot
     run in ``__init__``: use it as an async context manager, or call
     :meth:`connect` yourself.
@@ -70,21 +71,21 @@ class AsyncClient:
         timeout: Default per-call deadline in seconds.
         check_health: Whether :meth:`connect` probes the health endpoint.
         verify_credentials: Whether :meth:`connect` also calls
-            :meth:`~memco.client._memory.MemoryOperations.list_domains` to prove
+            :meth:`~memco.operations.MemoryOperations.list_domains` to prove
             the credential works. Off by default because that call is
             rate-limited.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`.
 
     Raises:
-        MemcoConfigError: If no credential is available or the host is unusable.
+        ClientConfigError: If no credential is available or the host is unusable.
 
     Attributes:
         memory: The memory operations, as
-            :class:`~memco.client._memory.AsyncMemoryOperations`.
+            :class:`~memco.operations.AsyncMemoryOperations`.
 
     Example:
-        >>> async with AsyncClient() as client:
+        >>> async with AsyncMemco() as client:
         ...     session = await client.memory.start_session("coding")
         ...     result = await client.memory.search("how does health checking work",
         ...                                         session_id=session.session_id)
@@ -114,7 +115,7 @@ class AsyncClient:
         self._stub: Any = None
         self._health: Any = None
         self.memory = AsyncMemoryOperations(_LazyStub(self), self._call)
-        """The memory operations. See :class:`~memco.client._memory.AsyncMemoryOperations`."""
+        """The memory operations. See :class:`~memco.operations.AsyncMemoryOperations`."""
 
     # -- lifecycle --------------------------------------------------------
 
@@ -124,16 +125,16 @@ class AsyncClient:
         Called from inside the running event loop, never from ``__init__``.
 
         Raises:
-            MemcoConfigError: If the client has been closed.
+            ClientConfigError: If the client has been closed.
         """
         if self._closed:
-            raise MemcoConfigError("this client is closed; create a new one to make more calls")
+            raise ClientConfigError("this client is closed; create a new one to make more calls")
         if self._channel is None:
             self._channel = build_async_channel(self._config)
             self._stub = _pbg.MemoryServiceStub(self._channel)
             self._health = health_pb2_grpc.HealthStub(self._channel)
 
-    async def connect(self) -> AsyncClient:
+    async def connect(self) -> AsyncMemco:
         """Verify the connection, running the checks the constructor could not.
 
         Calling this more than once simply repeats the checks.
@@ -176,7 +177,7 @@ class AsyncClient:
         """Close the underlying channel.
 
         Safe to call more than once. After closing, any further call raises
-        :class:`~memco.client.errors.MemcoConfigError`.
+        :class:`~memco.errors.ClientConfigError`.
         """
         if self._closed:
             return
@@ -184,7 +185,7 @@ class AsyncClient:
         if self._channel is not None:
             await self._channel.close(grace=None)
 
-    async def __aenter__(self) -> AsyncClient:
+    async def __aenter__(self) -> AsyncMemco:
         """Enter an async context manager, connecting and verifying.
 
         Returns:
@@ -246,7 +247,7 @@ class AsyncClient:
             The response message.
 
         Raises:
-            MemcoConfigError: If the client has been closed.
+            ClientConfigError: If the client has been closed.
             MemcoAPIError: If the service returned an error status.
         """
         self._open()
@@ -258,6 +259,6 @@ class AsyncClient:
             # close() flips the flag and then tears the channel down, so a call
             # that passed the check above can still land on a dead channel.
             # UsageError is not an RpcError, so it would otherwise escape raw.
-            raise MemcoConfigError(
+            raise ClientConfigError(
                 "this client is closed; create a new one to make more calls"
             ) from exc
