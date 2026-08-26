@@ -228,14 +228,61 @@ export interface DomainEntry {
    * other type is dropped.
    */
   versionTagTypes: string[];
+  /**
+   * max_tags_per_query bounds `tags` on a call naming this domain. Like
+   * max_sources it TRIMS rather than refuses, and it is per-domain rather than
+   * global, which is why it sits here rather than on Limits. Zero means the
+   * domain sets no cap.
+   */
+  maxTagsPerQuery: number;
 }
 
-export interface ListDomainsRequest {
+export interface DescribeDomainsRequest {
 }
 
-export interface ListDomainsResponse {
+export interface DescribeDomainsResponse {
   domains: DomainEntry[];
   instructions?: Instructions | undefined;
+  limits?: Limits | undefined;
+}
+
+/**
+ * Limits are the caps the server enforces, published so a client can check its
+ * input before spending a round trip on a call that would be refused.
+ *
+ * A server that predates this field sends no Limits at all. Treat that as
+ * "validate nothing" rather than as zeros, or every call is rejected locally.
+ *
+ * Note which caps REFUSE and which TRIM. A validator that raises on all of them
+ * rejects calls the server would have accepted.
+ */
+export interface Limits {
+  /**
+   * max_query_characters bounds `query` on both Search and CreateMemory.
+   * Exceeding it is refused with INVALID_ARGUMENT.
+   */
+  maxQueryCharacters: number;
+  /**
+   * max_text_characters bounds `title` and `content` TOGETHER, not each.
+   * Exceeding it is refused with INVALID_ARGUMENT.
+   */
+  maxTextCharacters: number;
+  /**
+   * max_idx_characters bounds any idx-shaped handle: `idx`, `memory_idx`, and
+   * each entry of `sources`. Exceeding it is refused with INVALID_ARGUMENT.
+   */
+  maxIdxCharacters: number;
+  /**
+   * max_sources bounds `sources` on EnrichMemory. It TRIMS rather than refuses:
+   * the server keeps the first max_sources and drops the rest, so a client
+   * should trim too rather than raise.
+   */
+  maxSources: number;
+  /**
+   * max_feedback_entries bounds `feedback` entries per ShareFeedback call.
+   * Exceeding it is refused with INVALID_ARGUMENT.
+   */
+  maxFeedbackEntries: number;
 }
 
 export interface StartSessionRequest {
@@ -666,6 +713,7 @@ function createBaseDomainEntry(): DomainEntry {
     tagsDescription: "",
     filterTagTypes: [],
     versionTagTypes: [],
+    maxTagsPerQuery: 0,
   };
 }
 
@@ -697,6 +745,9 @@ export const DomainEntry: MessageFns<DomainEntry> = {
     }
     for (const v of message.versionTagTypes) {
       writer.uint32(74).string(v!);
+    }
+    if (message.maxTagsPerQuery !== 0) {
+      writer.uint32(80).int32(message.maxTagsPerQuery);
     }
     return writer;
   },
@@ -780,6 +831,14 @@ export const DomainEntry: MessageFns<DomainEntry> = {
           message.versionTagTypes.push(reader.string());
           continue;
         }
+        case 10: {
+          if (tag !== 80) {
+            break;
+          }
+
+          message.maxTagsPerQuery = reader.int32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -804,6 +863,7 @@ export const DomainEntry: MessageFns<DomainEntry> = {
       versionTagTypes: globalThis.Array.isArray(object?.versionTagTypes)
         ? object.versionTagTypes.map((e: any) => globalThis.String(e))
         : [],
+      maxTagsPerQuery: isSet(object.maxTagsPerQuery) ? globalThis.Number(object.maxTagsPerQuery) : 0,
     };
   },
 
@@ -836,6 +896,9 @@ export const DomainEntry: MessageFns<DomainEntry> = {
     if (message.versionTagTypes?.length) {
       obj.versionTagTypes = message.versionTagTypes;
     }
+    if (message.maxTagsPerQuery !== 0) {
+      obj.maxTagsPerQuery = Math.round(message.maxTagsPerQuery);
+    }
     return obj;
   },
 
@@ -853,23 +916,24 @@ export const DomainEntry: MessageFns<DomainEntry> = {
     message.tagsDescription = object.tagsDescription ?? "";
     message.filterTagTypes = object.filterTagTypes?.map((e) => e) || [];
     message.versionTagTypes = object.versionTagTypes?.map((e) => e) || [];
+    message.maxTagsPerQuery = object.maxTagsPerQuery ?? 0;
     return message;
   },
 };
 
-function createBaseListDomainsRequest(): ListDomainsRequest {
+function createBaseDescribeDomainsRequest(): DescribeDomainsRequest {
   return {};
 }
 
-export const ListDomainsRequest: MessageFns<ListDomainsRequest> = {
-  encode(_: ListDomainsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const DescribeDomainsRequest: MessageFns<DescribeDomainsRequest> = {
+  encode(_: DescribeDomainsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ListDomainsRequest {
+  decode(input: BinaryReader | Uint8Array, length?: number): DescribeDomainsRequest {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseListDomainsRequest();
+    const message = createBaseDescribeDomainsRequest();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -882,43 +946,46 @@ export const ListDomainsRequest: MessageFns<ListDomainsRequest> = {
     return message;
   },
 
-  fromJSON(_: any): ListDomainsRequest {
+  fromJSON(_: any): DescribeDomainsRequest {
     return {};
   },
 
-  toJSON(_: ListDomainsRequest): unknown {
+  toJSON(_: DescribeDomainsRequest): unknown {
     const obj: any = {};
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ListDomainsRequest>, I>>(base?: I): ListDomainsRequest {
-    return ListDomainsRequest.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<DescribeDomainsRequest>, I>>(base?: I): DescribeDomainsRequest {
+    return DescribeDomainsRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ListDomainsRequest>, I>>(_: I): ListDomainsRequest {
-    const message = createBaseListDomainsRequest();
+  fromPartial<I extends Exact<DeepPartial<DescribeDomainsRequest>, I>>(_: I): DescribeDomainsRequest {
+    const message = createBaseDescribeDomainsRequest();
     return message;
   },
 };
 
-function createBaseListDomainsResponse(): ListDomainsResponse {
-  return { domains: [], instructions: undefined };
+function createBaseDescribeDomainsResponse(): DescribeDomainsResponse {
+  return { domains: [], instructions: undefined, limits: undefined };
 }
 
-export const ListDomainsResponse: MessageFns<ListDomainsResponse> = {
-  encode(message: ListDomainsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
+  encode(message: DescribeDomainsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.domains) {
       DomainEntry.encode(v!, writer.uint32(10).fork()).join();
     }
     if (message.instructions !== undefined) {
       Instructions.encode(message.instructions, writer.uint32(18).fork()).join();
     }
+    if (message.limits !== undefined) {
+      Limits.encode(message.limits, writer.uint32(26).fork()).join();
+    }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ListDomainsResponse {
+  decode(input: BinaryReader | Uint8Array, length?: number): DescribeDomainsResponse {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseListDomainsResponse();
+    const message = createBaseDescribeDomainsResponse();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -938,6 +1005,14 @@ export const ListDomainsResponse: MessageFns<ListDomainsResponse> = {
           message.instructions = Instructions.decode(reader, reader.uint32());
           continue;
         }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.limits = Limits.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -947,14 +1022,15 @@ export const ListDomainsResponse: MessageFns<ListDomainsResponse> = {
     return message;
   },
 
-  fromJSON(object: any): ListDomainsResponse {
+  fromJSON(object: any): DescribeDomainsResponse {
     return {
       domains: globalThis.Array.isArray(object?.domains) ? object.domains.map((e: any) => DomainEntry.fromJSON(e)) : [],
       instructions: isSet(object.instructions) ? Instructions.fromJSON(object.instructions) : undefined,
+      limits: isSet(object.limits) ? Limits.fromJSON(object.limits) : undefined,
     };
   },
 
-  toJSON(message: ListDomainsResponse): unknown {
+  toJSON(message: DescribeDomainsResponse): unknown {
     const obj: any = {};
     if (message.domains?.length) {
       obj.domains = message.domains.map((e) => DomainEntry.toJSON(e));
@@ -962,18 +1038,148 @@ export const ListDomainsResponse: MessageFns<ListDomainsResponse> = {
     if (message.instructions !== undefined) {
       obj.instructions = Instructions.toJSON(message.instructions);
     }
+    if (message.limits !== undefined) {
+      obj.limits = Limits.toJSON(message.limits);
+    }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ListDomainsResponse>, I>>(base?: I): ListDomainsResponse {
-    return ListDomainsResponse.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<DescribeDomainsResponse>, I>>(base?: I): DescribeDomainsResponse {
+    return DescribeDomainsResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ListDomainsResponse>, I>>(object: I): ListDomainsResponse {
-    const message = createBaseListDomainsResponse();
+  fromPartial<I extends Exact<DeepPartial<DescribeDomainsResponse>, I>>(object: I): DescribeDomainsResponse {
+    const message = createBaseDescribeDomainsResponse();
     message.domains = object.domains?.map((e) => DomainEntry.fromPartial(e)) || [];
     message.instructions = (object.instructions !== undefined && object.instructions !== null)
       ? Instructions.fromPartial(object.instructions)
       : undefined;
+    message.limits = (object.limits !== undefined && object.limits !== null)
+      ? Limits.fromPartial(object.limits)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseLimits(): Limits {
+  return { maxQueryCharacters: 0, maxTextCharacters: 0, maxIdxCharacters: 0, maxSources: 0, maxFeedbackEntries: 0 };
+}
+
+export const Limits: MessageFns<Limits> = {
+  encode(message: Limits, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.maxQueryCharacters !== 0) {
+      writer.uint32(8).int32(message.maxQueryCharacters);
+    }
+    if (message.maxTextCharacters !== 0) {
+      writer.uint32(16).int32(message.maxTextCharacters);
+    }
+    if (message.maxIdxCharacters !== 0) {
+      writer.uint32(24).int32(message.maxIdxCharacters);
+    }
+    if (message.maxSources !== 0) {
+      writer.uint32(32).int32(message.maxSources);
+    }
+    if (message.maxFeedbackEntries !== 0) {
+      writer.uint32(40).int32(message.maxFeedbackEntries);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Limits {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseLimits();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.maxQueryCharacters = reader.int32();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.maxTextCharacters = reader.int32();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.maxIdxCharacters = reader.int32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.maxSources = reader.int32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.maxFeedbackEntries = reader.int32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Limits {
+    return {
+      maxQueryCharacters: isSet(object.maxQueryCharacters) ? globalThis.Number(object.maxQueryCharacters) : 0,
+      maxTextCharacters: isSet(object.maxTextCharacters) ? globalThis.Number(object.maxTextCharacters) : 0,
+      maxIdxCharacters: isSet(object.maxIdxCharacters) ? globalThis.Number(object.maxIdxCharacters) : 0,
+      maxSources: isSet(object.maxSources) ? globalThis.Number(object.maxSources) : 0,
+      maxFeedbackEntries: isSet(object.maxFeedbackEntries) ? globalThis.Number(object.maxFeedbackEntries) : 0,
+    };
+  },
+
+  toJSON(message: Limits): unknown {
+    const obj: any = {};
+    if (message.maxQueryCharacters !== 0) {
+      obj.maxQueryCharacters = Math.round(message.maxQueryCharacters);
+    }
+    if (message.maxTextCharacters !== 0) {
+      obj.maxTextCharacters = Math.round(message.maxTextCharacters);
+    }
+    if (message.maxIdxCharacters !== 0) {
+      obj.maxIdxCharacters = Math.round(message.maxIdxCharacters);
+    }
+    if (message.maxSources !== 0) {
+      obj.maxSources = Math.round(message.maxSources);
+    }
+    if (message.maxFeedbackEntries !== 0) {
+      obj.maxFeedbackEntries = Math.round(message.maxFeedbackEntries);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Limits>, I>>(base?: I): Limits {
+    return Limits.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Limits>, I>>(object: I): Limits {
+    const message = createBaseLimits();
+    message.maxQueryCharacters = object.maxQueryCharacters ?? 0;
+    message.maxTextCharacters = object.maxTextCharacters ?? 0;
+    message.maxIdxCharacters = object.maxIdxCharacters ?? 0;
+    message.maxSources = object.maxSources ?? 0;
+    message.maxFeedbackEntries = object.maxFeedbackEntries ?? 0;
     return message;
   },
 };
@@ -2772,17 +2978,18 @@ export const RevertMemoryResponse: MessageFns<RevertMemoryResponse> = {
 export type MemoryServiceService = typeof MemoryServiceService;
 export const MemoryServiceService = {
   /**
-   * ListDomains returns the memory domains the caller may name. It takes no
-   * domain itself: it is the answer to "which domain?".
+   * DescribeDomains returns the memory domains the caller may name, together
+   * with the limits the server enforces. It takes no domain itself: it is the
+   * answer to "which domain?", and the one call a client makes before any other.
    */
-  listDomains: {
-    path: "/memco.memory.v1.MemoryService/ListDomains",
+  describeDomains: {
+    path: "/memco.memory.v1.MemoryService/DescribeDomains",
     requestStream: false,
     responseStream: false,
-    requestSerialize: (value: ListDomainsRequest) => Buffer.from(ListDomainsRequest.encode(value).finish()),
-    requestDeserialize: (value: Buffer) => ListDomainsRequest.decode(value),
-    responseSerialize: (value: ListDomainsResponse) => Buffer.from(ListDomainsResponse.encode(value).finish()),
-    responseDeserialize: (value: Buffer) => ListDomainsResponse.decode(value),
+    requestSerialize: (value: DescribeDomainsRequest) => Buffer.from(DescribeDomainsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => DescribeDomainsRequest.decode(value),
+    responseSerialize: (value: DescribeDomainsResponse) => Buffer.from(DescribeDomainsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => DescribeDomainsResponse.decode(value),
   },
   /**
    * StartSession opens a session. Every search made under it is recorded as
@@ -2878,10 +3085,11 @@ export const MemoryServiceService = {
 
 export interface MemoryServiceServer extends UntypedServiceImplementation {
   /**
-   * ListDomains returns the memory domains the caller may name. It takes no
-   * domain itself: it is the answer to "which domain?".
+   * DescribeDomains returns the memory domains the caller may name, together
+   * with the limits the server enforces. It takes no domain itself: it is the
+   * answer to "which domain?", and the one call a client makes before any other.
    */
-  listDomains: handleUnaryCall<ListDomainsRequest, ListDomainsResponse>;
+  describeDomains: handleUnaryCall<DescribeDomainsRequest, DescribeDomainsResponse>;
   /**
    * StartSession opens a session. Every search made under it is recorded as
    * one series, which is what relates the searches an agent runs for a task.
@@ -2920,23 +3128,24 @@ export interface MemoryServiceServer extends UntypedServiceImplementation {
 
 export interface MemoryServiceClient extends Client {
   /**
-   * ListDomains returns the memory domains the caller may name. It takes no
-   * domain itself: it is the answer to "which domain?".
+   * DescribeDomains returns the memory domains the caller may name, together
+   * with the limits the server enforces. It takes no domain itself: it is the
+   * answer to "which domain?", and the one call a client makes before any other.
    */
-  listDomains(
-    request: ListDomainsRequest,
-    callback: (error: ServiceError | null, response: ListDomainsResponse) => void,
+  describeDomains(
+    request: DescribeDomainsRequest,
+    callback: (error: ServiceError | null, response: DescribeDomainsResponse) => void,
   ): ClientUnaryCall;
-  listDomains(
-    request: ListDomainsRequest,
+  describeDomains(
+    request: DescribeDomainsRequest,
     metadata: Metadata,
-    callback: (error: ServiceError | null, response: ListDomainsResponse) => void,
+    callback: (error: ServiceError | null, response: DescribeDomainsResponse) => void,
   ): ClientUnaryCall;
-  listDomains(
-    request: ListDomainsRequest,
+  describeDomains(
+    request: DescribeDomainsRequest,
     metadata: Metadata,
     options: Partial<CallOptions>,
-    callback: (error: ServiceError | null, response: ListDomainsResponse) => void,
+    callback: (error: ServiceError | null, response: DescribeDomainsResponse) => void,
   ): ClientUnaryCall;
   /**
    * StartSession opens a session. Every search made under it is recorded as

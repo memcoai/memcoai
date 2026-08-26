@@ -15,9 +15,10 @@ option go_package = "github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1
 // id. A handle addresses the memory domain it belongs to, which is why most
 // operations take no domain of their own.
 service MemoryService {
-  // ListDomains returns the memory domains the caller may name. It takes no
-  // domain itself: it is the answer to "which domain?".
-  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse);
+  // DescribeDomains returns the memory domains the caller may name, together
+  // with the limits the server enforces. It takes no domain itself: it is the
+  // answer to "which domain?", and the one call a client makes before any other.
+  rpc DescribeDomains(DescribeDomainsRequest) returns (DescribeDomainsResponse);
 
   // StartSession opens a session. Every search made under it is recorded as
   // one series, which is what relates the searches an agent runs for a task.
@@ -101,13 +102,46 @@ message DomainEntry {
   // version_tag_types name the tag types that carry a version. A version on any
   // other type is dropped.
   repeated string version_tag_types = 9;
+  // max_tags_per_query bounds `tags` on a call naming this domain. Like
+  // max_sources it TRIMS rather than refuses, and it is per-domain rather than
+  // global, which is why it sits here rather than on Limits. Zero means the
+  // domain sets no cap.
+  int32 max_tags_per_query = 10;
 }
 
-message ListDomainsRequest {}
+message DescribeDomainsRequest {}
 
-message ListDomainsResponse {
+message DescribeDomainsResponse {
   repeated DomainEntry domains = 1;
   Instructions instructions = 2;
+  Limits limits = 3;
+}
+
+// Limits are the caps the server enforces, published so a client can check its
+// input before spending a round trip on a call that would be refused.
+//
+// A server that predates this field sends no Limits at all. Treat that as
+// "validate nothing" rather than as zeros, or every call is rejected locally.
+//
+// Note which caps REFUSE and which TRIM. A validator that raises on all of them
+// rejects calls the server would have accepted.
+message Limits {
+  // max_query_characters bounds `query` on both Search and CreateMemory.
+  // Exceeding it is refused with INVALID_ARGUMENT.
+  int32 max_query_characters = 1;
+  // max_text_characters bounds `title` and `content` TOGETHER, not each.
+  // Exceeding it is refused with INVALID_ARGUMENT.
+  int32 max_text_characters = 2;
+  // max_idx_characters bounds any idx-shaped handle: `idx`, `memory_idx`, and
+  // each entry of `sources`. Exceeding it is refused with INVALID_ARGUMENT.
+  int32 max_idx_characters = 3;
+  // max_sources bounds `sources` on EnrichMemory. It TRIMS rather than refuses:
+  // the server keeps the first max_sources and drops the rest, so a client
+  // should trim too rather than raise.
+  int32 max_sources = 4;
+  // max_feedback_entries bounds `feedback` entries per ShareFeedback call.
+  // Exceeding it is refused with INVALID_ARGUMENT.
+  int32 max_feedback_entries = 5;
 }
 
 message StartSessionRequest {

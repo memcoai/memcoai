@@ -60,7 +60,7 @@ class Tag(_message.Message):
     def __init__(self, type: _Optional[str] = ..., value: _Optional[str] = ..., version: _Optional[str] = ...) -> None: ...
 
 class DomainEntry(_message.Message):
-    __slots__ = ("slug", "title", "summary", "when_to_search", "when_to_save", "what_not_to_save", "tags_description", "filter_tag_types", "version_tag_types")
+    __slots__ = ("slug", "title", "summary", "when_to_search", "when_to_save", "what_not_to_save", "tags_description", "filter_tag_types", "version_tag_types", "max_tags_per_query")
     SLUG_FIELD_NUMBER: _ClassVar[int]
     TITLE_FIELD_NUMBER: _ClassVar[int]
     SUMMARY_FIELD_NUMBER: _ClassVar[int]
@@ -70,6 +70,7 @@ class DomainEntry(_message.Message):
     TAGS_DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
     FILTER_TAG_TYPES_FIELD_NUMBER: _ClassVar[int]
     VERSION_TAG_TYPES_FIELD_NUMBER: _ClassVar[int]
+    MAX_TAGS_PER_QUERY_FIELD_NUMBER: _ClassVar[int]
     slug: str
     title: str
     summary: str
@@ -79,19 +80,36 @@ class DomainEntry(_message.Message):
     tags_description: str
     filter_tag_types: _containers.RepeatedScalarFieldContainer[str]
     version_tag_types: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, slug: _Optional[str] = ..., title: _Optional[str] = ..., summary: _Optional[str] = ..., when_to_search: _Optional[str] = ..., when_to_save: _Optional[str] = ..., what_not_to_save: _Optional[str] = ..., tags_description: _Optional[str] = ..., filter_tag_types: _Optional[_Iterable[str]] = ..., version_tag_types: _Optional[_Iterable[str]] = ...) -> None: ...
+    max_tags_per_query: int
+    def __init__(self, slug: _Optional[str] = ..., title: _Optional[str] = ..., summary: _Optional[str] = ..., when_to_search: _Optional[str] = ..., when_to_save: _Optional[str] = ..., what_not_to_save: _Optional[str] = ..., tags_description: _Optional[str] = ..., filter_tag_types: _Optional[_Iterable[str]] = ..., version_tag_types: _Optional[_Iterable[str]] = ..., max_tags_per_query: _Optional[int] = ...) -> None: ...
 
-class ListDomainsRequest(_message.Message):
+class DescribeDomainsRequest(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
-class ListDomainsResponse(_message.Message):
-    __slots__ = ("domains", "instructions")
+class DescribeDomainsResponse(_message.Message):
+    __slots__ = ("domains", "instructions", "limits")
     DOMAINS_FIELD_NUMBER: _ClassVar[int]
     INSTRUCTIONS_FIELD_NUMBER: _ClassVar[int]
+    LIMITS_FIELD_NUMBER: _ClassVar[int]
     domains: _containers.RepeatedCompositeFieldContainer[DomainEntry]
     instructions: Instructions
-    def __init__(self, domains: _Optional[_Iterable[_Union[DomainEntry, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ...) -> None: ...
+    limits: Limits
+    def __init__(self, domains: _Optional[_Iterable[_Union[DomainEntry, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ...) -> None: ...
+
+class Limits(_message.Message):
+    __slots__ = ("max_query_characters", "max_text_characters", "max_idx_characters", "max_sources", "max_feedback_entries")
+    MAX_QUERY_CHARACTERS_FIELD_NUMBER: _ClassVar[int]
+    MAX_TEXT_CHARACTERS_FIELD_NUMBER: _ClassVar[int]
+    MAX_IDX_CHARACTERS_FIELD_NUMBER: _ClassVar[int]
+    MAX_SOURCES_FIELD_NUMBER: _ClassVar[int]
+    MAX_FEEDBACK_ENTRIES_FIELD_NUMBER: _ClassVar[int]
+    max_query_characters: int
+    max_text_characters: int
+    max_idx_characters: int
+    max_sources: int
+    max_feedback_entries: int
+    def __init__(self, max_query_characters: _Optional[int] = ..., max_text_characters: _Optional[int] = ..., max_idx_characters: _Optional[int] = ..., max_sources: _Optional[int] = ..., max_feedback_entries: _Optional[int] = ...) -> None: ...
 
 class StartSessionRequest(_message.Message):
     __slots__ = ("domain",)

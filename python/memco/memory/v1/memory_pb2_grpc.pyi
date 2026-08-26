@@ -40,9 +40,10 @@ class MemoryServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> MemoryServiceAsyncStub: ...
-    ListDomains: _grpc.UnaryUnaryMultiCallable[_memory_pb2.ListDomainsRequest, _memory_pb2.ListDomainsResponse]
-    """ListDomains returns the memory domains the caller may name. It takes no
-    domain itself: it is the answer to "which domain?".
+    DescribeDomains: _grpc.UnaryUnaryMultiCallable[_memory_pb2.DescribeDomainsRequest, _memory_pb2.DescribeDomainsResponse]
+    """DescribeDomains returns the memory domains the caller may name, together
+    with the limits the server enforces. It takes no domain itself: it is the
+    answer to "which domain?", and the one call a client makes before any other.
     """
     StartSession: _grpc.UnaryUnaryMultiCallable[_memory_pb2.StartSessionRequest, _memory_pb2.StartSessionResponse]
     """StartSession opens a session. Every search made under it is recorded as
@@ -85,9 +86,10 @@ class MemoryServiceAsyncStub(MemoryServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    ListDomains: _aio.UnaryUnaryMultiCallable[_memory_pb2.ListDomainsRequest, _memory_pb2.ListDomainsResponse]  # type: ignore[assignment]
-    """ListDomains returns the memory domains the caller may name. It takes no
-    domain itself: it is the answer to "which domain?".
+    DescribeDomains: _aio.UnaryUnaryMultiCallable[_memory_pb2.DescribeDomainsRequest, _memory_pb2.DescribeDomainsResponse]  # type: ignore[assignment]
+    """DescribeDomains returns the memory domains the caller may name, together
+    with the limits the server enforces. It takes no domain itself: it is the
+    answer to "which domain?", and the one call a client makes before any other.
     """
     StartSession: _aio.UnaryUnaryMultiCallable[_memory_pb2.StartSessionRequest, _memory_pb2.StartSessionResponse]  # type: ignore[assignment]
     """StartSession opens a session. Every search made under it is recorded as
@@ -129,13 +131,14 @@ class MemoryServiceServicer(metaclass=_abc_1.ABCMeta):
     """
 
     @_abc_1.abstractmethod
-    def ListDomains(
+    def DescribeDomains(
         self,
-        request: _memory_pb2.ListDomainsRequest,
+        request: _memory_pb2.DescribeDomainsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_memory_pb2.ListDomainsResponse, _abc.Awaitable[_memory_pb2.ListDomainsResponse]]:
-        """ListDomains returns the memory domains the caller may name. It takes no
-        domain itself: it is the answer to "which domain?".
+    ) -> _typing.Union[_memory_pb2.DescribeDomainsResponse, _abc.Awaitable[_memory_pb2.DescribeDomainsResponse]]:
+        """DescribeDomains returns the memory domains the caller may name, together
+        with the limits the server enforces. It takes no domain itself: it is the
+        answer to "which domain?", and the one call a client makes before any other.
         """
 
     @_abc_1.abstractmethod
