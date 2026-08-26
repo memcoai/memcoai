@@ -42,6 +42,49 @@ reliability signal built from what readers reported back about it.
 The generated gRPC clients for [Go](go/) and [Node](nodejs/) are also published
 here and can be used directly against the API.
 
+### Installing before the packages are published
+
+Until `memco` is on PyPI, install it from the **`dev`** branch of this
+repository:
+
+```bash
+uv add "memco @ git+ssh://git@github.com/memcoai/memco.git@dev#subdirectory=python"
+```
+
+```bash
+pip install "memco @ git+ssh://git@github.com/memcoai/memco.git@dev#subdirectory=python"
+```
+
+Two parts are load-bearing:
+
+- **`@dev`** — the ref is required. `main` does not yet carry the SDK, so an
+  install without a ref resolves to the default branch and fails with
+  *"has no subdirectory `python`"*.
+- **`#subdirectory=python`** — the package root is not the repository root.
+
+`uv add --branch dev "memco @ git+ssh://git@github.com/memcoai/memco.git#subdirectory=python"`
+is equivalent and records `branch = "dev"` rather than `rev = "dev"`, which is a
+more accurate description of what it tracks.
+
+Use `git+https://` instead if you authenticate with a token.
+
+A branch is resolved once and then cached, so pick up new commits explicitly:
+
+```bash
+uv sync --upgrade-package memco
+pip install --force-reinstall --no-deps "memco @ git+ssh://git@github.com/memcoai/memco.git@dev#subdirectory=python"
+```
+
+To work on the SDK itself, install your clone in editable mode instead — changes
+then need no reinstall at all:
+
+```bash
+uv pip install -e path/to/memco/python
+```
+
+Remove these requirements once the package is published: a `memco @ git+...`
+source keeps winning over the released version.
+
 ## Quick start
 
 ```python
