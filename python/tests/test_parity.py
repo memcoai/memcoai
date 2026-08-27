@@ -11,13 +11,25 @@ from collections.abc import Set as AbstractSet
 
 import memco as package
 from memco import AsyncMemco, Memco, errors, operations, types
-from memco.operations import AsyncMemoryOperations, MemoryOperations
+from memco.operations import (
+    AsyncMemoryOperations,
+    AsyncSessionScope,
+    MemoryOperations,
+    SessionScope,
+)
 
 from .fake_server import Harness
 
 # Namespaces the client exposes, paired sync-to-async. A second service added
 # here is automatically held to the same parity rules.
 NAMESPACES = [(MemoryOperations, AsyncMemoryOperations)]
+
+# Scopes are not reached as a client attribute, so the tests that derive one
+# from the class name run over NAMESPACES alone. Every other parity rule
+# applies to both.
+SCOPES = [(SessionScope, AsyncSessionScope)]
+
+PAIRS = NAMESPACES + SCOPES
 
 CLIENT_SKIP = {"connect"}  # async-only: the sync client verifies in its constructor
 
@@ -73,23 +85,36 @@ def test_every_namespace_is_exposed_on_both_clients(harness: Harness):
 
 
 def test_namespaces_expose_the_same_operations():
-    for sync_ns, async_ns in NAMESPACES:
+    for sync_ns, async_ns in PAIRS:
         assert public_methods(sync_ns) == public_methods(async_ns)
 
 
 def test_namespace_signatures_match():
-    for sync_ns, async_ns in NAMESPACES:
+    for sync_ns, async_ns in PAIRS:
         assert_signatures_match(sync_ns, async_ns, public_methods(sync_ns))
 
 
 def test_every_operation_is_documented_with_an_example():
     # The docstrings are the source for generated docs, so an operation without
-    # a worked example is a gap in the published documentation.
-    for sync_ns, async_ns in NAMESPACES:
+    # a worked example is a gap in the published documentation. They are also
+    # what memco.agent renders every tool description from, so a missing Args
+    # entry costs a model its guidance on that argument.
+    for sync_ns, async_ns in PAIRS:
         for cls in (sync_ns, async_ns):
             for name in sorted(public_methods(cls)):
-                doc = inspect.getdoc(getattr(cls, name)) or ""
-                assert "Args:" in doc, f"{cls.__name__}.{name} lacks Args"
+                method = getattr(cls, name)
+                doc = inspect.getdoc(method) or ""
+                takes = [
+                    parameter
+                    for parameter in inspect.signature(method).parameters
+                    if parameter != "self"
+                ]
+                if takes:
+                    assert "Args:" in doc, f"{cls.__name__}.{name} lacks Args"
+                    for parameter in takes:
+                        assert f"{parameter}:" in doc, (
+                            f"{cls.__name__}.{name} does not document {parameter}"
+                        )
                 assert "Example:" in doc, f"{cls.__name__}.{name} lacks an Example"
 
 
@@ -131,3 +156,32 @@ def test_revert_takes_the_name_the_write_result_carries():
     for sync_ns, async_ns in NAMESPACES:
         for cls in (sync_ns, async_ns):
             assert "operation_id" in inspect.signature(cls.revert_memory).parameters
+
+
+def test_the_scope_covers_every_operation_that_takes_a_session():
+    # The scope exists so a session id cannot be dropped. An operation added to
+    # the namespace with a session_id and not to the scope reopens that hole
+    # silently, so the coverage is asserted rather than remembered.
+    pairs = (
+        (MemoryOperations, SessionScope),
+        (AsyncMemoryOperations, AsyncSessionScope),
+    )
+    for namespace, scope in pairs:
+        for name in sorted(public_methods(namespace)):
+            parameters = inspect.signature(getattr(namespace, name)).parameters
+            if "session_id" not in parameters:
+                continue
+            assert name in public_methods(scope), f"{scope.__name__} is missing {name}"
+            assert "session_id" not in inspect.signature(getattr(scope, name)).parameters, (
+                f"{scope.__name__}.{name} still asks for a session_id"
+            )
+
+
+def test_the_scope_never_asks_for_a_domain():
+    # A session supplies the domain. Accepting one anyway would let a caller
+    # name a domain the session does not belong to.
+    for scope in (SessionScope, AsyncSessionScope):
+        for name in sorted(public_methods(scope)):
+            assert "domain" not in inspect.signature(getattr(scope, name)).parameters, (
+                f"{scope.__name__}.{name} takes a domain"
+            )

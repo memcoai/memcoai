@@ -29,6 +29,10 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
             returns an empty message of the right type.
         error: When set to a ``(code, details)`` pair, every method aborts with
             it instead of responding.
+        transient_errors: Method name to a queue of ``(code, details)`` pairs,
+            one consumed per call. A method whose queue is empty responds
+            normally, which is how "fails once, then succeeds" is staged for the
+            retry tests.
     """
 
     def __init__(self) -> None:
@@ -37,11 +41,17 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
         self.requests: dict[str, Any] = {}
         self.responses: dict[str, Any] = {}
         self.error: tuple[grpc.StatusCode, str] | None = None
+        self.transient_errors: dict[str, list[tuple[grpc.StatusCode, str]]] = {}
 
     def _handle(self, name: str, context: grpc.ServicerContext, default: Any, request: Any) -> Any:
         self.calls.append(name)
         self.metadata.append(dict(context.invocation_metadata()))
         self.requests[name] = request
+        # Recorded above the aborts, so a test can count the attempts a retry
+        # policy actually made.
+        queued = self.transient_errors.get(name)
+        if queued:
+            context.abort(*queued.pop(0))
         if self.error is not None:
             context.abort(*self.error)
         return self.responses.get(name, default)
@@ -96,16 +106,21 @@ class FakeHealthService(health_pb2_grpc.HealthServicer):  # type: ignore[misc]
         status: The status every Check returns.
         checked_services: The service name from each Check, in order.
         metadata: One dict of request metadata per Check, in the same order.
+        transient_errors: A queue of ``(code, details)`` pairs, one consumed per
+            Check, for staging a blip during client construction.
     """
 
     def __init__(self) -> None:
         self.status = health_pb2.HealthCheckResponse.SERVING
         self.checked_services: list[str] = []
         self.metadata: list[dict[str, str]] = []
+        self.transient_errors: list[tuple[grpc.StatusCode, str]] = []
 
     def Check(self, request, context):  # noqa: N802
         self.checked_services.append(request.service)
         self.metadata.append(dict(context.invocation_metadata()))
+        if self.transient_errors:
+            context.abort(*self.transient_errors.pop(0))
         return health_pb2.HealthCheckResponse(status=self.status)
 
     def Watch(self, request, context):  # noqa: N802

@@ -31,6 +31,8 @@ The rest of the surface is grouped by concern:
 * :mod:`memco.types` — the immutable result types every operation returns
 * :mod:`memco.errors` — the exception hierarchy
 * :mod:`memco.operations` — the operation namespaces reached as ``client.memory``
+* :mod:`memco.agent` — the same operations as agent tools, with schemas and
+  rendered results
 
 Configuration comes from arguments first and the environment second:
 
@@ -46,7 +48,7 @@ from __future__ import annotations
 
 from importlib.metadata import version as _metadata_version
 
-from . import errors, operations, types
+from . import agent, errors, operations, types
 from ._aio import AsyncMemco
 from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
 from ._deprecation import MemcoDeprecationWarning
@@ -67,6 +69,7 @@ __all__ = [
     "Memco",
     "MemcoDeprecationWarning",
     "__version__",
+    "agent",
     "errors",
     "operations",
     "provenance",

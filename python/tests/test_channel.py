@@ -8,12 +8,13 @@ caught rather than shipped.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import grpc
 import pytest
 
-from memco._channel import USER_AGENT, build_async_channel, build_channel
+from memco._channel import RETRYABLE_METHODS, USER_AGENT, build_async_channel, build_channel
 from memco._config import resolve
 
 _REAL_INSECURE = grpc.insecure_channel
@@ -57,3 +58,25 @@ def test_the_user_agent_is_a_single_stable_product_token():
     # term or a changed shape could break that match.
     assert USER_AGENT.startswith("memco-python/")
     assert " " not in USER_AGENT
+
+
+@pytest.mark.parametrize("tls", [True, False], ids=["tls", "plaintext"])
+@pytest.mark.parametrize("build", [build_channel, build_async_channel], ids=["sync", "async"])
+def test_both_builders_carry_the_retry_policy(captured_options: list[Any], build: Any, tls: bool):
+    # The policy is what keeps a blip on a read from reaching the caller. Losing
+    # it on one builder or one transport would go unnoticed: nothing fails, the
+    # SDK just stops retrying.
+    build(resolve(token="t", host="localhost:1", tls=tls, timeout=5.0, env={}))
+    options = dict(captured_options[-1] or [])
+    assert options["grpc.enable_retries"] == 1
+    # grpcio ignores `default_service_config` outright, so a policy set there
+    # silently never retries. tests/test_retries.py counts the attempts.
+    assert "grpc.default_service_config" not in options
+    config = json.loads(options["grpc.service_config"])
+    named = {
+        entry["method"]
+        for method_config in config["methodConfig"]
+        for entry in method_config["name"]
+        if entry["service"] == "memco.memory.v1.MemoryService"
+    }
+    assert named == set(RETRYABLE_METHODS)

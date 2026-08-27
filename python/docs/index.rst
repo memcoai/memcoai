@@ -41,5 +41,6 @@ See more at `docs.memco.ai <https://docs.memco.ai>`_.
 
    clients
    operations
+   agent
    types
    errors

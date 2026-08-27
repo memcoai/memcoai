@@ -50,20 +50,83 @@ with Memco() as client:  # reads MEMCO_API_TOKEN
             print(insight.title, insight.updated)
 ```
 
+Wherever a session outlives a line or two, bind it once with `with_session`
+instead of threading the id through every call. A call that silently drops the
+id is still a valid call — it just stops being part of the series that relates
+one task's work, which is the kind of mistake an agent makes and nobody notices:
+
+```python
+from memco.types import FeedbackRating
+
+with client.memory.with_session("coding") as session:
+    result = session.search("how should a client authenticate")
+    session.share_feedback(
+        feedback=[
+            FeedbackRating(idx=result.memories[0].idx, relevant=True, correct=True),
+        ]
+    )
+```
+
 Everything works asynchronously too, with the same method names:
 
 ```python
 from memco import AsyncMemco
 
 async with AsyncMemco() as client:
-    session = await client.memory.start_session("coding")
-    result = await client.memory.search("...", session_id=session.session_id)
+    async with client.memory.with_session("coding") as session:
+        result = await session.search("how should a client authenticate")
 ```
 
 Runnable programs covering the common workflows are in
 [`examples/`](https://github.com/memcoai/memco/blob/main/python/examples/).
 
-**See more → [docs.memco.ai](https://docs.memco.ai)**
+## Agents
+
+Handing these operations to an LLM takes more than the calls: text telling a
+model what each tool does and what to pass it, a JSON Schema for the arguments,
+results rendered as text it can read, and the handover to whatever is driving
+the loop. The SDK supplies all of it, from the session the tools are bound to:
+
+```python
+from memco import Memco, agent
+
+with Memco() as client:
+    entry = next(d for d in client.memory.describe_domains().domains if d.slug == "coding")
+
+    with client.memory.with_session("coding") as session:
+        toolset = session.tools()
+
+        create_agent(  # LangChain
+            model,
+            tools=toolset.to_langchain(),
+            system_prompt=agent.briefing(entry, session.instructions),
+        )
+```
+
+The same toolset speaks the other shapes, and runs what a model asks for when
+you are driving the loop yourself:
+
+```python
+response = anthropic.messages.create(tools=toolset.to_anthropic(), ...)
+result = toolset.call(block.name, block.input)           # -> text for the model
+
+completion = openai.chat.completions.create(tools=toolset.to_openai(), ...)
+result = toolset.call(call.function.name, call.function.arguments)   # JSON text is fine
+```
+
+`to_langchain` needs LangChain installed; the other two are plain data and need
+nothing. `AsyncMemco`'s session has the same `tools()`, awaitable and described
+identically.
+
+Every tool is bound to the session it was built from, so nothing a model sends
+can change which session a call is recorded under, and arguments are validated
+before anything is sent. A malformed request, an invented tool name, and a
+handle that resolves to nothing all come back as text the model can act on —
+`agent.AGENT_RECOVERABLE` is where that line is drawn. Everything else, a
+rejected credential above all, is raised: no wording a model reads will fix it.
+
+[`examples/langchain_agent.py`](https://github.com/memcoai/memco/blob/main/python/examples/langchain_agent.py)
+is a complete agent in eighty lines, and defines no helpers of its own.
 
 ## Configuration
 
