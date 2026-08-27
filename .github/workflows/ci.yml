@@ -88,7 +88,34 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --extra dev --python 3.12
-      - run: uv run --python 3.12 pytest -q
+      # Coverage runs on this job only: the matrix jobs prove the suite passes on
+      # every supported interpreter, and measuring the same lines four times
+      # would say nothing new. `fail_under` in pyproject.toml is the gate — this
+      # step fails the build below the floor, so the badge cannot go stale.
+      - run: uv run --python 3.12 pytest -q --cov --cov-report=term --cov-report=xml
+      - name: Report coverage
+        if: always()
+        run: |
+          uv run --python 3.12 python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET, pathlib
+          report = pathlib.Path("coverage.xml")
+          if not report.exists():
+              print("### Coverage\n\nNo report produced — the suite did not finish.")
+              raise SystemExit
+          root = ET.parse(report).getroot()
+          rate = float(root.get("line-rate", 0)) * 100
+          branch = float(root.get("branch-rate", 0)) * 100
+          print(f"### Coverage\n\n**{rate:.1f}%** of lines, **{branch:.1f}%** of branches.\n")
+          print("| Module | Lines |\n|---|---|")
+          for cls in sorted(root.iter("class"), key=lambda c: float(c.get("line-rate", 0))):
+              print(f"| `{cls.get('filename')}` | {float(cls.get('line-rate', 0)) * 100:.0f}% |")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: coverage-python
+          path: python/coverage.xml
+          retention-days: 14
 
   # ---- longer: pull requests, main, and releases -------------------------
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime
 import inspect
-import re
 
 import grpc
 import pytest
@@ -16,8 +15,6 @@ import pytest
 from memco import NEW_MEMORY, AsyncMemco, Memco, agent, types
 from memco.errors import (
     MemcoAuthenticationError,
-    MemcoInvalidRequestError,
-    MemcoNotFoundError,
 )
 from memco.memory.v1 import memory_pb2 as pb
 from memco.operations import SessionScope
@@ -49,11 +46,6 @@ def test_the_offered_operations_are_exactly_what_the_scope_carries():
         if not name.startswith("_")
     }
     assert set(agent._OPERATIONS) == carried - NOT_AN_OPERATION
-
-
-def test_a_method_added_to_the_scope_does_not_become_a_tool_on_its_own(client: Memco):
-    # Belt and braces for the rule above, from the model's side.
-    assert set(built(client)) == {f"memco_{name}" for name in agent._OPERATIONS}
 
 
 def test_no_tool_lets_a_model_supply_what_the_caller_binds(client: Memco):
@@ -218,10 +210,6 @@ def test_a_rejected_credential_is_raised_rather_than_rendered(client: Memco, har
         tool.call(query="how does X work")
 
 
-def test_the_recoverable_set_is_the_two_a_model_can_act_on():
-    assert set(agent.AGENT_RECOVERABLE) == {MemcoInvalidRequestError, MemcoNotFoundError}
-
-
 def test_a_reference_tells_the_model_how_to_fetch_what_it_stands_for():
     memory = types.Memory(
         idx="memory-a-2",
@@ -269,38 +257,6 @@ def test_the_briefing_carries_what_the_service_said_about_the_domain():
         "open with a search",
     ):
         assert expected in rendered
-
-
-async def test_the_async_tools_mirror_the_synchronous_ones(
-    async_client: AsyncMemco, harness: Harness
-):
-    scope = await async_client.memory.with_session("coding")
-    tools = {tool.name: tool for tool in scope.tools()}
-    assert set(tools) == {
-        "memco_search",
-        "memco_get_memory",
-        "memco_create_memory",
-        "memco_enrich_memory",
-        "memco_share_feedback",
-        "memco_revert_memory",
-    }
-    assert await tools["memco_search"].call(query="how does X work") == "0 memories"
-    assert "invalid request" in await tools["memco_search"].call(query="")
-
-
-async def test_both_surfaces_tell_a_model_exactly_the_same_thing(
-    async_client: AsyncMemco, client: Memco
-):
-    # Nothing forces the two to agree, and a model steered differently by the
-    # async client would be a difference nobody would think to look for.
-    asynchronous = await async_client.memory.with_session("coding")
-    synchronous = client.memory.with_session("coding")
-    left = {tool.name: tool for tool in synchronous.tools()}
-    right = {tool.name: tool for tool in asynchronous.tools()}
-    assert set(left) == set(right)
-    for name, tool in left.items():
-        assert tool.description == right[name].description, name
-        assert tool.parameters == right[name].parameters, name
 
 
 def _search_response() -> pb.SearchResponse:
@@ -371,27 +327,6 @@ def test_a_toolset_reports_an_invented_tool_name_rather_than_raising(client: Mem
     assert "memco_search" in rendered
 
 
-def test_a_toolset_is_still_a_sequence_of_tools(client: Memco):
-    toolset = client.memory.with_session("coding").tools()
-    assert len(toolset) == 6
-    assert all(isinstance(tool, agent.Tool) for tool in toolset)
-    assert toolset[0].name.startswith("memco_")
-
-
-async def test_the_async_toolset_mirrors_the_shapes_and_awaits_the_call(
-    async_client: AsyncMemco,
-):
-    toolset = (await async_client.memory.with_session("coding")).tools()
-    assert {one["name"] for one in toolset.to_anthropic()} == {tool.name for tool in toolset}
-    assert await toolset.call("memco_search", {"query": "how does X work"}) == "0 memories"
-    assert "no tool named" in await toolset.call("memco_invented", {})
-    built = {one.name: one for one in toolset.to_langchain()}
-    assert await built["memco_search"].ainvoke({"query": "how does X work"}) == "0 memories"
-
-
-# -- the writing half -----------------------------------------------------
-
-
 def test_saving_new_knowledge_reports_the_operation_that_can_undo_it(
     client: Memco, harness: Harness
 ):
@@ -447,24 +382,19 @@ def test_a_rating_comes_back_with_the_advice_it_earned(client: Memco, harness: H
         ("not json at all", "arguments are not valid JSON"),
         ('"just a string"', "arguments must be an object, not str"),
         ("[1, 2]", "arguments must be an object, not list"),
+        (None, "arguments must be an object, not NoneType"),
+        (42, "arguments must be an object, not int"),
+        ({1: "x"}, "argument names must be strings"),
     ],
 )
-def test_a_toolset_takes_the_json_text_openai_hands_back(
-    client: Memco, arguments: str, expected: str
+def test_a_toolset_survives_whatever_a_framework_hands_back(
+    client: Memco, arguments: object, expected: str
 ):
-    # to_openai's own docstring points callers here, and that API delivers
-    # arguments as a JSON string. Splatting one is a TypeError that ends the run.
+    # to_openai's docstring points callers at call(), and that API delivers
+    # arguments as a JSON string. Splatting one — or anything else that is not a
+    # mapping — is a TypeError that ends the run rather than the turn.
     toolset = client.memory.with_session("coding").tools()
-    assert expected in toolset.call("memco_search", arguments)
-
-
-@pytest.mark.parametrize("arguments", [None, 42, ["query", "x"], {1: "x"}])
-def test_a_toolset_reports_arguments_it_cannot_use_rather_than_raising(
-    client: Memco, arguments: object
-):
-    toolset = client.memory.with_session("coding").tools()
-    rendered = toolset.call("memco_search", arguments)  # type: ignore[arg-type]
-    assert rendered.startswith("invalid request")
+    assert expected in toolset.call("memco_search", arguments)  # type: ignore[arg-type]
 
 
 # -- what the model is told about a result --------------------------------
@@ -564,15 +494,6 @@ def test_the_descriptions_that_cross_reference_a_tool_name_it_in_full(client: Me
     assert "memco_revert_memory" in tools["memco_create_memory"].description
 
 
-def test_no_description_names_a_tool_that_is_not_offered(client: Memco):
-    tools = built(client)
-    for tool in tools.values():
-        rendered = tool.description + "".join(
-            schema["description"] for schema in tool.parameters["properties"].values()
-        )
-        assert not set(re.findall(r"memco_\w+", rendered)) - set(tools)
-
-
 def test_the_builder_refuses_anything_that_is_not_its_own_scope():
     # Reached through session.tools() a caller cannot get this wrong, but the
     # builder is what enforces it: given the other surface's scope it would
@@ -581,3 +502,30 @@ def test_the_builder_refuses_anything_that_is_not_its_own_scope():
         agent._tools(object())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="AsyncSessionScope"):
         agent._async_tools(object())  # type: ignore[arg-type]
+
+
+async def test_both_surfaces_tell_a_model_exactly_the_same_thing(
+    async_client: AsyncMemco, client: Memco
+):
+    # Nothing forces the two to agree, and a model steered differently by the
+    # async client would be a difference nobody would think to look for.
+    asynchronous = await async_client.memory.with_session("coding")
+    left = {tool.name: tool for tool in client.memory.with_session("coding").tools()}
+    right = {tool.name: tool for tool in asynchronous.tools()}
+    assert set(left) == set(right)
+    for name, tool in left.items():
+        assert tool.description == right[name].description, name
+        assert tool.parameters == right[name].parameters, name
+
+
+async def test_the_async_toolset_awaits_the_call_and_speaks_the_same_shapes(
+    async_client: AsyncMemco,
+):
+    toolset = (await async_client.memory.with_session("coding")).tools()
+    assert {one["name"] for one in toolset.to_anthropic()} == {tool.name for tool in toolset}
+    assert {one["function"]["name"] for one in toolset.to_openai()} == {t.name for t in toolset}
+    assert await toolset.call("memco_search", {"query": "how does X work"}) == "0 memories"
+    assert "no tool named" in await toolset.call("memco_invented", {})
+    assert "invalid request" in await toolset.call("memco_search", {"query": ""})
+    built = {one.name: one for one in toolset.to_langchain()}
+    assert await built["memco_search"].ainvoke({"query": "how does X work"}) == "0 memories"

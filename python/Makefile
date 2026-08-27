@@ -15,7 +15,7 @@ UV ?= uv
 EXTRAS := --extra dev --extra docs
 RUN := $(UV) run $(EXTRAS)
 
-.PHONY: help install lint format typecheck test test-all docs docs-serve build clean
+.PHONY: help install lint format typecheck test test-all coverage docs docs-serve build clean
 
 help:  ## Show this help
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
@@ -38,6 +38,10 @@ typecheck:  ## Strict type check of the SDK and tests
 test:  ## Run the test suite
 	$(RUN) pytest -q
 
+coverage:  ## Run the suite and report coverage (fails below the floor)
+	$(RUN) pytest -q --cov --cov-report=term --cov-report=html --cov-report=xml
+	@echo "open python/htmlcov/index.html"
+
 test-all:  ## Run the suite on every supported interpreter
 	@for v in 3.10 3.11 3.12 3.13; do \
 		echo "--- python $$v ---"; \
@@ -57,5 +61,6 @@ build:  ## Build the sdist and the wheel
 	$(UV) build
 
 clean:  ## Remove build and cache artefacts
-	rm -rf dist docs/_build .venv-3.* .mypy_cache .ruff_cache .pytest_cache
+	rm -rf dist docs/_build htmlcov coverage.xml .coverage .venv-3.* \
+		.mypy_cache .ruff_cache .pytest_cache
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

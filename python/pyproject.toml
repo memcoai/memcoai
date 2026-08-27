@@ -20,6 +20,10 @@ dev = [
     "mypy>=1.11",
     "types-protobuf",
     "ruff>=0.6",
+    "pytest-cov>=5",
+    # examples/langchain_agent.py is imported by the suite like every other
+    # example, so the framework it names has to be installed to run the tests.
+    # A provider package (langchain-google-genai, ...) is needed only to run it.
     "langchain>=1.0",
 ]
 docs = [
@@ -39,6 +43,26 @@ files = ["requirements.txt", "deps/sdk.txt"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["memco"]
+branch = true
+# Generated code is the export's to cover, not ours — the same boundary ruff and
+# mypy draw. Counting it would report the SDK's coverage as whatever protoc
+# happened to emit.
+omit = ["memco/memory/*"]
+
+[tool.coverage.report]
+# Every line of hand-written code is either exercised or explicitly excused, so
+# a drop is a real gap rather than noise. Raise the floor, never lower it.
+fail_under = 95
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.$",
+]
 
 [tool.ruff]
 line-length = 100
