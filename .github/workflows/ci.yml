@@ -199,7 +199,7 @@ jobs:
           cd /tmp
           cat > consumer.py <<'PY'
           from memco import Memco
-          wrong: int = Memco(token="t", check_health=False).provenance().server_commit
+          wrong: int = Memco(token="t").provenance().server_commit
           PY
           /tmp/verify/bin/python -m mypy consumer.py 2>&1 | tee out.txt
           grep -q 'Incompatible types in assignment' out.txt \

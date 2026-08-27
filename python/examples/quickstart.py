@@ -12,8 +12,8 @@ from memco import Memco
 def main() -> None:
     """Run the example."""
     # Reads MEMCO_API_TOKEN and MEMCO_API_HOST. Constructing the client probes
-    # the service's health endpoint, so a bad endpoint fails here rather than
-    # on the first real call.
+    # the service's health endpoint and fetches its input limits, so a bad
+    # endpoint or a bad token fails here rather than on the first real call.
     with Memco() as client:
         domains = client.memory.describe_domains().domains
         print(f"{len(domains)} domain(s) available:")

@@ -2,8 +2,9 @@ Clients
 =======
 
 A client owns one gRPC connection, the credential sent on every call, and the
-health check performed when it is opened. The operations themselves live on
-namespaces hanging off it.
+checks performed when it is opened — a health probe, and the ``describe_domains``
+call that proves the credential and reports the service's input limits. The
+operations themselves live on namespaces hanging off it.
 
 .. autoclass:: memco.Memco
    :members:

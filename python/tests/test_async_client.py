@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import grpc
 import pytest
 from grpc_health.v1 import health_pb2
@@ -58,22 +60,43 @@ async def test_unreachable_server_raises_unavailable():
             pass
 
 
-async def test_check_health_false_skips_the_probe(harness: Harness):
-    async with AsyncMemco(token=TOKEN, host=harness.address, tls=False, check_health=False):
-        pass
-    assert harness.health.checked_services == []
+# --- limits are fetched on connect ---------------------------------------
 
 
-async def test_credentials_are_not_verified_by_default(harness: Harness):
+async def test_connect_fetches_the_limits(harness: Harness):
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False):
         pass
+    assert harness.memory.calls == ["DescribeDomains"]
+
+
+async def test_the_fetched_limits_are_applied_to_later_calls(harness: Harness):
+    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+        limits=pb.Limits(max_query_characters=10)
+    )
+    async with AsyncMemco(token=TOKEN, host=harness.address, tls=False) as built:
+        harness.memory.calls.clear()
+        with pytest.raises(errors.MemcoInvalidRequestError, match="query"):
+            await built.memory.search("x" * 11, domain="coding")
     assert harness.memory.calls == []
 
 
-async def test_verify_credentials_fires_describe_domains(harness: Harness):
-    async with AsyncMemco(token=TOKEN, host=harness.address, tls=False, verify_credentials=True):
-        pass
-    assert harness.memory.calls == ["DescribeDomains"]
+async def test_a_bad_token_surfaces_on_connect(harness: Harness):
+    harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
+    with pytest.raises(errors.MemcoAuthenticationError):
+        async with AsyncMemco(token=TOKEN, host=harness.address, tls=False):
+            pass
+
+
+async def test_a_rejected_credential_is_logged(harness: Harness, caplog):
+    harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
+    with (
+        caplog.at_level(logging.ERROR, logger="memco"),
+        pytest.raises(errors.MemcoAuthenticationError),
+    ):
+        async with AsyncMemco(token=TOKEN, host=harness.address, tls=False):
+            pass
+    assert [record.name for record in caplog.records] == ["memco"]
+    assert TOKEN not in caplog.text
 
 
 # --- error translation ---------------------------------------------------

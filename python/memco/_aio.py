@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Mapping
 from types import TracebackType
 from typing import Any
@@ -16,11 +17,19 @@ from ._channel import build_async_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
 from ._provenance import provenance as _provenance
-from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
+from .errors import (
+    MemcoAuthenticationError,
+    MemcoConfigError,
+    MemcoUnhealthyError,
+    from_rpc_error,
+)
 from .operations import AsyncMemoryOperations
 from .types import Provenance
 
 __all__ = ["AsyncMemco"]
+
+# The same logger the synchronous client writes to; see memco/_sync.py.
+_log = logging.getLogger("memco")
 
 
 class _LazyStub:
@@ -58,9 +67,9 @@ class AsyncMemco:
     """Asyncio client for Memco Shared Memory.
 
     Mirrors :class:`~memco.Memco` method for method; only the awaiting
-    differs. Because opening a connection requires I/O, the health probe cannot
-    run in ``__init__``: use it as an async context manager, or call
-    :meth:`connect` yourself.
+    differs. Because opening a connection requires I/O, the checks the
+    synchronous client runs in ``__init__`` cannot run here: use it as an async
+    context manager, or call :meth:`connect` yourself.
 
     Args:
         token: Credential to authenticate with, either a static Memco API key or
@@ -70,11 +79,6 @@ class AsyncMemco:
             ``MEMCO_API_HOST`` is used, falling back to ``grpc.spark.memco.ai``.
         tls: Whether to dial over TLS using the system trust store.
         timeout: Default per-call deadline in seconds.
-        check_health: Whether :meth:`connect` probes the health endpoint.
-        verify_credentials: Whether :meth:`connect` also calls
-            :meth:`~memco.operations.MemoryOperations.describe_domains` to prove
-            the credential works. Off by default because it makes an
-            additional request every time a client is connected.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`.
 
@@ -99,13 +103,9 @@ class AsyncMemco:
         *,
         tls: bool = True,
         timeout: float = DEFAULT_TIMEOUT,
-        check_health: bool = True,
-        verify_credentials: bool = False,
         env: Mapping[str, str] | None = None,
     ) -> None:
         self._config = resolve(token, host, tls=tls, timeout=timeout, env=env)
-        self._check_health_on_connect = check_health
-        self._verify_credentials_on_connect = verify_credentials
         self._closed = False
         # Built lazily, never here. grpc.aio captures the running event loop at
         # channel construction, so a client created at module scope — or after
@@ -159,7 +159,10 @@ class AsyncMemco:
     async def connect(self) -> AsyncMemco:
         """Verify the connection, running the checks the constructor could not.
 
-        Calling this more than once simply repeats the checks.
+        Probes the health endpoint, then calls
+        :meth:`~memco.operations.AsyncMemoryOperations.describe_domains`, which
+        proves the credential and teaches the client the input limits the
+        service enforces. Calling this more than once simply repeats both.
 
         Returns:
             This client.
@@ -167,15 +170,18 @@ class AsyncMemco:
         Raises:
             MemcoUnavailableError: If the service cannot be reached.
             MemcoUnhealthyError: If the service reports that it is not serving.
-            MemcoAuthenticationError: If ``verify_credentials`` was set and the
-                credential is rejected.
+            MemcoAuthenticationError: If the credential is rejected.
         """
         self._open()
         try:
-            if self._check_health_on_connect:
-                await self._check_health()
-            if self._verify_credentials_on_connect:
-                await self.memory.describe_domains()
+            await self._check_health()
+            # Discarding the result: what is worth keeping — the limits and the
+            # per-domain tag cap — is retained by the call itself.
+            await self.memory.describe_domains()
+        except MemcoAuthenticationError:
+            _log.error("credential rejected by %s", self._config.target)
+            await self._reset()
+            raise
         except BaseException:
             # Drop the channel but stay usable: a failed probe is often a
             # transient blip, and this method documents itself as repeatable.

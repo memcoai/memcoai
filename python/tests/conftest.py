@@ -34,6 +34,7 @@ def harness() -> Iterator[Harness]:
 def client(harness: Harness) -> Iterator[Memco]:
     """A synchronous client connected to the fixture server over plaintext."""
     with Memco(token=TOKEN, host=harness.address, tls=False) as connected:
+        _forget_the_construction_calls(harness)
         yield connected
 
 
@@ -42,7 +43,21 @@ async def async_client(harness: Harness) -> AsyncIterator[AsyncMemco]:
     """An asynchronous client connected to the fixture server over plaintext."""
     connected = AsyncMemco(token=TOKEN, host=harness.address, tls=False)
     await connected.connect()
+    _forget_the_construction_calls(harness)
     try:
         yield connected
     finally:
         await connected.close()
+
+
+def _forget_the_construction_calls(harness: Harness) -> None:
+    """Clear what connecting recorded, so a test starts from a clean server.
+
+    Connecting fetches the service's limits, so without this every test would
+    open with a ``DescribeDomains`` already on the record — and the suite proves
+    "this was rejected before any request was sent" by asserting the server saw
+    no calls at all.
+    """
+    harness.memory.calls.clear()
+    harness.memory.metadata.clear()
+    harness.memory.requests.clear()

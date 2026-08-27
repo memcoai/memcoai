@@ -24,10 +24,11 @@ from memco._config import DEFAULT_HOST, DEFAULT_PORT, resolve
 from memco._convert import _to_date
 from memco._provenance import parse
 from memco.memory.v1 import memory_pb2 as pb
+from memco.memory.v1 import memory_pb2_grpc as pbg
 from memco.types import DataSource, Tag
 
 from .conftest import TOKEN
-from .fake_server import FakeHealthService, Harness
+from .fake_server import FakeHealthService, FakeMemoryService, Harness
 
 # --- M4: scope values were only checked for presence, never validated -----
 
@@ -449,6 +450,8 @@ async def test_an_ipv6_endpoint_can_actually_be_dialled():
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
     health_pb2_grpc.add_HealthServicer_to_server(FakeHealthService(), server)
+    # Construction fetches the limits too, so the memory service has to answer.
+    pbg.add_MemoryServiceServicer_to_server(FakeMemoryService(), server)
     port = server.add_insecure_port("[::1]:0")
     server.start()
     try:
@@ -573,16 +576,15 @@ def test_unencodable_text_is_a_typed_error(field):
 # --- review: the deprecation warning was attributed inside the package ----
 
 
-def test_the_legacy_env_var_warning_reaches_the_caller():
+def test_the_legacy_env_var_warning_reaches_the_caller(harness: Harness):
     # DeprecationWarning is shown by default only when attributed to the
     # caller's own module, so a warning blamed on memco/_sync.py warns nobody.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         client = Memco(
             token=None,
-            host="localhost:1",
+            host=harness.address,
             tls=False,
-            check_health=False,
             env={"MEMCO_API_KEY": "legacy"},
         )
         client.close()

@@ -13,6 +13,8 @@ import memco as package
 from memco import AsyncMemco, Memco, errors, operations, types
 from memco.operations import AsyncMemoryOperations, MemoryOperations
 
+from .fake_server import Harness
+
 # Namespaces the client exposes, paired sync-to-async. A second service added
 # here is automatically held to the same parity rules.
 NAMESPACES = [(MemoryOperations, AsyncMemoryOperations)]
@@ -56,11 +58,11 @@ def test_constructors_match():
     )
 
 
-def test_every_namespace_is_exposed_on_both_clients():
-    # Constructing against a dead port does no I/O once the health probe is
-    # off, so this checks the wiring without needing a server.
-    sync = Memco(token="t", host="localhost:1", tls=False, check_health=False)
-    asynchronous = AsyncMemco(token="t", host="localhost:1", tls=False, check_health=False)
+def test_every_namespace_is_exposed_on_both_clients(harness: Harness):
+    # The sync client connects in its constructor, so it needs the server. The
+    # async one does no I/O until connect(), which this never calls.
+    sync = Memco(token="t", host=harness.address, tls=False)
+    asynchronous = AsyncMemco(token="t", host="localhost:1", tls=False)
     try:
         for sync_ns, async_ns in NAMESPACES:
             attribute = sync_ns.__name__.replace("Operations", "").lower()

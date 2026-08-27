@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import grpc
 import pytest
 from grpc_health.v1 import health_pb2
@@ -77,33 +79,46 @@ def test_unreachable_server_raises_unavailable():
         Memco(token=TOKEN, host="localhost:1", tls=False, timeout=2.0)
 
 
-def test_check_health_false_skips_the_probe(harness: Harness):
-    with Memco(token=TOKEN, host=harness.address, tls=False, check_health=False):
-        pass
-    assert harness.health.checked_services == []
+# --- limits are fetched on construction ----------------------------------
 
 
-# --- credential verification is opt-in -----------------------------------
-
-
-def test_credentials_are_not_verified_by_default(harness: Harness):
-    # A construction probe would make an extra request every time a client is
-    # built. It must not fire unless asked for.
+def test_construction_fetches_the_limits(harness: Harness):
+    # The service owns its caps and publishes them here. Spending the round
+    # trip once at construction is what lets every later call check locally.
     with Memco(token=TOKEN, host=harness.address, tls=False):
-        pass
-    assert harness.memory.calls == []
-
-
-def test_verify_credentials_fires_describe_domains(harness: Harness):
-    with Memco(token=TOKEN, host=harness.address, tls=False, verify_credentials=True):
         pass
     assert harness.memory.calls == ["DescribeDomains"]
 
 
-def test_verify_credentials_surfaces_a_bad_token(harness: Harness):
+def test_the_fetched_limits_are_applied_to_later_calls(harness: Harness):
+    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+        limits=pb.Limits(max_query_characters=10)
+    )
+    with Memco(token=TOKEN, host=harness.address, tls=False) as built:
+        harness.memory.calls.clear()
+        with pytest.raises(errors.MemcoInvalidRequestError, match="query"):
+            built.memory.search("x" * 11, domain="coding")
+    assert harness.memory.calls == []
+
+
+def test_a_bad_token_surfaces_at_construction(harness: Harness):
     harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
     with pytest.raises(errors.MemcoAuthenticationError):
-        Memco(token=TOKEN, host=harness.address, tls=False, verify_credentials=True)
+        Memco(token=TOKEN, host=harness.address, tls=False)
+
+
+def test_a_rejected_credential_is_logged(harness: Harness, caplog):
+    # A client is often built deep inside a framework, where the traceback
+    # reaches nobody. The log line is the only trace the operator is left with.
+    harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
+    with (
+        caplog.at_level(logging.ERROR, logger="memco"),
+        pytest.raises(errors.MemcoAuthenticationError),
+    ):
+        Memco(token=TOKEN, host=harness.address, tls=False)
+    assert [record.name for record in caplog.records] == ["memco"]
+    # A credential must never reach a log.
+    assert TOKEN not in caplog.text
 
 
 # --- error translation ---------------------------------------------------

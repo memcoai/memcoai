@@ -160,8 +160,20 @@ def test_a_deprecated_service_still_lets_a_client_be_built(harness: Harness):
     harness.memory.responses["DescribeDomains"] = deprecated_response()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        built = Memco(token=TOKEN, host=harness.address, tls=False, verify_credentials=True)
+        built = Memco(token=TOKEN, host=harness.address, tls=False)
     built.close()
+
+
+def test_construction_surfaces_the_notice(harness: Harness):
+    # Construction fetches the limits, so the notice arrives there — which is
+    # where "once per process, not per call" wants it.
+    harness.memory.responses["DescribeDomains"] = deprecated_response()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Memco(token=TOKEN, host=harness.address, tls=False).close()
+    assert [str(warning.message) for warning in caught] == [
+        "Memory API v1 is superseded; migrate to v2 by 2027-01-01."
+    ]
 
 
 def test_the_warning_category_is_visible_by_default():

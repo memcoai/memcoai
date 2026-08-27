@@ -13,9 +13,10 @@ from memco import AsyncMemco
 
 async def main() -> None:
     """Run the example."""
-    # AsyncMemco cannot probe the service in __init__, because that needs a
-    # running event loop. `async with` calls connect() for you; construct it
-    # inside the loop that will use it.
+    # AsyncMemco cannot reach the service in __init__, because that needs a
+    # running event loop. `async with` calls connect() for you, which probes
+    # health and fetches the input limits; construct it inside the loop that
+    # will use it.
     async with AsyncMemco() as client:
         domains = (await client.memory.describe_domains()).domains
         print(f"{len(domains)} domain(s) available:")

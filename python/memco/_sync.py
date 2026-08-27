@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, Mapping
 from types import TracebackType
@@ -16,13 +17,23 @@ from ._channel import build_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
 from ._provenance import provenance as _provenance
-from .errors import MemcoConfigError, MemcoUnhealthyError, from_rpc_error
+from .errors import (
+    MemcoAuthenticationError,
+    MemcoConfigError,
+    MemcoUnhealthyError,
+    from_rpc_error,
+)
 from .operations import MemoryOperations
 from .types import Provenance
 
 _T = TypeVar("_T")
 
 __all__ = ["Memco"]
+
+# Named for the package rather than the module, so the logger a caller
+# configures is the one the SDK writes to. No handler is attached: choosing
+# where records go is the application's call, not a library's.
+_log = logging.getLogger("memco")
 
 
 class Memco:
@@ -31,10 +42,19 @@ class Memco:
     Opens one gRPC channel and holds it until closed, so a single client should
     be created once and reused. It is safe to share between threads.
 
-    On construction the client verifies it can reach the service by calling the
-    standard gRPC health endpoint. That probe is unauthenticated, so it proves
-    the host, port and TLS settings are sound but says nothing about the
-    credential; pass ``verify_credentials=True`` to check that too.
+    Construction makes two calls. The first is the standard gRPC health
+    endpoint, which is unauthenticated: it proves the host, port and TLS
+    settings are sound. The second is
+    :meth:`~memco.operations.MemoryOperations.describe_domains`, which carries
+    the credential — so a bad token fails here rather than on the first real
+    call — and reports the input limits the service enforces. The client keeps
+    those, and from then on refuses an oversized field locally instead of
+    spending a round trip on a call the service would refuse.
+
+    A rejected credential is written to the ``memco`` logger before it is
+    raised, since a client is often built somewhere the traceback does not
+    reach. Nothing is logged on the way past otherwise, and the credential
+    itself never is.
 
     Args:
         token: Credential to authenticate with, either a static Memco API key or
@@ -48,12 +68,6 @@ class Memco:
             ``False`` only for a plaintext endpoint such as a local server.
         timeout: Default per-call deadline in seconds. Individual methods can
             override it.
-        check_health: Whether to probe the health endpoint on construction. Set
-            to ``False`` to construct without touching the network.
-        verify_credentials: Whether to additionally call
-            :meth:`~memco.operations.MemoryOperations.describe_domains` on
-            construction to prove the credential works. Off by default because
-            it makes an additional request every time a client is built.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`; supplying one is mainly useful in tests.
 
@@ -61,8 +75,7 @@ class Memco:
         MemcoConfigError: If no credential is available or the host is unusable.
         MemcoUnavailableError: If the service cannot be reached.
         MemcoUnhealthyError: If the service reports that it is not serving.
-        MemcoAuthenticationError: If ``verify_credentials`` is set and the
-            credential is rejected.
+        MemcoAuthenticationError: If the credential is rejected.
 
     Attributes:
         memory: The memory operations, as
@@ -84,8 +97,6 @@ class Memco:
         *,
         tls: bool = True,
         timeout: float = DEFAULT_TIMEOUT,
-        check_health: bool = True,
-        verify_credentials: bool = False,
         env: Mapping[str, str] | None = None,
     ) -> None:
         self._config = resolve(token, host, tls=tls, timeout=timeout, env=env)
@@ -102,10 +113,14 @@ class Memco:
         self.memory = MemoryOperations(_pbg.MemoryServiceStub(self._channel), self._call)
         """The memory operations. See :class:`~memco.operations.MemoryOperations`."""
         try:
-            if check_health:
-                self._check_health()
-            if verify_credentials:
-                self.memory.describe_domains()
+            self._check_health()
+            # Discarding the result: what is worth keeping — the limits and the
+            # per-domain tag cap — is retained by the call itself.
+            self.memory.describe_domains()
+        except MemcoAuthenticationError:
+            _log.error("credential rejected by %s", self._config.target)
+            self.close()
+            raise
         except BaseException:
             self.close()
             raise

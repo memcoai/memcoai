@@ -44,11 +44,12 @@ def main() -> None:
         enriched = client.memory.enrich_memory(
             memory_idx="new",
             session_id=session.session_id,
-            title="A connection check does not prove the credential works",
+            title="Building a client is what teaches it the service's limits",
             content=(
-                "Constructing a client verifies it can reach the service, but that "
-                "check carries no credential. A bad token surfaces on the first real "
-                "call unless verify_credentials is set."
+                "Constructing a client probes health and then calls describe_domains. "
+                "The second call carries the credential, so a bad token fails there, "
+                "and it reports the caps the service enforces — which is why an "
+                "oversized field is refused locally rather than after a round trip."
             ),
         )
         print(f"enriched: {enriched.operation_id}")

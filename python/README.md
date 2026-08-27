@@ -79,17 +79,22 @@ Arguments win over the environment, which wins over the defaults.
 The credential is either a Memco API key or a session token issued for your
 account; both go in the same header. `MEMCO_API_KEY` is still honoured but warns.
 
-Constructing a `Memco` probes the service's health endpoint, so a bad host,
-port or TLS setting fails immediately rather than on your first call.
-`AsyncMemco` cannot do this in `__init__` — it probes on `connect()`, which
-`async with` calls for you.
+Constructing a `Memco` makes two calls. It probes the service's health
+endpoint, so a bad host, port or TLS setting fails immediately rather than on
+your first call; that probe carries no credential, so it cannot check one.
+It then calls `describe_domains`, which does — a bad token fails here too — and
+which reports the input limits the service enforces. The client keeps those and
+applies them from then on, so an oversized field is refused locally instead of
+costing a round trip.
 
-That probe does not carry your credential, so it cannot check it. Pass
-`verify_credentials=True` if you want that too, bearing in mind it makes an
-additional request every time a client is built.
+`AsyncMemco` cannot do any of this in `__init__` — it runs both on `connect()`,
+which `async with` calls for you.
+
+A rejected credential is written to the `memco` logger before it is raised,
+since a client is often built somewhere the traceback does not reach:
 
 ```python
-Memco(token="...", host="localhost:50051", tls=False, check_health=False)
+logging.getLogger("memco").addHandler(logging.StreamHandler())
 ```
 
 ## Operations
