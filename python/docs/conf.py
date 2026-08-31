@@ -1,5 +1,6 @@
 """Sphinx configuration for the Memco Python SDK reference."""
 
+import os
 import pathlib
 import re
 from importlib.metadata import version as _version
@@ -76,6 +77,12 @@ nitpick_ignore = [
 exclude_patterns = ["_build"]
 html_theme = "furo"
 html_title = f"memco {release}"
+
+# Every release is served twice on the documentation site — under its own number
+# and under `latest` — so each page names the copy under `latest` as canonical.
+# Without it a superseded version competes with the current one in search
+# results. Overridable so a build served from anywhere else is not mislabelled.
+html_baseurl = os.environ.get("MEMCO_DOCS_BASEURL", "https://docs.memco.ai/sdk/python/latest/")
 
 # The wordmark is near-black, so it needs a light variant to stay visible when
 # the theme switches. Both are shared with the repository READMEs.

@@ -49,12 +49,16 @@ test-all:  ## Run the suite on every supported interpreter
 			|| exit 1; \
 	done
 
+# The doctree cache is written beside the HTML rather than inside it: the
+# output directory is published verbatim as `memco-docs-python-<version>.tar.gz`,
+# and Sphinx's default `<outdir>/.doctrees` would put megabytes of pickles on
+# the documentation site.
 docs:  ## Build the reference documentation (warnings are errors)
-	$(RUN) sphinx-build -b html -W --keep-going docs docs/_build
-	@echo "open python/docs/_build/index.html"
+	$(RUN) sphinx-build -b html -W --keep-going -d docs/_build/doctrees docs docs/_build/html
+	@echo "open python/docs/_build/html/index.html"
 
 docs-serve: docs  ## Build the reference and serve it locally
-	$(RUN) python -m http.server -d docs/_build 8000
+	$(RUN) python -m http.server -d docs/_build/html 8000
 
 build:  ## Build the sdist and the wheel
 	rm -rf dist

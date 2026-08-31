@@ -261,11 +261,15 @@ jobs:
           enable-cache: true
       # -W turns warnings into errors, so a cross-reference that stops
       # resolving fails here rather than rotting in the published reference.
-      - run: uv run --extra docs sphinx-build -b html -W --keep-going docs docs/_build
+      # `-d` keeps the doctree cache out of the output directory, which is
+      # published verbatim as the release's documentation tarball.
+      - run: uv run --extra docs sphinx-build -b html -W --keep-going -d docs/_build/doctrees docs docs/_build/html
+      # Named per language: Go and Node reuse this job's shape, and artifact
+      # names are unique within a run.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: docs
-          path: python/docs/_build
+          name: docs-python
+          path: python/docs/_build/html
 
   runtime-compat:
     name: Runtime compat (${{ matrix.label }})

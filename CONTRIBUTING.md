@@ -294,8 +294,8 @@ are only ever exercised by a real release.
 
 If the run fails *after* the upload — PyPI has the package but no draft
 appeared — do not re-tag. Re-run the failed jobs from the run page: the `dist`
-and `docs` artefacts are still attached to it, and re-running `uv publish` over
-files PyPI already has is a no-op rather than an error.
+and `docs-python` artefacts are still attached to it, and re-running `uv publish`
+over files PyPI already has is a no-op rather than an error.
 
 A pre-release tag (`python-v0.1.0rc1`) is marked as a pre-release on GitHub
 automatically and is skipped by `pip install` unless asked for — but it still
@@ -308,12 +308,25 @@ a free one.
 it can be dropped into the documentation site without renaming anything:
 
 ```bash
-tar xzf memco-docs-python-0.1.0.tar.gz -C <docs-site>/public/reference/
-# -> public/reference/python/0.1.0/index.html
+tar xzf memco-docs-python-0.1.0.tar.gz -C <docs-site>/public/sdk/
+# -> public/sdk/python/0.1.0/index.html
+# -> https://docs.memco.ai/sdk/python/0.1.0/
 ```
 
 Every link inside it is relative, so it works from any mount path. Go and Node
 will reuse the same `<language>/<version>/` shape.
+
+The site serves each version at its own permanent URL and copies the newest
+**stable** one to `/sdk/python/latest/`. A pre-release is skipped: it is a real
+release on PyPI and on GitHub, but not something to point a reader at. Because
+the two copies are byte-identical, every page declares
+`https://docs.memco.ai/sdk/python/latest/…` as its canonical URL — see
+`html_baseurl` in `python/docs/conf.py`, which a build serving the reference
+from anywhere else should override through `MEMCO_DOCS_BASEURL`.
+
+Nothing in the tarball is generated at extraction time, and nothing outside it
+is needed: `objects.inv` makes the reference an intersphinx target, and the
+built-in search works from any mount path.
 
 ---
 
