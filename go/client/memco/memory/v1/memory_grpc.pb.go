@@ -19,15 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MemoryService_DescribeDomains_FullMethodName = "/memco.memory.v1.MemoryService/DescribeDomains"
-	MemoryService_StartSession_FullMethodName    = "/memco.memory.v1.MemoryService/StartSession"
-	MemoryService_Search_FullMethodName          = "/memco.memory.v1.MemoryService/Search"
-	MemoryService_GetMemory_FullMethodName       = "/memco.memory.v1.MemoryService/GetMemory"
-	MemoryService_CreateMemory_FullMethodName    = "/memco.memory.v1.MemoryService/CreateMemory"
-	MemoryService_EnrichMemory_FullMethodName    = "/memco.memory.v1.MemoryService/EnrichMemory"
-	MemoryService_ShareFeedback_FullMethodName   = "/memco.memory.v1.MemoryService/ShareFeedback"
-	MemoryService_RevertMemory_FullMethodName    = "/memco.memory.v1.MemoryService/RevertMemory"
-	MemoryService_ImportMemories_FullMethodName  = "/memco.memory.v1.MemoryService/ImportMemories"
+	MemoryService_ListDomains_FullMethodName    = "/memco.memory.v1.MemoryService/ListDomains"
+	MemoryService_StartSession_FullMethodName   = "/memco.memory.v1.MemoryService/StartSession"
+	MemoryService_Search_FullMethodName         = "/memco.memory.v1.MemoryService/Search"
+	MemoryService_GetMemory_FullMethodName      = "/memco.memory.v1.MemoryService/GetMemory"
+	MemoryService_CreateMemory_FullMethodName   = "/memco.memory.v1.MemoryService/CreateMemory"
+	MemoryService_EnrichMemory_FullMethodName   = "/memco.memory.v1.MemoryService/EnrichMemory"
+	MemoryService_ShareFeedback_FullMethodName  = "/memco.memory.v1.MemoryService/ShareFeedback"
+	MemoryService_RevertMemory_FullMethodName   = "/memco.memory.v1.MemoryService/RevertMemory"
+	MemoryService_ImportMemories_FullMethodName = "/memco.memory.v1.MemoryService/ImportMemories"
 )
 
 // MemoryServiceClient is the client API for MemoryService service.
@@ -42,10 +42,10 @@ const (
 // id. A handle addresses the memory domain it belongs to, which is why most
 // operations take no domain of their own.
 type MemoryServiceClient interface {
-	// DescribeDomains returns the memory domains the caller may name, together
+	// ListDomains returns the memory domains the caller may name, together
 	// with the limits the server enforces. It takes no domain itself: it is the
 	// answer to "which domain?", and the one call a client makes before any other.
-	DescribeDomains(ctx context.Context, in *DescribeDomainsRequest, opts ...grpc.CallOption) (*DescribeDomainsResponse, error)
+	ListDomains(ctx context.Context, in *ListDomainsRequest, opts ...grpc.CallOption) (*ListDomainsResponse, error)
 	// StartSession opens a session. Every search made under it is recorded as
 	// one series, which is what relates the searches an agent runs for a task.
 	StartSession(ctx context.Context, in *StartSessionRequest, opts ...grpc.CallOption) (*StartSessionResponse, error)
@@ -93,10 +93,10 @@ func NewMemoryServiceClient(cc grpc.ClientConnInterface) MemoryServiceClient {
 	return &memoryServiceClient{cc}
 }
 
-func (c *memoryServiceClient) DescribeDomains(ctx context.Context, in *DescribeDomainsRequest, opts ...grpc.CallOption) (*DescribeDomainsResponse, error) {
+func (c *memoryServiceClient) ListDomains(ctx context.Context, in *ListDomainsRequest, opts ...grpc.CallOption) (*ListDomainsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DescribeDomainsResponse)
-	err := c.cc.Invoke(ctx, MemoryService_DescribeDomains_FullMethodName, in, out, cOpts...)
+	out := new(ListDomainsResponse)
+	err := c.cc.Invoke(ctx, MemoryService_ListDomains_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -195,10 +195,10 @@ func (c *memoryServiceClient) ImportMemories(ctx context.Context, in *ImportMemo
 // id. A handle addresses the memory domain it belongs to, which is why most
 // operations take no domain of their own.
 type MemoryServiceServer interface {
-	// DescribeDomains returns the memory domains the caller may name, together
+	// ListDomains returns the memory domains the caller may name, together
 	// with the limits the server enforces. It takes no domain itself: it is the
 	// answer to "which domain?", and the one call a client makes before any other.
-	DescribeDomains(context.Context, *DescribeDomainsRequest) (*DescribeDomainsResponse, error)
+	ListDomains(context.Context, *ListDomainsRequest) (*ListDomainsResponse, error)
 	// StartSession opens a session. Every search made under it is recorded as
 	// one series, which is what relates the searches an agent runs for a task.
 	StartSession(context.Context, *StartSessionRequest) (*StartSessionResponse, error)
@@ -246,8 +246,8 @@ type MemoryServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMemoryServiceServer struct{}
 
-func (UnimplementedMemoryServiceServer) DescribeDomains(context.Context, *DescribeDomainsRequest) (*DescribeDomainsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DescribeDomains not implemented")
+func (UnimplementedMemoryServiceServer) ListDomains(context.Context, *ListDomainsRequest) (*ListDomainsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDomains not implemented")
 }
 func (UnimplementedMemoryServiceServer) StartSession(context.Context, *StartSessionRequest) (*StartSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartSession not implemented")
@@ -294,20 +294,20 @@ func RegisterMemoryServiceServer(s grpc.ServiceRegistrar, srv MemoryServiceServe
 	s.RegisterService(&MemoryService_ServiceDesc, srv)
 }
 
-func _MemoryService_DescribeDomains_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DescribeDomainsRequest)
+func _MemoryService_ListDomains_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDomainsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MemoryServiceServer).DescribeDomains(ctx, in)
+		return srv.(MemoryServiceServer).ListDomains(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MemoryService_DescribeDomains_FullMethodName,
+		FullMethod: MemoryService_ListDomains_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MemoryServiceServer).DescribeDomains(ctx, req.(*DescribeDomainsRequest))
+		return srv.(MemoryServiceServer).ListDomains(ctx, req.(*ListDomainsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -464,8 +464,8 @@ var MemoryService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MemoryServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "DescribeDomains",
-			Handler:    _MemoryService_DescribeDomains_Handler,
+			MethodName: "ListDomains",
+			Handler:    _MemoryService_ListDomains_Handler,
 		},
 		{
 			MethodName: "StartSession",

@@ -15,10 +15,10 @@ option go_package = "github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1
 // id. A handle addresses the memory domain it belongs to, which is why most
 // operations take no domain of their own.
 service MemoryService {
-  // DescribeDomains returns the memory domains the caller may name, together
+  // ListDomains returns the memory domains the caller may name, together
   // with the limits the server enforces. It takes no domain itself: it is the
   // answer to "which domain?", and the one call a client makes before any other.
-  rpc DescribeDomains(DescribeDomainsRequest) returns (DescribeDomainsResponse);
+  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse);
 
   // StartSession opens a session. Every search made under it is recorded as
   // one series, which is what relates the searches an agent runs for a task.
@@ -125,9 +125,9 @@ message DomainEntry {
   int32 max_tags_per_query = 10;
 }
 
-message DescribeDomainsRequest {}
+message ListDomainsRequest {}
 
-message DescribeDomainsResponse {
+message ListDomainsResponse {
   repeated DomainEntry domains = 1;
   Instructions instructions = 2;
   Limits limits = 3;

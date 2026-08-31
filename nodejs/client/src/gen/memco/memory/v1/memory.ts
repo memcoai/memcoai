@@ -300,10 +300,10 @@ export interface DomainEntry {
   maxTagsPerQuery: number;
 }
 
-export interface DescribeDomainsRequest {
+export interface ListDomainsRequest {
 }
 
-export interface DescribeDomainsResponse {
+export interface ListDomainsResponse {
   domains: DomainEntry[];
   instructions?: Instructions | undefined;
   limits?:
@@ -1084,19 +1084,19 @@ export const DomainEntry: MessageFns<DomainEntry> = {
   },
 };
 
-function createBaseDescribeDomainsRequest(): DescribeDomainsRequest {
+function createBaseListDomainsRequest(): ListDomainsRequest {
   return {};
 }
 
-export const DescribeDomainsRequest: MessageFns<DescribeDomainsRequest> = {
-  encode(_: DescribeDomainsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const ListDomainsRequest: MessageFns<ListDomainsRequest> = {
+  encode(_: ListDomainsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): DescribeDomainsRequest {
+  decode(input: BinaryReader | Uint8Array, length?: number): ListDomainsRequest {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseDescribeDomainsRequest();
+    const message = createBaseListDomainsRequest();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1109,25 +1109,25 @@ export const DescribeDomainsRequest: MessageFns<DescribeDomainsRequest> = {
     return message;
   },
 
-  fromJSON(_: any): DescribeDomainsRequest {
+  fromJSON(_: any): ListDomainsRequest {
     return {};
   },
 
-  toJSON(_: DescribeDomainsRequest): unknown {
+  toJSON(_: ListDomainsRequest): unknown {
     const obj: any = {};
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<DescribeDomainsRequest>, I>>(base?: I): DescribeDomainsRequest {
-    return DescribeDomainsRequest.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<ListDomainsRequest>, I>>(base?: I): ListDomainsRequest {
+    return ListDomainsRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<DescribeDomainsRequest>, I>>(_: I): DescribeDomainsRequest {
-    const message = createBaseDescribeDomainsRequest();
+  fromPartial<I extends Exact<DeepPartial<ListDomainsRequest>, I>>(_: I): ListDomainsRequest {
+    const message = createBaseListDomainsRequest();
     return message;
   },
 };
 
-function createBaseDescribeDomainsResponse(): DescribeDomainsResponse {
+function createBaseListDomainsResponse(): ListDomainsResponse {
   return {
     domains: [],
     instructions: undefined,
@@ -1139,8 +1139,8 @@ function createBaseDescribeDomainsResponse(): DescribeDomainsResponse {
   };
 }
 
-export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
-  encode(message: DescribeDomainsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const ListDomainsResponse: MessageFns<ListDomainsResponse> = {
+  encode(message: ListDomainsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.domains) {
       DomainEntry.encode(v!, writer.uint32(10).fork()).join();
     }
@@ -1165,10 +1165,10 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): DescribeDomainsResponse {
+  decode(input: BinaryReader | Uint8Array, length?: number): ListDomainsResponse {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseDescribeDomainsResponse();
+    const message = createBaseListDomainsResponse();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1237,7 +1237,7 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     return message;
   },
 
-  fromJSON(object: any): DescribeDomainsResponse {
+  fromJSON(object: any): ListDomainsResponse {
     return {
       domains: globalThis.Array.isArray(object?.domains) ? object.domains.map((e: any) => DomainEntry.fromJSON(e)) : [],
       instructions: isSet(object.instructions) ? Instructions.fromJSON(object.instructions) : undefined,
@@ -1249,7 +1249,7 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     };
   },
 
-  toJSON(message: DescribeDomainsResponse): unknown {
+  toJSON(message: ListDomainsResponse): unknown {
     const obj: any = {};
     if (message.domains?.length) {
       obj.domains = message.domains.map((e) => DomainEntry.toJSON(e));
@@ -1275,11 +1275,11 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<DescribeDomainsResponse>, I>>(base?: I): DescribeDomainsResponse {
-    return DescribeDomainsResponse.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<ListDomainsResponse>, I>>(base?: I): ListDomainsResponse {
+    return ListDomainsResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<DescribeDomainsResponse>, I>>(object: I): DescribeDomainsResponse {
-    const message = createBaseDescribeDomainsResponse();
+  fromPartial<I extends Exact<DeepPartial<ListDomainsResponse>, I>>(object: I): ListDomainsResponse {
+    const message = createBaseListDomainsResponse();
     message.domains = object.domains?.map((e) => DomainEntry.fromPartial(e)) || [];
     message.instructions = (object.instructions !== undefined && object.instructions !== null)
       ? Instructions.fromPartial(object.instructions)
@@ -3729,18 +3729,18 @@ export const ImportOutcome: MessageFns<ImportOutcome> = {
 export type MemoryServiceService = typeof MemoryServiceService;
 export const MemoryServiceService = {
   /**
-   * DescribeDomains returns the memory domains the caller may name, together
+   * ListDomains returns the memory domains the caller may name, together
    * with the limits the server enforces. It takes no domain itself: it is the
    * answer to "which domain?", and the one call a client makes before any other.
    */
-  describeDomains: {
-    path: "/memco.memory.v1.MemoryService/DescribeDomains",
+  listDomains: {
+    path: "/memco.memory.v1.MemoryService/ListDomains",
     requestStream: false,
     responseStream: false,
-    requestSerialize: (value: DescribeDomainsRequest) => Buffer.from(DescribeDomainsRequest.encode(value).finish()),
-    requestDeserialize: (value: Buffer) => DescribeDomainsRequest.decode(value),
-    responseSerialize: (value: DescribeDomainsResponse) => Buffer.from(DescribeDomainsResponse.encode(value).finish()),
-    responseDeserialize: (value: Buffer) => DescribeDomainsResponse.decode(value),
+    requestSerialize: (value: ListDomainsRequest) => Buffer.from(ListDomainsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ListDomainsRequest.decode(value),
+    responseSerialize: (value: ListDomainsResponse) => Buffer.from(ListDomainsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ListDomainsResponse.decode(value),
   },
   /**
    * StartSession opens a session. Every search made under it is recorded as
@@ -3861,11 +3861,11 @@ export const MemoryServiceService = {
 
 export interface MemoryServiceServer extends UntypedServiceImplementation {
   /**
-   * DescribeDomains returns the memory domains the caller may name, together
+   * ListDomains returns the memory domains the caller may name, together
    * with the limits the server enforces. It takes no domain itself: it is the
    * answer to "which domain?", and the one call a client makes before any other.
    */
-  describeDomains: handleUnaryCall<DescribeDomainsRequest, DescribeDomainsResponse>;
+  listDomains: handleUnaryCall<ListDomainsRequest, ListDomainsResponse>;
   /**
    * StartSession opens a session. Every search made under it is recorded as
    * one series, which is what relates the searches an agent runs for a task.
@@ -3921,24 +3921,24 @@ export interface MemoryServiceServer extends UntypedServiceImplementation {
 
 export interface MemoryServiceClient extends Client {
   /**
-   * DescribeDomains returns the memory domains the caller may name, together
+   * ListDomains returns the memory domains the caller may name, together
    * with the limits the server enforces. It takes no domain itself: it is the
    * answer to "which domain?", and the one call a client makes before any other.
    */
-  describeDomains(
-    request: DescribeDomainsRequest,
-    callback: (error: ServiceError | null, response: DescribeDomainsResponse) => void,
+  listDomains(
+    request: ListDomainsRequest,
+    callback: (error: ServiceError | null, response: ListDomainsResponse) => void,
   ): ClientUnaryCall;
-  describeDomains(
-    request: DescribeDomainsRequest,
+  listDomains(
+    request: ListDomainsRequest,
     metadata: Metadata,
-    callback: (error: ServiceError | null, response: DescribeDomainsResponse) => void,
+    callback: (error: ServiceError | null, response: ListDomainsResponse) => void,
   ): ClientUnaryCall;
-  describeDomains(
-    request: DescribeDomainsRequest,
+  listDomains(
+    request: ListDomainsRequest,
     metadata: Metadata,
     options: Partial<CallOptions>,
-    callback: (error: ServiceError | null, response: DescribeDomainsResponse) => void,
+    callback: (error: ServiceError | null, response: ListDomainsResponse) => void,
   ): ClientUnaryCall;
   /**
    * StartSession opens a session. Every search made under it is recorded as

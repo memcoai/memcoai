@@ -500,26 +500,26 @@ func (x *DomainEntry) GetMaxTagsPerQuery() int32 {
 	return 0
 }
 
-type DescribeDomainsRequest struct {
+type ListDomainsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DescribeDomainsRequest) Reset() {
-	*x = DescribeDomainsRequest{}
+func (x *ListDomainsRequest) Reset() {
+	*x = ListDomainsRequest{}
 	mi := &file_memco_memory_v1_memory_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DescribeDomainsRequest) String() string {
+func (x *ListDomainsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DescribeDomainsRequest) ProtoMessage() {}
+func (*ListDomainsRequest) ProtoMessage() {}
 
-func (x *DescribeDomainsRequest) ProtoReflect() protoreflect.Message {
+func (x *ListDomainsRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_memco_memory_v1_memory_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -531,12 +531,12 @@ func (x *DescribeDomainsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DescribeDomainsRequest.ProtoReflect.Descriptor instead.
-func (*DescribeDomainsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListDomainsRequest.ProtoReflect.Descriptor instead.
+func (*ListDomainsRequest) Descriptor() ([]byte, []int) {
 	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{3}
 }
 
-type DescribeDomainsResponse struct {
+type ListDomainsResponse struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	Domains      []*DomainEntry         `protobuf:"bytes,1,rep,name=domains,proto3" json:"domains,omitempty"`
 	Instructions *Instructions          `protobuf:"bytes,2,opt,name=instructions,proto3" json:"instructions,omitempty"`
@@ -568,20 +568,20 @@ type DescribeDomainsResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DescribeDomainsResponse) Reset() {
-	*x = DescribeDomainsResponse{}
+func (x *ListDomainsResponse) Reset() {
+	*x = ListDomainsResponse{}
 	mi := &file_memco_memory_v1_memory_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DescribeDomainsResponse) String() string {
+func (x *ListDomainsResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DescribeDomainsResponse) ProtoMessage() {}
+func (*ListDomainsResponse) ProtoMessage() {}
 
-func (x *DescribeDomainsResponse) ProtoReflect() protoreflect.Message {
+func (x *ListDomainsResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_memco_memory_v1_memory_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -593,54 +593,54 @@ func (x *DescribeDomainsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DescribeDomainsResponse.ProtoReflect.Descriptor instead.
-func (*DescribeDomainsResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListDomainsResponse.ProtoReflect.Descriptor instead.
+func (*ListDomainsResponse) Descriptor() ([]byte, []int) {
 	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *DescribeDomainsResponse) GetDomains() []*DomainEntry {
+func (x *ListDomainsResponse) GetDomains() []*DomainEntry {
 	if x != nil {
 		return x.Domains
 	}
 	return nil
 }
 
-func (x *DescribeDomainsResponse) GetInstructions() *Instructions {
+func (x *ListDomainsResponse) GetInstructions() *Instructions {
 	if x != nil {
 		return x.Instructions
 	}
 	return nil
 }
 
-func (x *DescribeDomainsResponse) GetLimits() *Limits {
+func (x *ListDomainsResponse) GetLimits() *Limits {
 	if x != nil {
 		return x.Limits
 	}
 	return nil
 }
 
-func (x *DescribeDomainsResponse) GetDeprecated() bool {
+func (x *ListDomainsResponse) GetDeprecated() bool {
 	if x != nil {
 		return x.Deprecated
 	}
 	return false
 }
 
-func (x *DescribeDomainsResponse) GetDeprecationMessage() string {
+func (x *ListDomainsResponse) GetDeprecationMessage() string {
 	if x != nil {
 		return x.DeprecationMessage
 	}
 	return ""
 }
 
-func (x *DescribeDomainsResponse) GetSunsetDate() string {
+func (x *ListDomainsResponse) GetSunsetDate() string {
 	if x != nil {
 		return x.SunsetDate
 	}
 	return ""
 }
 
-func (x *DescribeDomainsResponse) GetServerCommit() string {
+func (x *ListDomainsResponse) GetServerCommit() string {
 	if x != nil {
 		return x.ServerCommit
 	}
@@ -2300,9 +2300,9 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\x10filter_tag_types\x18\b \x03(\tR\x0efilterTagTypes\x12*\n" +
 	"\x11version_tag_types\x18\t \x03(\tR\x0fversionTagTypes\x12+\n" +
 	"\x12max_tags_per_query\x18\n" +
-	" \x01(\x05R\x0fmaxTagsPerQuery\"\x18\n" +
-	"\x16DescribeDomainsRequest\"\xdc\x02\n" +
-	"\x17DescribeDomainsResponse\x126\n" +
+	" \x01(\x05R\x0fmaxTagsPerQuery\"\x14\n" +
+	"\x12ListDomainsRequest\"\xd8\x02\n" +
+	"\x13ListDomainsResponse\x126\n" +
 	"\adomains\x18\x01 \x03(\v2\x1c.memco.memory.v1.DomainEntryR\adomains\x12A\n" +
 	"\finstructions\x18\x02 \x01(\v2\x1d.memco.memory.v1.InstructionsR\finstructions\x12/\n" +
 	"\x06limits\x18\x03 \x01(\v2\x17.memco.memory.v1.LimitsR\x06limits\x12\x1e\n" +
@@ -2451,9 +2451,9 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\x14IMPORT_STATUS_QUEUED\x10\x01\x12\x1a\n" +
 	"\x16IMPORT_STATUS_REJECTED\x10\x02\x12\x17\n" +
 	"\x13IMPORT_STATUS_ERROR\x10\x03\x12\x1b\n" +
-	"\x17IMPORT_STATUS_DUPLICATE\x10\x042\xcb\x06\n" +
-	"\rMemoryService\x12d\n" +
-	"\x0fDescribeDomains\x12'.memco.memory.v1.DescribeDomainsRequest\x1a(.memco.memory.v1.DescribeDomainsResponse\x12[\n" +
+	"\x17IMPORT_STATUS_DUPLICATE\x10\x042\xbf\x06\n" +
+	"\rMemoryService\x12X\n" +
+	"\vListDomains\x12#.memco.memory.v1.ListDomainsRequest\x1a$.memco.memory.v1.ListDomainsResponse\x12[\n" +
 	"\fStartSession\x12$.memco.memory.v1.StartSessionRequest\x1a%.memco.memory.v1.StartSessionResponse\x12I\n" +
 	"\x06Search\x12\x1e.memco.memory.v1.SearchRequest\x1a\x1f.memco.memory.v1.SearchResponse\x12R\n" +
 	"\tGetMemory\x12!.memco.memory.v1.GetMemoryRequest\x1a\".memco.memory.v1.GetMemoryResponse\x12[\n" +
@@ -2478,43 +2478,43 @@ func file_memco_memory_v1_memory_proto_rawDescGZIP() []byte {
 var file_memco_memory_v1_memory_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_memco_memory_v1_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_memco_memory_v1_memory_proto_goTypes = []any{
-	(DataSource)(0),                 // 0: memco.memory.v1.DataSource
-	(RevertOutcome)(0),              // 1: memco.memory.v1.RevertOutcome
-	(ImportStatus)(0),               // 2: memco.memory.v1.ImportStatus
-	(*Instructions)(nil),            // 3: memco.memory.v1.Instructions
-	(*Tag)(nil),                     // 4: memco.memory.v1.Tag
-	(*DomainEntry)(nil),             // 5: memco.memory.v1.DomainEntry
-	(*DescribeDomainsRequest)(nil),  // 6: memco.memory.v1.DescribeDomainsRequest
-	(*DescribeDomainsResponse)(nil), // 7: memco.memory.v1.DescribeDomainsResponse
-	(*Limits)(nil),                  // 8: memco.memory.v1.Limits
-	(*StartSessionRequest)(nil),     // 9: memco.memory.v1.StartSessionRequest
-	(*StartSessionResponse)(nil),    // 10: memco.memory.v1.StartSessionResponse
-	(*SearchRequest)(nil),           // 11: memco.memory.v1.SearchRequest
-	(*SearchResponse)(nil),          // 12: memco.memory.v1.SearchResponse
-	(*MemoryResult)(nil),            // 13: memco.memory.v1.MemoryResult
-	(*InsightResult)(nil),           // 14: memco.memory.v1.InsightResult
-	(*GetMemoryRequest)(nil),        // 15: memco.memory.v1.GetMemoryRequest
-	(*GetMemoryResponse)(nil),       // 16: memco.memory.v1.GetMemoryResponse
-	(*CreateMemoryRequest)(nil),     // 17: memco.memory.v1.CreateMemoryRequest
-	(*CreateMemoryResponse)(nil),    // 18: memco.memory.v1.CreateMemoryResponse
-	(*EnrichMemoryRequest)(nil),     // 19: memco.memory.v1.EnrichMemoryRequest
-	(*EnrichMemoryResponse)(nil),    // 20: memco.memory.v1.EnrichMemoryResponse
-	(*ShareFeedbackRequest)(nil),    // 21: memco.memory.v1.ShareFeedbackRequest
-	(*FeedbackRating)(nil),          // 22: memco.memory.v1.FeedbackRating
-	(*ShareFeedbackResponse)(nil),   // 23: memco.memory.v1.ShareFeedbackResponse
-	(*FeedbackEntry)(nil),           // 24: memco.memory.v1.FeedbackEntry
-	(*RevertMemoryRequest)(nil),     // 25: memco.memory.v1.RevertMemoryRequest
-	(*RevertMemoryResponse)(nil),    // 26: memco.memory.v1.RevertMemoryResponse
-	(*ImportMemoriesRequest)(nil),   // 27: memco.memory.v1.ImportMemoriesRequest
-	(*ImportedMemory)(nil),          // 28: memco.memory.v1.ImportedMemory
-	(*ImportedInsight)(nil),         // 29: memco.memory.v1.ImportedInsight
-	(*ImportMemoriesResponse)(nil),  // 30: memco.memory.v1.ImportMemoriesResponse
-	(*ImportOutcome)(nil),           // 31: memco.memory.v1.ImportOutcome
+	(DataSource)(0),                // 0: memco.memory.v1.DataSource
+	(RevertOutcome)(0),             // 1: memco.memory.v1.RevertOutcome
+	(ImportStatus)(0),              // 2: memco.memory.v1.ImportStatus
+	(*Instructions)(nil),           // 3: memco.memory.v1.Instructions
+	(*Tag)(nil),                    // 4: memco.memory.v1.Tag
+	(*DomainEntry)(nil),            // 5: memco.memory.v1.DomainEntry
+	(*ListDomainsRequest)(nil),     // 6: memco.memory.v1.ListDomainsRequest
+	(*ListDomainsResponse)(nil),    // 7: memco.memory.v1.ListDomainsResponse
+	(*Limits)(nil),                 // 8: memco.memory.v1.Limits
+	(*StartSessionRequest)(nil),    // 9: memco.memory.v1.StartSessionRequest
+	(*StartSessionResponse)(nil),   // 10: memco.memory.v1.StartSessionResponse
+	(*SearchRequest)(nil),          // 11: memco.memory.v1.SearchRequest
+	(*SearchResponse)(nil),         // 12: memco.memory.v1.SearchResponse
+	(*MemoryResult)(nil),           // 13: memco.memory.v1.MemoryResult
+	(*InsightResult)(nil),          // 14: memco.memory.v1.InsightResult
+	(*GetMemoryRequest)(nil),       // 15: memco.memory.v1.GetMemoryRequest
+	(*GetMemoryResponse)(nil),      // 16: memco.memory.v1.GetMemoryResponse
+	(*CreateMemoryRequest)(nil),    // 17: memco.memory.v1.CreateMemoryRequest
+	(*CreateMemoryResponse)(nil),   // 18: memco.memory.v1.CreateMemoryResponse
+	(*EnrichMemoryRequest)(nil),    // 19: memco.memory.v1.EnrichMemoryRequest
+	(*EnrichMemoryResponse)(nil),   // 20: memco.memory.v1.EnrichMemoryResponse
+	(*ShareFeedbackRequest)(nil),   // 21: memco.memory.v1.ShareFeedbackRequest
+	(*FeedbackRating)(nil),         // 22: memco.memory.v1.FeedbackRating
+	(*ShareFeedbackResponse)(nil),  // 23: memco.memory.v1.ShareFeedbackResponse
+	(*FeedbackEntry)(nil),          // 24: memco.memory.v1.FeedbackEntry
+	(*RevertMemoryRequest)(nil),    // 25: memco.memory.v1.RevertMemoryRequest
+	(*RevertMemoryResponse)(nil),   // 26: memco.memory.v1.RevertMemoryResponse
+	(*ImportMemoriesRequest)(nil),  // 27: memco.memory.v1.ImportMemoriesRequest
+	(*ImportedMemory)(nil),         // 28: memco.memory.v1.ImportedMemory
+	(*ImportedInsight)(nil),        // 29: memco.memory.v1.ImportedInsight
+	(*ImportMemoriesResponse)(nil), // 30: memco.memory.v1.ImportMemoriesResponse
+	(*ImportOutcome)(nil),          // 31: memco.memory.v1.ImportOutcome
 }
 var file_memco_memory_v1_memory_proto_depIdxs = []int32{
-	5,  // 0: memco.memory.v1.DescribeDomainsResponse.domains:type_name -> memco.memory.v1.DomainEntry
-	3,  // 1: memco.memory.v1.DescribeDomainsResponse.instructions:type_name -> memco.memory.v1.Instructions
-	8,  // 2: memco.memory.v1.DescribeDomainsResponse.limits:type_name -> memco.memory.v1.Limits
+	5,  // 0: memco.memory.v1.ListDomainsResponse.domains:type_name -> memco.memory.v1.DomainEntry
+	3,  // 1: memco.memory.v1.ListDomainsResponse.instructions:type_name -> memco.memory.v1.Instructions
+	8,  // 2: memco.memory.v1.ListDomainsResponse.limits:type_name -> memco.memory.v1.Limits
 	3,  // 3: memco.memory.v1.StartSessionResponse.instructions:type_name -> memco.memory.v1.Instructions
 	4,  // 4: memco.memory.v1.SearchRequest.tags:type_name -> memco.memory.v1.Tag
 	13, // 5: memco.memory.v1.SearchResponse.memories:type_name -> memco.memory.v1.MemoryResult
@@ -2538,7 +2538,7 @@ var file_memco_memory_v1_memory_proto_depIdxs = []int32{
 	31, // 23: memco.memory.v1.ImportMemoriesResponse.results:type_name -> memco.memory.v1.ImportOutcome
 	3,  // 24: memco.memory.v1.ImportMemoriesResponse.instructions:type_name -> memco.memory.v1.Instructions
 	2,  // 25: memco.memory.v1.ImportOutcome.status:type_name -> memco.memory.v1.ImportStatus
-	6,  // 26: memco.memory.v1.MemoryService.DescribeDomains:input_type -> memco.memory.v1.DescribeDomainsRequest
+	6,  // 26: memco.memory.v1.MemoryService.ListDomains:input_type -> memco.memory.v1.ListDomainsRequest
 	9,  // 27: memco.memory.v1.MemoryService.StartSession:input_type -> memco.memory.v1.StartSessionRequest
 	11, // 28: memco.memory.v1.MemoryService.Search:input_type -> memco.memory.v1.SearchRequest
 	15, // 29: memco.memory.v1.MemoryService.GetMemory:input_type -> memco.memory.v1.GetMemoryRequest
@@ -2547,7 +2547,7 @@ var file_memco_memory_v1_memory_proto_depIdxs = []int32{
 	21, // 32: memco.memory.v1.MemoryService.ShareFeedback:input_type -> memco.memory.v1.ShareFeedbackRequest
 	25, // 33: memco.memory.v1.MemoryService.RevertMemory:input_type -> memco.memory.v1.RevertMemoryRequest
 	27, // 34: memco.memory.v1.MemoryService.ImportMemories:input_type -> memco.memory.v1.ImportMemoriesRequest
-	7,  // 35: memco.memory.v1.MemoryService.DescribeDomains:output_type -> memco.memory.v1.DescribeDomainsResponse
+	7,  // 35: memco.memory.v1.MemoryService.ListDomains:output_type -> memco.memory.v1.ListDomainsResponse
 	10, // 36: memco.memory.v1.MemoryService.StartSession:output_type -> memco.memory.v1.StartSessionResponse
 	12, // 37: memco.memory.v1.MemoryService.Search:output_type -> memco.memory.v1.SearchResponse
 	16, // 38: memco.memory.v1.MemoryService.GetMemory:output_type -> memco.memory.v1.GetMemoryResponse

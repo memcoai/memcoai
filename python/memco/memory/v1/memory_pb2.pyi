@@ -96,11 +96,11 @@ class DomainEntry(_message.Message):
     max_tags_per_query: int
     def __init__(self, slug: _Optional[str] = ..., title: _Optional[str] = ..., summary: _Optional[str] = ..., when_to_search: _Optional[str] = ..., when_to_save: _Optional[str] = ..., what_not_to_save: _Optional[str] = ..., tags_description: _Optional[str] = ..., filter_tag_types: _Optional[_Iterable[str]] = ..., version_tag_types: _Optional[_Iterable[str]] = ..., max_tags_per_query: _Optional[int] = ...) -> None: ...
 
-class DescribeDomainsRequest(_message.Message):
+class ListDomainsRequest(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
-class DescribeDomainsResponse(_message.Message):
+class ListDomainsResponse(_message.Message):
     __slots__ = ("domains", "instructions", "limits", "deprecated", "deprecation_message", "sunset_date", "server_commit")
     DOMAINS_FIELD_NUMBER: _ClassVar[int]
     INSTRUCTIONS_FIELD_NUMBER: _ClassVar[int]

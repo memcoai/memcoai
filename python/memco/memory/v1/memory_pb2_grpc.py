@@ -41,10 +41,10 @@ class MemoryServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.DescribeDomains = channel.unary_unary(
-                '/memco.memory.v1.MemoryService/DescribeDomains',
-                request_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.DescribeDomainsRequest.SerializeToString,
-                response_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.DescribeDomainsResponse.FromString,
+        self.ListDomains = channel.unary_unary(
+                '/memco.memory.v1.MemoryService/ListDomains',
+                request_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.ListDomainsRequest.SerializeToString,
+                response_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.ListDomainsResponse.FromString,
                 _registered_method=True)
         self.StartSession = channel.unary_unary(
                 '/memco.memory.v1.MemoryService/StartSession',
@@ -98,8 +98,8 @@ class MemoryServiceServicer(object):
     operations take no domain of their own.
     """
 
-    def DescribeDomains(self, request, context):
-        """DescribeDomains returns the memory domains the caller may name, together
+    def ListDomains(self, request, context):
+        """ListDomains returns the memory domains the caller may name, together
         with the limits the server enforces. It takes no domain itself: it is the
         answer to "which domain?", and the one call a client makes before any other.
         """
@@ -187,10 +187,10 @@ class MemoryServiceServicer(object):
 
 def add_MemoryServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'DescribeDomains': grpc.unary_unary_rpc_method_handler(
-                    servicer.DescribeDomains,
-                    request_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.DescribeDomainsRequest.FromString,
-                    response_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.DescribeDomainsResponse.SerializeToString,
+            'ListDomains': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListDomains,
+                    request_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.ListDomainsRequest.FromString,
+                    response_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.ListDomainsResponse.SerializeToString,
             ),
             'StartSession': grpc.unary_unary_rpc_method_handler(
                     servicer.StartSession,
@@ -251,7 +251,7 @@ class MemoryService(object):
     """
 
     @staticmethod
-    def DescribeDomains(request,
+    def ListDomains(request,
             target,
             options=(),
             channel_credentials=None,
@@ -264,9 +264,9 @@ class MemoryService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/memco.memory.v1.MemoryService/DescribeDomains',
-            memco_dot_memory_dot_v1_dot_memory__pb2.DescribeDomainsRequest.SerializeToString,
-            memco_dot_memory_dot_v1_dot_memory__pb2.DescribeDomainsResponse.FromString,
+            '/memco.memory.v1.MemoryService/ListDomains',
+            memco_dot_memory_dot_v1_dot_memory__pb2.ListDomainsRequest.SerializeToString,
+            memco_dot_memory_dot_v1_dot_memory__pb2.ListDomainsResponse.FromString,
             options,
             channel_credentials,
             insecure,
