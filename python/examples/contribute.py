@@ -46,7 +46,7 @@ def main() -> None:
             session_id=session.session_id,
             title="Building a client is what teaches it the service's limits",
             content=(
-                "Constructing a client probes health and then calls describe_domains. "
+                "Constructing a client probes health and then calls list_domains. "
                 "The second call carries the credential, so a bad token fails there, "
                 "and it reports the caps the service enforces — which is why an "
                 "oversized field is refused locally rather than after a round trip."

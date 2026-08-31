@@ -54,7 +54,7 @@ def _forget_the_construction_calls(harness: Harness) -> None:
     """Clear what connecting recorded, so a test starts from a clean server.
 
     Connecting fetches the service's limits, so without this every test would
-    open with a ``DescribeDomains`` already on the record — and the suite proves
+    open with a ``ListDomains`` already on the record — and the suite proves
     "this was rejected before any request was sent" by asserting the server saw
     no calls at all.
     """

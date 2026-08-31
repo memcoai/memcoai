@@ -1,6 +1,6 @@
 """Applying the input limits the service reports.
 
-The service owns these numbers and delivers them on ``DescribeDomains``. An SDK
+The service owns these numbers and delivers them on ``ListDomains``. An SDK
 carrying its own copy would go stale the moment the service changed one: an
 older client would keep rejecting requests the service had started accepting,
 locally, with no way for the caller to tell why. So nothing here has a default —
@@ -24,7 +24,7 @@ __all__ = ["Known"]
 class Known:
     """What the service has told this client about its own limits.
 
-    Empty until a ``DescribeDomains`` response supplies it, and refreshed by
+    Empty until a ``ListDomains`` response supplies it, and refreshed by
     every subsequent one.
 
     Attributes:
@@ -37,7 +37,7 @@ class Known:
     tags_per_domain: dict[str, int] = field(default_factory=dict)
 
     def update(self, limits: Limits | None, domains: tuple[DomainEntry, ...]) -> None:
-        """Record what a ``DescribeDomains`` response reported.
+        """Record what a ``ListDomains`` response reported.
 
         Args:
             limits: The service-wide caps the response carried, if any.

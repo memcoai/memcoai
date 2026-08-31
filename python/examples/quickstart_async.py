@@ -18,7 +18,7 @@ async def main() -> None:
     # health and fetches the input limits; construct it inside the loop that
     # will use it.
     async with AsyncMemco() as client:
-        domains = (await client.memory.describe_domains()).domains
+        domains = (await client.memory.list_domains()).domains
         print(f"{len(domains)} domain(s) available:")
         for domain in domains:
             print(f"  {domain.slug:12s} {domain.summary.splitlines()[0]}")

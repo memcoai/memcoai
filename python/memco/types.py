@@ -177,7 +177,7 @@ class Tag:
     The service lowercases each field and folds hyphens to underscores, so
     ``"Go"`` and ``"go"`` name the same tag. Which types exist, which of them
     narrow results rather than boost them, and which carry a version are all
-    per-domain; :meth:`~memco.operations.MemoryOperations.describe_domains` describes them.
+    per-domain; :meth:`~memco.operations.MemoryOperations.list_domains` describes them.
 
     Attributes:
         type: The tag's category, such as ``"language"`` or ``"framework"``.
@@ -270,7 +270,7 @@ class DomainEntry:
 class Limits:
     """The caps the service enforces on request fields.
 
-    Delivered by :meth:`~memco.operations.MemoryOperations.describe_domains` so
+    Delivered by :meth:`~memco.operations.MemoryOperations.list_domains` so
     the service owns them: an SDK carrying its own numbers would keep rejecting
     requests the service had started accepting. A client that has not asked for
     them validates nothing and lets the service rule.
@@ -555,8 +555,10 @@ class ImportedInsight:
     """One insight to contribute as part of an imported memory.
 
     Attributes:
-        title: Short title.
-        content: The insight itself.
+        title: (Required) A short title describing what this insight is about. Title and content
+            together must be at most 5000 characters.
+        content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
+            others can learn from. Supports markdown formatting.
 
     Example:
         >>> ImportedInsight(title="Bearer is case-sensitive",
@@ -581,9 +583,9 @@ class ImportedMemory:
     """One memory to contribute: what it should be found by, and what it holds.
 
     Attributes:
-        queries: What someone would search to find this memory. At least one is
-            required.
-        insights: What the memory holds. At least one is required.
+        queries: (Required) The queries someone would search to find this memory, such as questions
+            or problem statements. At least one, at most 20.
+        insights: (Required) The findings this memory holds. At least one, at most 10.
         tags: Tags describing the subject and context.
 
     Example:

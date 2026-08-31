@@ -63,8 +63,8 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
             context.abort(*self.error)
         return self.responses.get(name, default)
 
-    def DescribeDomains(self, request, context):  # noqa: N802
-        return self._handle("DescribeDomains", context, pb.DescribeDomainsResponse(), request)
+    def ListDomains(self, request, context):  # noqa: N802
+        return self._handle("ListDomains", context, pb.ListDomainsResponse(), request)
 
     def StartSession(self, request, context):  # noqa: N802
         return self._handle(

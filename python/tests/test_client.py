@@ -22,12 +22,12 @@ from .fake_server import Harness
 def test_auth_metadata_is_bearer_with_a_capital_b(client: Memco, harness: Harness):
     # The scheme prefix is matched case-sensitively, so the exact spelling of
     # this header is load-bearing.
-    client.memory.describe_domains()
+    client.memory.list_domains()
     assert harness.memory.metadata[-1]["authorization"] == f"Bearer {TOKEN}"
 
 
 def test_auth_metadata_is_sent_on_every_method(client: Memco, harness: Harness):
-    client.memory.describe_domains()
+    client.memory.list_domains()
     client.memory.start_session("coding")
     client.memory.get_memory("memory-a-1")
     assert len(harness.memory.metadata) == 3
@@ -87,11 +87,11 @@ def test_construction_fetches_the_limits(harness: Harness):
     # trip once at construction is what lets every later call check locally.
     with Memco(token=TOKEN, host=harness.address, tls=False):
         pass
-    assert harness.memory.calls == ["DescribeDomains"]
+    assert harness.memory.calls == ["ListDomains"]
 
 
 def test_the_fetched_limits_are_applied_to_later_calls(harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         limits=pb.Limits(max_query_characters=10)
     )
     with Memco(token=TOKEN, host=harness.address, tls=False) as built:
@@ -139,14 +139,14 @@ def test_a_rejected_credential_is_logged(harness: Harness, caplog):
 def test_server_errors_arrive_typed(client: Memco, harness: Harness, code, expected):
     harness.memory.error = (code, "boom")
     with pytest.raises(expected) as caught:
-        client.memory.describe_domains()
+        client.memory.list_domains()
     assert caught.value.code is code
 
 
 def test_no_raw_grpc_error_escapes(client: Memco, harness: Harness):
     harness.memory.error = (grpc.StatusCode.ABORTED, "nope")
     with pytest.raises(errors.MemcoError):
-        client.memory.describe_domains()
+        client.memory.list_domains()
 
 
 # --- validation fires before any RPC -------------------------------------
@@ -179,11 +179,11 @@ def test_enrich_requires_a_session(client: Memco, harness: Harness):
 # --- the operations ------------------------------------------------------
 
 
-def test_describe_domains(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+def test_list_domains(client: Memco, harness: Harness):
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         domains=[pb.DomainEntry(slug="coding", title="Software Development")]
     )
-    result = client.memory.describe_domains()
+    result = client.memory.list_domains()
     assert [d.slug for d in result.domains] == ["coding"]
 
 
@@ -286,9 +286,9 @@ def test_revert_not_found_is_a_value_not_an_exception(client: Memco, harness: Ha
 
 def test_context_manager_closes_the_channel(harness: Harness):
     with Memco(token=TOKEN, host=harness.address, tls=False) as connected:
-        connected.memory.describe_domains()
+        connected.memory.list_domains()
     with pytest.raises(errors.MemcoConfigError, match="closed"):
-        connected.memory.describe_domains()
+        connected.memory.list_domains()
 
 
 def test_double_close_is_safe(harness: Harness):
@@ -307,7 +307,7 @@ def test_provenance_is_reachable_from_the_client(client: Memco):
 def test_the_user_agent_names_the_sdk_and_its_version(client: Memco, harness: Harness):
     # Asserted from what the server actually received, not from the channel
     # options, so a value that never leaves the client cannot pass this.
-    client.memory.describe_domains()
+    client.memory.list_domains()
     sent = harness.memory.metadata[-1]["user-agent"]
     # A single stable product token: the service matches deprecation rules
     # against it, so a second term could break that match.
@@ -316,14 +316,14 @@ def test_the_user_agent_names_the_sdk_and_its_version(client: Memco, harness: Ha
 
 def test_the_user_agent_prepends_rather_than_replaces(client: Memco, harness: Harness):
     # gRPC's own token must survive, or the transport becomes unidentifiable.
-    client.memory.describe_domains()
+    client.memory.list_domains()
     sent = harness.memory.metadata[-1]["user-agent"]
     assert sent.startswith("memco-python/")
     assert "grpc-python/" in sent
 
 
 def test_the_user_agent_is_sent_on_every_method(client: Memco, harness: Harness):
-    client.memory.describe_domains()
+    client.memory.list_domains()
     client.memory.start_session("coding")
     client.memory.get_memory("memory-a-1")
     # Without the count, this cannot distinguish "all three carried it" from

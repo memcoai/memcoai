@@ -1,4 +1,4 @@
-"""Deprecation notices and input limits, both delivered on DescribeDomains."""
+"""Deprecation notices and input limits, both delivered on ListDomains."""
 
 from __future__ import annotations
 
@@ -46,8 +46,8 @@ def sunset_status(reason: str, message: str, domain: str = "memco.ai") -> grpc.S
     )
 
 
-def deprecated_response(**kwargs) -> pb.DescribeDomainsResponse:
-    return pb.DescribeDomainsResponse(
+def deprecated_response(**kwargs) -> pb.ListDomainsResponse:
+    return pb.ListDomainsResponse(
         domains=[pb.DomainEntry(slug="coding")],
         deprecated=True,
         deprecation_message="Memory API v1 is superseded; migrate to v2 by 2027-01-01.",
@@ -59,17 +59,17 @@ def deprecated_response(**kwargs) -> pb.DescribeDomainsResponse:
 
 
 def test_deprecation_fields_reach_the_caller(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = deprecated_response(sunset_date="2027-01-01")
+    harness.memory.responses["ListDomains"] = deprecated_response(sunset_date="2027-01-01")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        result = client.memory.describe_domains()
+        result = client.memory.list_domains()
     assert result.deprecated is True
     assert result.deprecation_message.startswith("Memory API v1 is superseded")
     assert result.sunset_date == date(2027, 1, 1)
 
 
 def test_limits_reach_the_caller(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         limits=pb.Limits(
             max_query_characters=100,
             max_text_characters=200,
@@ -82,7 +82,7 @@ def test_limits_reach_the_caller(client: Memco, harness: Harness):
             max_import_tags_per_memory=8,
         )
     )
-    limits = client.memory.describe_domains().limits
+    limits = client.memory.list_domains().limits
     assert limits is not None
     assert limits.max_query_characters == 100
     assert limits.max_text_characters == 200
@@ -94,10 +94,10 @@ def test_limits_reach_the_caller(client: Memco, harness: Harness):
 
 
 def test_per_domain_tag_cap_reaches_the_caller(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         domains=[pb.DomainEntry(slug="coding", max_tags_per_query=4)]
     )
-    assert client.memory.describe_domains().domains[0].max_tags_per_query == 4
+    assert client.memory.list_domains().domains[0].max_tags_per_query == 4
 
 
 # --- an older server says nothing, and that must not mean zero -----------
@@ -105,30 +105,30 @@ def test_per_domain_tag_cap_reaches_the_caller(client: Memco, harness: Harness):
 
 def test_an_absent_limits_message_means_validate_nothing(client: Memco, harness: Harness):
     # Treating a missing message as zeros would reject every call locally.
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         domains=[pb.DomainEntry(slug="coding")]
     )
-    result = client.memory.describe_domains()
+    result = client.memory.list_domains()
     assert result.limits is None
     client.memory.search("a query of some length", domain="coding")
     client.memory.create_memory(query="q", title="t" * 500, content="c" * 500, domain="coding")
 
 
 def test_an_older_server_reports_no_deprecation(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse()
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        result = client.memory.describe_domains()
+        result = client.memory.list_domains()
     assert result.deprecated is False
     assert result.sunset_date is None
     assert not caught
 
 
 def test_an_empty_sunset_date_is_none(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = deprecated_response()
+    harness.memory.responses["ListDomains"] = deprecated_response()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert client.memory.describe_domains().sunset_date is None
+        assert client.memory.list_domains().sunset_date is None
 
 
 # --- the notice is surfaced once, unchanged, and never fatally ------------
@@ -137,57 +137,57 @@ def test_an_empty_sunset_date_is_none(client: Memco, harness: Harness):
 def test_the_notice_is_emitted_once_across_repeated_calls(client: Memco, harness: Harness):
     # Per-call warnings make a busy client unusable and get filtered wholesale,
     # which defeats the point.
-    harness.memory.responses["DescribeDomains"] = deprecated_response(sunset_date="2027-01-01")
+    harness.memory.responses["ListDomains"] = deprecated_response(sunset_date="2027-01-01")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         for _ in range(5):
-            client.memory.describe_domains()
+            client.memory.list_domains()
     assert len(caught) == 1
 
 
 def test_the_notice_relays_the_server_text_unchanged(client: Memco, harness: Harness):
     # Only the service knows the remedy, so nothing may be inferred or added
     # beyond the sunset date.
-    harness.memory.responses["DescribeDomains"] = deprecated_response()
+    harness.memory.responses["ListDomains"] = deprecated_response()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        client.memory.describe_domains()
+        client.memory.list_domains()
     assert str(caught[0].message) == "Memory API v1 is superseded; migrate to v2 by 2027-01-01."
 
 
 def test_a_sunset_date_is_appended_not_substituted(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = deprecated_response(sunset_date="2027-01-01")
+    harness.memory.responses["ListDomains"] = deprecated_response(sunset_date="2027-01-01")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        client.memory.describe_domains()
+        client.memory.list_domains()
     text = str(caught[0].message)
     assert text.startswith("Memory API v1 is superseded")
     assert "2027-01-01" in text
 
 
 def test_a_changed_message_is_surfaced_again(client: Memco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = deprecated_response()
+    harness.memory.responses["ListDomains"] = deprecated_response()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        client.memory.describe_domains()
-        harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+        client.memory.list_domains()
+        harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
             deprecated=True, deprecation_message="A different remedy entirely."
         )
-        client.memory.describe_domains()
+        client.memory.list_domains()
     assert len(caught) == 2
 
 
 def test_a_deprecation_never_fails_the_call(client: Memco, harness: Harness):
     # Deprecation is advice: it must not raise, even escalated to an error.
-    harness.memory.responses["DescribeDomains"] = deprecated_response(sunset_date="2027-01-01")
+    harness.memory.responses["ListDomains"] = deprecated_response(sunset_date="2027-01-01")
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        result = client.memory.describe_domains()
+        result = client.memory.list_domains()
     assert result.deprecated is True
 
 
 def test_a_deprecated_service_still_lets_a_client_be_built(harness: Harness):
-    harness.memory.responses["DescribeDomains"] = deprecated_response()
+    harness.memory.responses["ListDomains"] = deprecated_response()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         built = Memco(token=TOKEN, host=harness.address, tls=False)
@@ -197,7 +197,7 @@ def test_a_deprecated_service_still_lets_a_client_be_built(harness: Harness):
 def test_construction_surfaces_the_notice(harness: Harness):
     # Construction fetches the limits, so the notice arrives there — which is
     # where "once per process, not per call" wants it.
-    harness.memory.responses["DescribeDomains"] = deprecated_response()
+    harness.memory.responses["ListDomains"] = deprecated_response()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         Memco(token=TOKEN, host=harness.address, tls=False).close()
@@ -302,14 +302,14 @@ def test_a_malformed_detail_never_escapes_as_a_raw_protobuf_error(client: Memco,
 
 
 def test_a_blocked_version_fails_when_the_client_is_built(harness: Harness):
-    # Construction calls DescribeDomains, so a blocked version is refused there
-    # rather than on the caller's first real call. DescribeDomains is in
+    # Construction calls ListDomains, so a blocked version is refused there
+    # rather than on the caller's first real call. ListDomains is in
     # RETRYABLE_METHODS, but only UNAVAILABLE is retryable, so the single
     # recorded call also shows the refusal was not replayed.
     harness.memory.rich_error = sunset_status(CLIENT_SUNSET, UPGRADE_REMEDY)
     with pytest.raises(errors.MemcoSunsetError):
         Memco(token=TOKEN, host=harness.address, tls=False)
-    assert harness.memory.calls == ["DescribeDomains"]
+    assert harness.memory.calls == ["ListDomains"]
 
 
 async def test_a_blocked_version_fails_when_the_async_client_connects(harness: Harness):
@@ -340,11 +340,11 @@ def test_the_health_probe_does_not_produce_a_sunset(harness: Harness):
 
 def limited(client: Memco, harness: Harness, **limits) -> None:
     """Teach the client the service's limits by making the call that carries them."""
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         domains=[pb.DomainEntry(slug="coding", max_tags_per_query=limits.pop("max_tags", 0))],
         limits=pb.Limits(**limits),
     )
-    client.memory.describe_domains()
+    client.memory.list_domains()
 
 
 def test_an_over_long_query_is_refused(client: Memco, harness: Harness):
@@ -447,10 +447,10 @@ def test_a_batch_over_the_reported_cap_is_split_rather_than_refused(
 async def test_the_async_client_splits_a_long_batch_too(async_client: AsyncMemco, harness: Harness):
     # The async side awaits inside the comprehension that makes the calls, which
     # is unusual enough to pin: the two surfaces have to split identically.
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         limits=pb.Limits(max_import_memories=2)
     )
-    await async_client.memory.describe_domains()
+    await async_client.memory.list_domains()
     harness.memory.calls.clear()
     result = await async_client.memory.import_memories([imported()] * 5, domain="coding")
     assert harness.memory.calls == ["ImportMemories"] * 3

@@ -35,9 +35,9 @@ will be silently discarded:
 
 ```
 proto/                    the service contract
-python/memco/memory/      generated Python client
-go/client/                generated Go client
-nodejs/client/            generated Node client
+python/memco/memory/      generated Python client, and the tool manifest
+go/client/                generated Go client, and the tool manifest
+nodejs/client/            generated Node client, and the tool manifest
 ```
 
 Everything else is hand-written — including `python/memco/__init__.py`, which
@@ -46,10 +46,30 @@ sits alongside the generated tree.
 If you believe the generated code or the contract itself is wrong, open an issue
 describing the problem rather than editing the output. `make provenance` checks
 that the contract's checksum matches what each descriptor records, that they
-agree on one server commit, and that the declared dependency floors match what
-the generated modules assert at import. It does not verify the generated code
-itself byte for byte. If it fails on a clean checkout, that is worth an issue on
+agree on one server commit, that the declared dependency floors match what the
+generated modules assert at import, and that every language ships the same
+non-empty tool manifest. It does not verify the generated code itself byte for
+byte. If it fails on a clean checkout, that is worth an issue on
 its own.
+
+### The tool manifest
+
+`tools.json` ships in each of those trees, byte-identical, carrying the
+agent-facing description of every operation — the same copy the hosted MCP server
+publishes. It is generated too, so a wording fix belongs upstream, not here.
+
+The Python SDK does not read it at runtime. `scripts/sync_tool_docs.py` writes it
+into the docstrings in `memco/operations.py` and `memco/types.py`, which is where
+`memco.agent` picks the copy up, so the description a model reads is reviewable in
+a diff. After an export, run `make tool-docs` and commit the result;
+`make tool-docs-check` and a pre-commit hook fail if the two have drifted.
+
+Three parameters are deliberately left alone, listed as `SDK_SHAPED` in that
+script: the manifest describes `tags`, `feedback` and `source` as the MCP server
+accepts them — XML strings and bare literals — while this SDK takes `Tag`,
+`FeedbackRating` and `DataSource` and hands a model an object schema built from
+those types. Writing the wire copy onto them would describe an encoding the
+schema rejects.
 
 ## Development setup
 
@@ -64,7 +84,8 @@ make check
 ```
 
 `make check` runs lint, strict type checking, the test suites, the provenance
-check, and a documentation build — the parts of CI that run on every push. CI
+and tool-copy checks, and a documentation build — the parts of CI that run on
+every push. CI
 additionally runs the suite across every supported runtime, builds and installs
 the distributables, and checks the dependency bounds; `make test-all` and
 `make build` cover most of that locally.
@@ -207,6 +228,11 @@ Every public symbol needs a Google-style docstring with `Args`, `Returns`,
 `Raises`, and an example where one helps. The reference is generated from those
 by Sphinx, and the build runs with `nitpicky` and `-W`, so an unresolved
 cross-reference fails CI rather than rotting on the published site.
+
+The operations are the exception: the leading prose and the `Args` descriptions
+of everything the tool manifest names are generated, so edit `tools.json`
+upstream rather than the docstring. `Returns`, `Raises`, `Example` and any
+parameter the manifest does not name — `timeout`, for one — are yours.
 
 Programs in `examples/` are imported by the test suite, so an example naming a
 symbol that no longer exists fails the build.

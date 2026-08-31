@@ -12,8 +12,9 @@ from __future__ import annotations
 import grpc
 import pytest
 
-from memco import AsyncMemco, Memco
+from memco import AsyncMemco, Memco, _channel
 from memco.errors import MemcoUnavailableError
+from memco.memory.v1 import memory_pb2
 from memco.types import FeedbackRating, ImportedInsight, ImportedMemory
 
 from .fake_server import Harness
@@ -97,5 +98,24 @@ def test_connecting_survives_a_blip_on_the_health_probe(harness: Harness):
     # policy a blip there is the one transient failure the SDK cannot absorb.
     harness.health.transient_errors = [BLIP]
     with Memco(token="t", host=harness.address, tls=False) as connected:
-        assert connected.memory.describe_domains() is not None
+        assert connected.memory.list_domains() is not None
     assert harness.health.checked_services == ["", ""]
+
+
+def test_listing_domains_survives_one_blip(client: Memco, harness: Harness):
+    # The other half of the policy, counted on the wire like the read above.
+    # Without this, dropping ListDomains from RETRYABLE_METHODS would end its
+    # retries with nothing to notice — every other count here is GetMemory's.
+    harness.memory.transient_errors["ListDomains"] = [BLIP]
+    assert client.memory.list_domains().domains is not None
+    assert harness.memory.calls == ["ListDomains", "ListDomains"]
+
+
+def test_every_retryable_method_is_one_the_contract_declares():
+    # The policy matches on wire method names, so a renamed RPC leaves a stale
+    # entry that raises nothing and simply stops retrying. Checked against the
+    # generated descriptor rather than a literal, so the rename fails here
+    # too, and with a message that names the cause rather than a lost retry.
+    # Dropping an entry is caught by the two counting tests above, not here.
+    declared = memory_pb2.DESCRIPTOR.services_by_name["MemoryService"].methods_by_name
+    assert set(_channel.RETRYABLE_METHODS) <= set(declared)

@@ -167,7 +167,7 @@ def _to_domain_entry(message: _pb.DomainEntry) -> DomainEntry:
     )
 
 
-def _to_limits(message: _pb.DescribeDomainsResponse) -> Limits | None:
+def _to_limits(message: _pb.ListDomainsResponse) -> Limits | None:
     """Convert the limits a response carries, if it carries any.
 
     Args:
@@ -194,8 +194,8 @@ def _to_limits(message: _pb.DescribeDomainsResponse) -> Limits | None:
     )
 
 
-def to_domain_list(message: _pb.DescribeDomainsResponse) -> DomainList:
-    """Convert a ``DescribeDomainsResponse``.
+def to_domain_list(message: _pb.ListDomainsResponse) -> DomainList:
+    """Convert a ``ListDomainsResponse``.
 
     Args:
         message: The generated response.

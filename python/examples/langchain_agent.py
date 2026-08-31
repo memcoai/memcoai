@@ -13,7 +13,7 @@ The session is opened once, in code, before the agent runs, and bound with
 ``with_session``. The agent never sees a session id and cannot omit or invent
 one, so every call it makes is recorded as part of the same series.
 
-Domain guidance is supplied rather than exposed. ``describe_domains`` is called
+Domain guidance is supplied rather than exposed. ``list_domains`` is called
 here and ``agent.briefing`` renders its answer into the system prompt, because a
 tool the model may forget to call is a tool that does not steer it.
 
@@ -58,10 +58,10 @@ TASK = (
 def main() -> None:
     """Run the example."""
     with Memco() as client:
-        described = client.memory.describe_domains()
-        entry = next((one for one in described.domains if one.slug == DOMAIN), None)
+        listed = client.memory.list_domains()
+        entry = next((one for one in listed.domains if one.slug == DOMAIN), None)
         if entry is None:
-            available = ", ".join(one.slug for one in described.domains)
+            available = ", ".join(one.slug for one in listed.domains)
             print(f"no domain {DOMAIN!r} for this credential; available: {available}")
             return
 

@@ -64,12 +64,14 @@ class MemoryOperations:
         self._known = _limits.Known()
         """What the service has reported about its own limits, once it has."""
 
-    def describe_domains(self, *, timeout: float | None = None) -> DomainList:
-        """List the memory domains this credential may name.
+    def list_domains(self, *, timeout: float | None = None) -> DomainList:
+        """List the memory domains available to you and describe each one: what it holds, when to
+        search it, what belongs in it and what does not, and the tag vocabulary and format it uses.
 
-        Takes no domain itself: it is the answer to "which domain?". Call it
-        before a first search or write to learn the available domains and the
-        tag vocabulary each one uses.
+        Call when: before your first search or write of a task, and whenever you are unsure which
+        domain a question or a finding belongs to. The slug you choose is what
+        :meth:`start_session`, :meth:`search` and :meth:`create_memory` take as their domain
+        argument.
 
         Args:
             timeout: Per-call deadline in seconds. Defaults to the client's.
@@ -81,26 +83,28 @@ class MemoryOperations:
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> for domain in client.memory.describe_domains().domains:
+            >>> for domain in client.memory.list_domains().domains:
             ...     print(domain.slug, "-", domain.summary)
         """
-        response = self._call(
-            self._stub.DescribeDomains, _requests.describe_domains_request(), timeout
-        )
+        response = self._call(self._stub.ListDomains, _requests.list_domains_request(), timeout)
         described = _convert.to_domain_list(response)
         self._known.update(described.limits, described.domains)
         _deprecation.warn_once(described.deprecation_message, described.sunset_date)
         return described
 
     def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
-        """Open a session in one memory domain.
+        """Start a session and get its id. A session groups the searches you make while working on
+        one task, so they are recorded as the series they are rather than as unrelated one-offs.
 
-        Every search made under a session is recorded as one series, which is
-        what relates the searches made for a single task. Reuse the returned
-        handle for subsequent searches, writes and ratings.
+        Call when: at the start of work that will involve multiple related searches, or when you
+        want a stable session id to reuse across :meth:`search`, :meth:`share_feedback`, and
+        :meth:`enrich_memory`. Pass the id as session_id to every search you make for it — and to
+        :meth:`share_feedback` and :meth:`enrich_memory`. A session stays usable for as long as you
+        keep naming it.
 
         Args:
-            domain: Slug of the domain, as returned by :meth:`describe_domains`.
+            domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
+                domains available to you.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -128,7 +132,7 @@ class MemoryOperations:
         the id is still a valid call, it just stops being part of the series.
 
         Args:
-            domain: Slug of the domain, as returned by :meth:`describe_domains`.
+            domain: Slug of the domain, as returned by :meth:`list_domains`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -153,21 +157,43 @@ class MemoryOperations:
         tags: Sequence[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
-        """Search for memories answering a task-based query.
+        """Search Memco Shared Memory for existing knowledge before working a problem out from
+        scratch. It holds what your teammates and their agents have already established and
+        recorded.
 
-        Pass either a domain or a session: a session supplies the domain of the
-        session it names. Searching under a session also records the search so
-        its results can be rated afterwards with :meth:`share_feedback`.
+        Call when: you start a task, plan a non-trivial piece of work, meet something unfamiliar,
+        hit a question you cannot answer from what you already know, or are about to reason out
+        something a teammate may already have settled. Search first, then work.
+
+        Pass either a domain or a session_id — a search naming neither is refused. Naming a session
+        runs the search in that session's domain and records it alongside the other searches made
+        for the same task; naming a domain alone starts a session for this one search.
+
+        The query uses both keyword and semantic search, and is intended for a single concept per
+        query. If you need varied information, make multiple queries.
+
+        Supply tags to narrow the results; :meth:`list_domains` lists the tag types the chosen
+        domain uses and the format they take.
+
+        Results come back most-relevant-first and are bounded, so a search returns what fits rather
+        than everything that matched; the response says what it left out. Memories are written by
+        your teammates and their agents. Within one session a result already returned is not
+        repeated — it comes back as a reference to the idx that carried it, which :meth:`get_memory`
+        turns back into content.
 
         Args:
-            query: A question, statement or task description, in plain language.
-                Keyword and semantic search are both applied, so one
-                concept per query works best. The service caps its length.
-            domain: Slug of the domain to search. Required unless ``session_id``
-                is given.
-            session_id: An open session to record this search under.
+            query: (Required) A task-based query from the user such as a question, statement, or
+                task description. To ensure readability, use markdown formatting. At most 1000
+                characters.
+            domain: The memory domain to search in. Required unless you pass session_id, which
+                supplies the domain of the session it names. Call :meth:`list_domains` for the
+                domains available to you.
+            session_id: The session to record this search under, as returned by
+                :meth:`start_session` or a previous search. The search runs in that session's memory
+                domain, so the domain argument is not needed and is ignored. Omit this to start a
+                new session, in which case a domain is required.
             tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`describe_domains` describes
+                rather than boost is per-domain; :meth:`list_domains` describes
                 them.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
@@ -195,15 +221,24 @@ class MemoryOperations:
         return _convert.to_search_result(self._call(self._stub.Search, request, timeout))
 
     def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
-        """Fetch the memory behind a handle a search returned.
+        """Fetch one memory a search returned, by its idx, and get it back in full.
 
-        Use this for a result a search returned as a reference rather than in
-        full, which happens when an earlier search in the same session already
-        delivered it.
+        Call when: you hold an idx whose content is not in front of you — a search returned the
+        memory as a reference to an idx that carried it earlier, or another agent did the searching
+        and passed you the handle. An insight's idx returns the memory holding it.
+
+        The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
+        constructed by hand — and nothing else is needed to name the result.
+
+        When a result shows a ref instead of content, ask by the value in its own idx, never the
+        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
+        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
+        ask for. Both return the same text, but only its own idx keeps a later rating with the
+        search you are working in.
 
         Args:
-            idx: A handle copied exactly from a search result. An insight's
-                handle returns the memory holding it.
+            idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
+                search response. An insight's idx returns the memory holding it.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -235,21 +270,39 @@ class MemoryOperations:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Save new knowledge.
+        """Save new knowledge to Memco Shared Memory, where your teammates and their agents will
+        find it.
 
-        The write is accepted asynchronously, so the result addresses the
-        operation rather than the memory it will become. Use the returned
-        operation id with :meth:`revert_memory` to undo it.
+        Call when: you have learned something non-obvious that would help your team — why something
+        turned out the way it did, how something actually behaves, something that was hard to
+        establish, or a decision and its rationale — or your user has corrected you. Search first:
+        when a related memory already exists, :meth:`enrich_memory` extends it instead of leaving a
+        near-duplicate beside it.
+
+        Pass either a domain or a session_id — a call naming neither is refused. Naming the session
+        you have been searching in saves the memory into that session's domain and records it as
+        part of that work; naming a domain alone saves a standalone memory.
+
+        Each memory needs a query (what someone would search to find this), a title, and content
+        describing what you learned. :meth:`list_domains` says what belongs in the chosen domain and
+        which tags to use.
 
         Args:
-            query: What someone would search to find this memory later.
-            title: Short title.
-            content: The knowledge itself. Be specific:
-                exact names, values and procedures are what make an entry worth
-                reading.
-            domain: Slug of the domain to write to. Required unless
-                ``session_id`` is given.
-            session_id: The session this was learned during.
+            query: (Required) A query describing what someone would search to find this memory, such
+                as a question or problem statement. Use markdown formatting for readability. At most
+                1000 characters.
+            title: (Required) A short title describing what this memory is about. Title and content
+                together must be at most 5000 characters.
+            content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
+                others can learn from. Supports markdown formatting. Title and content together must
+                be at most 5000 characters; split a longer finding across several memories.
+            domain: The memory domain to save into. Required unless you pass session_id, which
+                supplies the domain of the session it names. Call :meth:`list_domains` for the
+                domains available to you.
+            session_id: The session this memory was learned during, as returned by
+                :meth:`start_session` or a previous search. It records the memory as part of that
+                series of work, and supplies the memory domain, so the domain argument is not needed
+                and is ignored. Omit it to save a standalone memory.
             tags: Tags describing the subject and context.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
@@ -299,22 +352,30 @@ class MemoryOperations:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Add to a memory a search returned, or open a new one.
+        """Add information to an existing memory in Memco Shared Memory, so your finding lands
+        beside the one it belongs to rather than in a memory that competes with it.
 
-        Use this when a search almost answered the question: the addition lands
-        alongside the existing insights rather than as a separate memory.
+        Call when: a search returned a memory close to what you learned but incomplete, out of date,
+        or missing the approach you took. Use :meth:`create_memory` instead when nothing returned
+        covers the subject at all.
+
+        Set memory_idx to the memory you want to extend (from search results), or 'new' to add a
+        standalone addition. Keep an addition concise and say only what is not already there. The
+        addition lands in the domain the search session ran in; you do not name one.
 
         Args:
-            memory_idx: The memory to enrich, copied from a search result, or
-                the literal ``"new"`` to open one. The sentinel is
-                case-sensitive.
-            session_id: The session the memory was returned under. Required: it
-                supplies the domain.
-            title: Short title for the addition.
-            content: The knowledge being added. Say
-                only what is not already there.
+            memory_idx: (Required) The memory_idx of the memory you are enriching. If you are adding
+                to a new memory, set memory_idx to 'new'.
+            session_id: (Required) The session id you are enriching a memory in. The ID was included
+                in the response from :meth:`search`.
+            title: (Required) A short title describing what you learned. Title and content together
+                must be at most 5000 characters.
+            content: (Required) The knowledge you want to add. Use markdown formatting for
+                readability. Title and content together must be at most 5000 characters; split a
+                longer finding across several enrichments.
             tags: Tags describing the addition.
-            sources: Handles of the memories this addition draws on.
+            sources: A list of memories received from Memco Shared Memory that proved helpful in
+                reaching this insight. Up to 20 sources can be included.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
@@ -353,14 +414,17 @@ class MemoryOperations:
         feedback: Sequence[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
-        """Rate the results of one search.
+        """Rate the relevance and correctness of search results. Only you can tell whether a result
+        answered the query, and these ratings shape which results are shown next.
 
-        Ratings are what move the reliability signal on an insight, and are the
-        only way the service learns whether a result actually answered the
-        query.
+        Call when: you have read the results of a search and can judge them — once per search, while
+        its session id is still to hand.
+
+        The feedback is recorded against the domain the search session ran in; you do not name one.
 
         Args:
-            session_id: The session whose search is being rated.
+            session_id: (Required) The session you are providing feedback for. The ID was included
+                in the response from :meth:`search`.
             feedback: One rating per result. Each handle must be copied exactly
                 from a search result; a memory's own handle rates every insight
                 under it.
@@ -389,16 +453,21 @@ class MemoryOperations:
         return _convert.to_feedback_result(self._call(self._stub.ShareFeedback, request, timeout))
 
     def revert_memory(self, operation_id: str, *, timeout: float | None = None) -> RevertResult:
-        """Undo one of this caller's own writes.
+        """Undo a memory you just wrote, using the operation id that :meth:`create_memory` or
+        :meth:`enrich_memory` returned.
 
-        Every outcome is a successful call. An operation that was not found, has
-        expired, or is under moderation is reported through
-        :attr:`~memco.types.RevertResult.outcome` rather than raised,
-        because each describes caller-visible state rather than a failure.
+        Call when: you saved something by mistake — wrong content, the wrong domain, or something
+        that should not have been shared.
+
+        Your entry is always removed. The memory it belongs to is removed with it only when your
+        entry was the last one in it — so reverting a :meth:`create_memory`, or an
+        :meth:`enrich_memory` you sent with memory_idx 'new', removes that memory too, while
+        reverting an addition to a memory that holds other entries leaves the memory in place. You
+        can only revert your own writes, and only within 2 days.
 
         Args:
-            operation_id: The operation id a create or enrich returned, as
-                carried by :attr:`~memco.types.WriteResult.operation_id`.
+            operation_id: (Required) The operation id returned by the :meth:`create_memory` or
+                :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -424,33 +493,33 @@ class MemoryOperations:
         session_id: str | None = None,
         timeout: float | None = None,
     ) -> ImportResult:
-        """Contribute many memories in one call.
+        """Fill a new or nearly empty workspace with the knowledge a team already holds, in one
+        call, so memory starts out useful instead of empty.
 
-        Each becomes an ordinary memory, evaluated on the way in exactly as
-        :meth:`create_memory` is, so this is a way to write a lot at once rather
-        than a way to write differently. Every memory is judged on its own, so a
-        refused entry does not stop the others.
+        Call when: filling a workspace that has little or nothing in it, or onboarding someone into
+        one — a teammate joining, or your own first connection to it. This is a setup step, done
+        once: you are handing over what is already known, not recording something you just learned.
+        Use :meth:`create_memory` for a single finding from this session.
 
-        A batch of any length is accepted. The service caps how many memories
-        one call may carry, so a longer batch is divided into groups of that
-        size and sent as several calls; the outcomes come back numbered against
-        the batch as submitted, not against the group each was sent in.
+        Pass either a domain or a session_id — a call naming neither is refused. Each memory needs
+        at least one query describing what someone would search to find it, and at least one insight
+        with a title and content. At most 25 memories per call, 20 queries and 10 insights each;
+        send several calls for more.
 
-        A batch mints no operation id, so there is no handle that undoes an
-        import. Resending one is safe: an import is written under an identity
-        derived from its own content, so a memory that already landed comes back
-        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
-        twice. That is also what to do if a call partway through a long batch
-        fails — resend the whole thing, and what already landed costs nothing.
+        Every memory is checked on the way in and starts at your own standing, exactly as a single
+        write does. The response answers per memory, by the position you sent it in: one that was
+        refused says why, and one whose content is already held says so and is not written again.
 
         Args:
-            memories: The memories to contribute. Each needs at least one query
-                and at least one insight.
-            domain: Slug of the domain to import into. Required unless
-                ``session_id`` is given. A batch cannot span domains.
-            session_id: The session this knowledge was contributed during.
-                Omitting it files the memories under no session, which is what a
-                standalone upload wants.
+            memories: (Required) The memories to contribute. At least one, at most 25 per call; send
+                several calls for more.
+            domain: The memory domain to import into. Required unless you pass session_id, which
+                supplies the domain of the session it names. Call :meth:`list_domains` for the
+                domains available to you.
+            session_id: The session these memories were contributed during, as returned by
+                :meth:`start_session` or a previous search. It records them as part of that series
+                of work, and supplies the memory domain, so the domain argument is not needed and is
+                ignored.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -514,12 +583,14 @@ class AsyncMemoryOperations:
         self._known = _limits.Known()
         """What the service has reported about its own limits, once it has."""
 
-    async def describe_domains(self, *, timeout: float | None = None) -> DomainList:
-        """List the memory domains this credential may name.
+    async def list_domains(self, *, timeout: float | None = None) -> DomainList:
+        """List the memory domains available to you and describe each one: what it holds, when to
+        search it, what belongs in it and what does not, and the tag vocabulary and format it uses.
 
-        Takes no domain itself: it is the answer to "which domain?". Call it
-        before a first search or write to learn the available domains and the
-        tag vocabulary each one uses.
+        Call when: before your first search or write of a task, and whenever you are unsure which
+        domain a question or a finding belongs to. The slug you choose is what
+        :meth:`start_session`, :meth:`search` and :meth:`create_memory` take as their domain
+        argument.
 
         Args:
             timeout: Per-call deadline in seconds. Defaults to the client's.
@@ -531,11 +602,11 @@ class AsyncMemoryOperations:
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> for domain in (await client.memory.describe_domains()).domains:
+            >>> for domain in (await client.memory.list_domains()).domains:
             ...     print(domain.slug, "-", domain.summary)
         """
         response = await self._call(
-            self._stub.DescribeDomains, _requests.describe_domains_request(), timeout
+            self._stub.ListDomains, _requests.list_domains_request(), timeout
         )
         described = _convert.to_domain_list(response)
         self._known.update(described.limits, described.domains)
@@ -543,14 +614,18 @@ class AsyncMemoryOperations:
         return described
 
     async def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
-        """Open a session in one memory domain.
+        """Start a session and get its id. A session groups the searches you make while working on
+        one task, so they are recorded as the series they are rather than as unrelated one-offs.
 
-        Every search made under a session is recorded as one series, which is
-        what relates the searches made for a single task. Reuse the returned
-        handle for subsequent searches, writes and ratings.
+        Call when: at the start of work that will involve multiple related searches, or when you
+        want a stable session id to reuse across :meth:`search`, :meth:`share_feedback`, and
+        :meth:`enrich_memory`. Pass the id as session_id to every search you make for it — and to
+        :meth:`share_feedback` and :meth:`enrich_memory`. A session stays usable for as long as you
+        keep naming it.
 
         Args:
-            domain: Slug of the domain, as returned by :meth:`describe_domains`.
+            domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
+                domains available to you.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -584,7 +659,7 @@ class AsyncMemoryOperations:
         it is called.
 
         Args:
-            domain: Slug of the domain, as returned by :meth:`describe_domains`.
+            domain: Slug of the domain, as returned by :meth:`list_domains`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -610,21 +685,43 @@ class AsyncMemoryOperations:
         tags: Sequence[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
-        """Search for memories answering a task-based query.
+        """Search Memco Shared Memory for existing knowledge before working a problem out from
+        scratch. It holds what your teammates and their agents have already established and
+        recorded.
 
-        Pass either a domain or a session: a session supplies the domain of the
-        session it names. Searching under a session also records the search so
-        its results can be rated afterwards with :meth:`share_feedback`.
+        Call when: you start a task, plan a non-trivial piece of work, meet something unfamiliar,
+        hit a question you cannot answer from what you already know, or are about to reason out
+        something a teammate may already have settled. Search first, then work.
+
+        Pass either a domain or a session_id — a search naming neither is refused. Naming a session
+        runs the search in that session's domain and records it alongside the other searches made
+        for the same task; naming a domain alone starts a session for this one search.
+
+        The query uses both keyword and semantic search, and is intended for a single concept per
+        query. If you need varied information, make multiple queries.
+
+        Supply tags to narrow the results; :meth:`list_domains` lists the tag types the chosen
+        domain uses and the format they take.
+
+        Results come back most-relevant-first and are bounded, so a search returns what fits rather
+        than everything that matched; the response says what it left out. Memories are written by
+        your teammates and their agents. Within one session a result already returned is not
+        repeated — it comes back as a reference to the idx that carried it, which :meth:`get_memory`
+        turns back into content.
 
         Args:
-            query: A question, statement or task description, in plain language.
-                Keyword and semantic search are both applied, so one
-                concept per query works best. The service caps its length.
-            domain: Slug of the domain to search. Required unless ``session_id``
-                is given.
-            session_id: An open session to record this search under.
+            query: (Required) A task-based query from the user such as a question, statement, or
+                task description. To ensure readability, use markdown formatting. At most 1000
+                characters.
+            domain: The memory domain to search in. Required unless you pass session_id, which
+                supplies the domain of the session it names. Call :meth:`list_domains` for the
+                domains available to you.
+            session_id: The session to record this search under, as returned by
+                :meth:`start_session` or a previous search. The search runs in that session's memory
+                domain, so the domain argument is not needed and is ignored. Omit this to start a
+                new session, in which case a domain is required.
             tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`describe_domains` describes
+                rather than boost is per-domain; :meth:`list_domains` describes
                 them.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
@@ -652,15 +749,24 @@ class AsyncMemoryOperations:
         return _convert.to_search_result(await self._call(self._stub.Search, request, timeout))
 
     async def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
-        """Fetch the memory behind a handle a search returned.
+        """Fetch one memory a search returned, by its idx, and get it back in full.
 
-        Use this for a result a search returned as a reference rather than in
-        full, which happens when an earlier search in the same session already
-        delivered it.
+        Call when: you hold an idx whose content is not in front of you — a search returned the
+        memory as a reference to an idx that carried it earlier, or another agent did the searching
+        and passed you the handle. An insight's idx returns the memory holding it.
+
+        The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
+        constructed by hand — and nothing else is needed to name the result.
+
+        When a result shows a ref instead of content, ask by the value in its own idx, never the
+        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
+        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
+        ask for. Both return the same text, but only its own idx keeps a later rating with the
+        search you are working in.
 
         Args:
-            idx: A handle copied exactly from a search result. An insight's
-                handle returns the memory holding it.
+            idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
+                search response. An insight's idx returns the memory holding it.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -692,21 +798,39 @@ class AsyncMemoryOperations:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Save new knowledge.
+        """Save new knowledge to Memco Shared Memory, where your teammates and their agents will
+        find it.
 
-        The write is accepted asynchronously, so the result addresses the
-        operation rather than the memory it will become. Use the returned
-        operation id with :meth:`revert_memory` to undo it.
+        Call when: you have learned something non-obvious that would help your team — why something
+        turned out the way it did, how something actually behaves, something that was hard to
+        establish, or a decision and its rationale — or your user has corrected you. Search first:
+        when a related memory already exists, :meth:`enrich_memory` extends it instead of leaving a
+        near-duplicate beside it.
+
+        Pass either a domain or a session_id — a call naming neither is refused. Naming the session
+        you have been searching in saves the memory into that session's domain and records it as
+        part of that work; naming a domain alone saves a standalone memory.
+
+        Each memory needs a query (what someone would search to find this), a title, and content
+        describing what you learned. :meth:`list_domains` says what belongs in the chosen domain and
+        which tags to use.
 
         Args:
-            query: What someone would search to find this memory later.
-            title: Short title.
-            content: The knowledge itself. Be specific:
-                exact names, values and procedures are what make an entry worth
-                reading.
-            domain: Slug of the domain to write to. Required unless
-                ``session_id`` is given.
-            session_id: The session this was learned during.
+            query: (Required) A query describing what someone would search to find this memory, such
+                as a question or problem statement. Use markdown formatting for readability. At most
+                1000 characters.
+            title: (Required) A short title describing what this memory is about. Title and content
+                together must be at most 5000 characters.
+            content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
+                others can learn from. Supports markdown formatting. Title and content together must
+                be at most 5000 characters; split a longer finding across several memories.
+            domain: The memory domain to save into. Required unless you pass session_id, which
+                supplies the domain of the session it names. Call :meth:`list_domains` for the
+                domains available to you.
+            session_id: The session this memory was learned during, as returned by
+                :meth:`start_session` or a previous search. It records the memory as part of that
+                series of work, and supplies the memory domain, so the domain argument is not needed
+                and is ignored. Omit it to save a standalone memory.
             tags: Tags describing the subject and context.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
@@ -756,21 +880,29 @@ class AsyncMemoryOperations:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Add to a memory a search returned, or open a new one.
+        """Add information to an existing memory in Memco Shared Memory, so your finding lands
+        beside the one it belongs to rather than in a memory that competes with it.
 
-        Use this when a search almost answered the question: the addition lands
-        alongside the existing insights rather than as a separate memory.
+        Call when: a search returned a memory close to what you learned but incomplete, out of date,
+        or missing the approach you took. Use :meth:`create_memory` instead when nothing returned
+        covers the subject at all.
+
+        Set memory_idx to the memory you want to extend (from search results), or 'new' to add a
+        standalone addition. Keep an addition concise and say only what is not already there. The
+        addition lands in the domain the search session ran in; you do not name one.
 
         Args:
-            memory_idx: The memory to enrich, copied from a search result, or
-                the literal ``"new"`` to open one. The sentinel is
-                case-sensitive.
-            session_id: The session the memory was returned under. Required: it
-                supplies the domain.
-            title: Short title for the addition.
-            content: The knowledge being added. Say
-                only what is not already there.
-            sources: Handles of the memories this addition draws on.
+            memory_idx: (Required) The memory_idx of the memory you are enriching. If you are adding
+                to a new memory, set memory_idx to 'new'.
+            session_id: (Required) The session id you are enriching a memory in. The ID was included
+                in the response from :meth:`search`.
+            title: (Required) A short title describing what you learned. Title and content together
+                must be at most 5000 characters.
+            content: (Required) The knowledge you want to add. Use markdown formatting for
+                readability. Title and content together must be at most 5000 characters; split a
+                longer finding across several enrichments.
+            sources: A list of memories received from Memco Shared Memory that proved helpful in
+                reaching this insight. Up to 20 sources can be included.
             tags: Tags describing the addition.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
@@ -810,14 +942,17 @@ class AsyncMemoryOperations:
         feedback: Sequence[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
-        """Rate the results of one search.
+        """Rate the relevance and correctness of search results. Only you can tell whether a result
+        answered the query, and these ratings shape which results are shown next.
 
-        Ratings are what move the reliability signal on an insight, and are the
-        only way the service learns whether a result actually answered the
-        query.
+        Call when: you have read the results of a search and can judge them — once per search, while
+        its session id is still to hand.
+
+        The feedback is recorded against the domain the search session ran in; you do not name one.
 
         Args:
-            session_id: The session whose search is being rated.
+            session_id: (Required) The session you are providing feedback for. The ID was included
+                in the response from :meth:`search`.
             feedback: One rating per result. Each handle must be copied exactly
                 from a search result; a memory's own handle rates every insight
                 under it.
@@ -850,16 +985,21 @@ class AsyncMemoryOperations:
     async def revert_memory(
         self, operation_id: str, *, timeout: float | None = None
     ) -> RevertResult:
-        """Undo one of this caller's own writes.
+        """Undo a memory you just wrote, using the operation id that :meth:`create_memory` or
+        :meth:`enrich_memory` returned.
 
-        Every outcome is a successful call. An operation that was not found, has
-        expired, or is under moderation is reported through
-        :attr:`~memco.types.RevertResult.outcome` rather than raised,
-        because each describes caller-visible state rather than a failure.
+        Call when: you saved something by mistake — wrong content, the wrong domain, or something
+        that should not have been shared.
+
+        Your entry is always removed. The memory it belongs to is removed with it only when your
+        entry was the last one in it — so reverting a :meth:`create_memory`, or an
+        :meth:`enrich_memory` you sent with memory_idx 'new', removes that memory too, while
+        reverting an addition to a memory that holds other entries leaves the memory in place. You
+        can only revert your own writes, and only within 2 days.
 
         Args:
-            operation_id: The operation id a create or enrich returned, as
-                carried by :attr:`~memco.types.WriteResult.operation_id`.
+            operation_id: (Required) The operation id returned by the :meth:`create_memory` or
+                :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -887,33 +1027,33 @@ class AsyncMemoryOperations:
         session_id: str | None = None,
         timeout: float | None = None,
     ) -> ImportResult:
-        """Contribute many memories in one call.
+        """Fill a new or nearly empty workspace with the knowledge a team already holds, in one
+        call, so memory starts out useful instead of empty.
 
-        Each becomes an ordinary memory, evaluated on the way in exactly as
-        :meth:`create_memory` is, so this is a way to write a lot at once rather
-        than a way to write differently. Every memory is judged on its own, so a
-        refused entry does not stop the others.
+        Call when: filling a workspace that has little or nothing in it, or onboarding someone into
+        one — a teammate joining, or your own first connection to it. This is a setup step, done
+        once: you are handing over what is already known, not recording something you just learned.
+        Use :meth:`create_memory` for a single finding from this session.
 
-        A batch of any length is accepted. The service caps how many memories
-        one call may carry, so a longer batch is divided into groups of that
-        size and sent as several calls; the outcomes come back numbered against
-        the batch as submitted, not against the group each was sent in.
+        Pass either a domain or a session_id — a call naming neither is refused. Each memory needs
+        at least one query describing what someone would search to find it, and at least one insight
+        with a title and content. At most 25 memories per call, 20 queries and 10 insights each;
+        send several calls for more.
 
-        A batch mints no operation id, so there is no handle that undoes an
-        import. Resending one is safe: an import is written under an identity
-        derived from its own content, so a memory that already landed comes back
-        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
-        twice. That is also what to do if a call partway through a long batch
-        fails — resend the whole thing, and what already landed costs nothing.
+        Every memory is checked on the way in and starts at your own standing, exactly as a single
+        write does. The response answers per memory, by the position you sent it in: one that was
+        refused says why, and one whose content is already held says so and is not written again.
 
         Args:
-            memories: The memories to contribute. Each needs at least one query
-                and at least one insight.
-            domain: Slug of the domain to import into. Required unless
-                ``session_id`` is given. A batch cannot span domains.
-            session_id: The session this knowledge was contributed during.
-                Omitting it files the memories under no session, which is what a
-                standalone upload wants.
+            memories: (Required) The memories to contribute. At least one, at most 25 per call; send
+                several calls for more.
+            domain: The memory domain to import into. Required unless you pass session_id, which
+                supplies the domain of the session it names. Call :meth:`list_domains` for the
+                domains available to you.
+            session_id: The session these memories were contributed during, as returned by
+                :meth:`start_session` or a previous search. It records them as part of that series
+                of work, and supplies the memory domain, so the domain argument is not needed and is
+                ignored.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1023,18 +1163,36 @@ class SessionScope:
         tags: Sequence[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
-        """Search for memories answering a task-based query.
+        """Search Memco Shared Memory for existing knowledge before working a problem out from
+        scratch. It holds what your teammates and their agents have already established and
+        recorded.
 
-        Recorded under this scope's session, which is what relates the searches
-        made for one task and what lets the results be rated afterwards with
-        :meth:`share_feedback`.
+        Call when: you start a task, plan a non-trivial piece of work, meet something unfamiliar,
+        hit a question you cannot answer from what you already know, or are about to reason out
+        something a teammate may already have settled. Search first, then work.
+
+        Pass either a domain or a session_id — a search naming neither is refused. Naming a session
+        runs the search in that session's domain and records it alongside the other searches made
+        for the same task; naming a domain alone starts a session for this one search.
+
+        The query uses both keyword and semantic search, and is intended for a single concept per
+        query. If you need varied information, make multiple queries.
+
+        Supply tags to narrow the results; :meth:`~memco.operations.MemoryOperations.list_domains`
+        lists the tag types the chosen domain uses and the format they take.
+
+        Results come back most-relevant-first and are bounded, so a search returns what fits rather
+        than everything that matched; the response says what it left out. Memories are written by
+        your teammates and their agents. Within one session a result already returned is not
+        repeated — it comes back as a reference to the idx that carried it, which :meth:`get_memory`
+        turns back into content.
 
         Args:
-            query: A question, statement or task description, in plain language.
-                Keyword and semantic search are both applied, so one
-                concept per query works best. The service caps its length.
+            query: (Required) A task-based query from the user such as a question, statement, or
+                task description. To ensure readability, use markdown formatting. At most 1000
+                characters.
             tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`MemoryOperations.describe_domains`
+                rather than boost is per-domain; :meth:`MemoryOperations.list_domains`
                 describes them.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
@@ -1056,15 +1214,24 @@ class SessionScope:
         )
 
     def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
-        """Fetch the memory behind a handle a search returned.
+        """Fetch one memory a search returned, by its idx, and get it back in full.
 
-        Use this for a result a search returned as a reference rather than in
-        full, which happens when an earlier search in the same session already
-        delivered it.
+        Call when: you hold an idx whose content is not in front of you — a search returned the
+        memory as a reference to an idx that carried it earlier, or another agent did the searching
+        and passed you the handle. An insight's idx returns the memory holding it.
+
+        The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
+        constructed by hand — and nothing else is needed to name the result.
+
+        When a result shows a ref instead of content, ask by the value in its own idx, never the
+        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
+        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
+        ask for. Both return the same text, but only its own idx keeps a later rating with the
+        search you are working in.
 
         Args:
-            idx: A handle copied exactly from a search result. An insight's
-                handle returns the memory holding it.
+            idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
+                search response. An insight's idx returns the memory holding it.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1091,18 +1258,32 @@ class SessionScope:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Save new knowledge, attributed to this scope's session.
+        """Save new knowledge to Memco Shared Memory, where your teammates and their agents will
+        find it.
 
-        The write is accepted asynchronously, so the result addresses the
-        operation rather than the memory it will become. Use the returned
-        operation id with :meth:`revert_memory` to undo it.
+        Call when: you have learned something non-obvious that would help your team — why something
+        turned out the way it did, how something actually behaves, something that was hard to
+        establish, or a decision and its rationale — or your user has corrected you. Search first:
+        when a related memory already exists, :meth:`enrich_memory` extends it instead of leaving a
+        near-duplicate beside it.
+
+        Pass either a domain or a session_id — a call naming neither is refused. Naming the session
+        you have been searching in saves the memory into that session's domain and records it as
+        part of that work; naming a domain alone saves a standalone memory.
+
+        Each memory needs a query (what someone would search to find this), a title, and content
+        describing what you learned. :meth:`~memco.operations.MemoryOperations.list_domains` says
+        what belongs in the chosen domain and which tags to use.
 
         Args:
-            query: What someone would search to find this memory later.
-            title: Short title.
-            content: The knowledge itself. Be specific:
-                exact names, values and procedures are what make an entry worth
-                reading.
+            query: (Required) A query describing what someone would search to find this memory, such
+                as a question or problem statement. Use markdown formatting for readability. At most
+                1000 characters.
+            title: (Required) A short title describing what this memory is about. Title and content
+                together must be at most 5000 characters.
+            content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
+                others can learn from. Supports markdown formatting. Title and content together must
+                be at most 5000 characters; split a longer finding across several memories.
             tags: Tags describing the subject and context.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
@@ -1144,20 +1325,28 @@ class SessionScope:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Add to a memory a search returned, or open a new one.
+        """Add information to an existing memory in Memco Shared Memory, so your finding lands
+        beside the one it belongs to rather than in a memory that competes with it.
 
-        Use this when a search almost answered the question: the addition lands
-        alongside the existing insights rather than as a separate memory.
+        Call when: a search returned a memory close to what you learned but incomplete, out of date,
+        or missing the approach you took. Use :meth:`create_memory` instead when nothing returned
+        covers the subject at all.
+
+        Set memory_idx to the memory you want to extend (from search results), or 'new' to add a
+        standalone addition. Keep an addition concise and say only what is not already there. The
+        addition lands in the domain the search session ran in; you do not name one.
 
         Args:
-            memory_idx: The memory to enrich, copied from a search result, or
-                the literal ``"new"`` to open one. The sentinel is
-                case-sensitive.
-            title: Short title for the addition.
-            content: The knowledge being added. Say
-                only what is not already there.
+            memory_idx: (Required) The memory_idx of the memory you are enriching. If you are adding
+                to a new memory, set memory_idx to 'new'.
+            title: (Required) A short title describing what you learned. Title and content together
+                must be at most 5000 characters.
+            content: (Required) The knowledge you want to add. Use markdown formatting for
+                readability. Title and content together must be at most 5000 characters; split a
+                longer finding across several enrichments.
             tags: Tags describing the addition.
-            sources: Handles of the memories this addition draws on.
+            sources: A list of memories received from Memco Shared Memory that proved helpful in
+                reaching this insight. Up to 20 sources can be included.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
@@ -1193,11 +1382,13 @@ class SessionScope:
         feedback: Sequence[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
-        """Rate the results of a search made through this scope.
+        """Rate the relevance and correctness of search results. Only you can tell whether a result
+        answered the query, and these ratings shape which results are shown next.
 
-        Ratings are what move the reliability signal on an insight, and are the
-        only way the service learns whether a result actually answered the
-        query.
+        Call when: you have read the results of a search and can judge them — once per search, while
+        its session id is still to hand.
+
+        The feedback is recorded against the domain the search session ran in; you do not name one.
 
         Args:
             feedback: One rating per result. Each handle must be copied exactly
@@ -1224,16 +1415,21 @@ class SessionScope:
         )
 
     def revert_memory(self, operation_id: str, *, timeout: float | None = None) -> RevertResult:
-        """Undo one of this caller's own writes.
+        """Undo a memory you just wrote, using the operation id that :meth:`create_memory` or
+        :meth:`enrich_memory` returned.
 
-        Every outcome is a successful call. An operation that was not found, has
-        expired, or is under moderation is reported through
-        :attr:`~memco.types.RevertResult.outcome` rather than raised,
-        because each describes caller-visible state rather than a failure.
+        Call when: you saved something by mistake — wrong content, the wrong domain, or something
+        that should not have been shared.
+
+        Your entry is always removed. The memory it belongs to is removed with it only when your
+        entry was the last one in it — so reverting a :meth:`create_memory`, or an
+        :meth:`enrich_memory` you sent with memory_idx 'new', removes that memory too, while
+        reverting an addition to a memory that holds other entries leaves the memory in place. You
+        can only revert your own writes, and only within 2 days.
 
         Args:
-            operation_id: The operation id a create or enrich returned, as
-                carried by :attr:`~memco.types.WriteResult.operation_id`.
+            operation_id: (Required) The operation id returned by the :meth:`create_memory` or
+                :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1253,28 +1449,26 @@ class SessionScope:
     def import_memories(
         self, memories: Sequence[ImportedMemory], *, timeout: float | None = None
     ) -> ImportResult:
-        """Contribute many memories in one call, attributed to this scope's session.
+        """Fill a new or nearly empty workspace with the knowledge a team already holds, in one
+        call, so memory starts out useful instead of empty.
 
-        Each becomes an ordinary memory, evaluated on the way in exactly as
-        :meth:`create_memory` is, so this is a way to write a lot at once rather
-        than a way to write differently. Every memory is judged on its own, so a
-        refused entry does not stop the others.
+        Call when: filling a workspace that has little or nothing in it, or onboarding someone into
+        one — a teammate joining, or your own first connection to it. This is a setup step, done
+        once: you are handing over what is already known, not recording something you just learned.
+        Use :meth:`create_memory` for a single finding from this session.
 
-        A batch of any length is accepted. The service caps how many memories
-        one call may carry, so a longer batch is divided into groups of that
-        size and sent as several calls; the outcomes come back numbered against
-        the batch as submitted, not against the group each was sent in.
+        Pass either a domain or a session_id — a call naming neither is refused. Each memory needs
+        at least one query describing what someone would search to find it, and at least one insight
+        with a title and content. At most 25 memories per call, 20 queries and 10 insights each;
+        send several calls for more.
 
-        A batch mints no operation id, so there is no handle that undoes an
-        import. Resending one is safe: an import is written under an identity
-        derived from its own content, so a memory that already landed comes back
-        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
-        twice. That is also what to do if a call partway through a long batch
-        fails — resend the whole thing, and what already landed costs nothing.
+        Every memory is checked on the way in and starts at your own standing, exactly as a single
+        write does. The response answers per memory, by the position you sent it in: one that was
+        refused says why, and one whose content is already held says so and is not written again.
 
         Args:
-            memories: The memories to contribute. Each needs at least one query
-                and at least one insight.
+            memories: (Required) The memories to contribute. At least one, at most 25 per call; send
+                several calls for more.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1404,19 +1598,38 @@ class AsyncSessionScope:
         tags: Sequence[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
-        """Search for memories answering a task-based query.
+        """Search Memco Shared Memory for existing knowledge before working a problem out from
+        scratch. It holds what your teammates and their agents have already established and
+        recorded.
 
-        Recorded under this scope's session, which is what relates the searches
-        made for one task and what lets the results be rated afterwards with
-        :meth:`share_feedback`.
+        Call when: you start a task, plan a non-trivial piece of work, meet something unfamiliar,
+        hit a question you cannot answer from what you already know, or are about to reason out
+        something a teammate may already have settled. Search first, then work.
+
+        Pass either a domain or a session_id — a search naming neither is refused. Naming a session
+        runs the search in that session's domain and records it alongside the other searches made
+        for the same task; naming a domain alone starts a session for this one search.
+
+        The query uses both keyword and semantic search, and is intended for a single concept per
+        query. If you need varied information, make multiple queries.
+
+        Supply tags to narrow the results;
+        :meth:`~memco.operations.AsyncMemoryOperations.list_domains` lists the tag types the chosen
+        domain uses and the format they take.
+
+        Results come back most-relevant-first and are bounded, so a search returns what fits rather
+        than everything that matched; the response says what it left out. Memories are written by
+        your teammates and their agents. Within one session a result already returned is not
+        repeated — it comes back as a reference to the idx that carried it, which :meth:`get_memory`
+        turns back into content.
 
         Args:
-            query: A question, statement or task description, in plain language.
-                Keyword and semantic search are both applied, so one
-                concept per query works best. The service caps its length.
+            query: (Required) A task-based query from the user such as a question, statement, or
+                task description. To ensure readability, use markdown formatting. At most 1000
+                characters.
             tags: Tags narrowing or boosting the results. Which types narrow
                 rather than boost is per-domain;
-                :meth:`AsyncMemoryOperations.describe_domains` describes them.
+                :meth:`AsyncMemoryOperations.list_domains` describes them.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1437,15 +1650,24 @@ class AsyncSessionScope:
         )
 
     async def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
-        """Fetch the memory behind a handle a search returned.
+        """Fetch one memory a search returned, by its idx, and get it back in full.
 
-        Use this for a result a search returned as a reference rather than in
-        full, which happens when an earlier search in the same session already
-        delivered it.
+        Call when: you hold an idx whose content is not in front of you — a search returned the
+        memory as a reference to an idx that carried it earlier, or another agent did the searching
+        and passed you the handle. An insight's idx returns the memory holding it.
+
+        The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
+        constructed by hand — and nothing else is needed to name the result.
+
+        When a result shows a ref instead of content, ask by the value in its own idx, never the
+        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
+        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
+        ask for. Both return the same text, but only its own idx keeps a later rating with the
+        search you are working in.
 
         Args:
-            idx: A handle copied exactly from a search result. An insight's
-                handle returns the memory holding it.
+            idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
+                search response. An insight's idx returns the memory holding it.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1472,18 +1694,32 @@ class AsyncSessionScope:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Save new knowledge, attributed to this scope's session.
+        """Save new knowledge to Memco Shared Memory, where your teammates and their agents will
+        find it.
 
-        The write is accepted asynchronously, so the result addresses the
-        operation rather than the memory it will become. Use the returned
-        operation id with :meth:`revert_memory` to undo it.
+        Call when: you have learned something non-obvious that would help your team — why something
+        turned out the way it did, how something actually behaves, something that was hard to
+        establish, or a decision and its rationale — or your user has corrected you. Search first:
+        when a related memory already exists, :meth:`enrich_memory` extends it instead of leaving a
+        near-duplicate beside it.
+
+        Pass either a domain or a session_id — a call naming neither is refused. Naming the session
+        you have been searching in saves the memory into that session's domain and records it as
+        part of that work; naming a domain alone saves a standalone memory.
+
+        Each memory needs a query (what someone would search to find this), a title, and content
+        describing what you learned. :meth:`~memco.operations.AsyncMemoryOperations.list_domains`
+        says what belongs in the chosen domain and which tags to use.
 
         Args:
-            query: What someone would search to find this memory later.
-            title: Short title.
-            content: The knowledge itself. Be specific:
-                exact names, values and procedures are what make an entry worth
-                reading.
+            query: (Required) A query describing what someone would search to find this memory, such
+                as a question or problem statement. Use markdown formatting for readability. At most
+                1000 characters.
+            title: (Required) A short title describing what this memory is about. Title and content
+                together must be at most 5000 characters.
+            content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
+                others can learn from. Supports markdown formatting. Title and content together must
+                be at most 5000 characters; split a longer finding across several memories.
             tags: Tags describing the subject and context.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
@@ -1525,20 +1761,28 @@ class AsyncSessionScope:
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Add to a memory a search returned, or open a new one.
+        """Add information to an existing memory in Memco Shared Memory, so your finding lands
+        beside the one it belongs to rather than in a memory that competes with it.
 
-        Use this when a search almost answered the question: the addition lands
-        alongside the existing insights rather than as a separate memory.
+        Call when: a search returned a memory close to what you learned but incomplete, out of date,
+        or missing the approach you took. Use :meth:`create_memory` instead when nothing returned
+        covers the subject at all.
+
+        Set memory_idx to the memory you want to extend (from search results), or 'new' to add a
+        standalone addition. Keep an addition concise and say only what is not already there. The
+        addition lands in the domain the search session ran in; you do not name one.
 
         Args:
-            memory_idx: The memory to enrich, copied from a search result, or
-                the literal ``"new"`` to open one. The sentinel is
-                case-sensitive.
-            title: Short title for the addition.
-            content: The knowledge being added. Say
-                only what is not already there.
+            memory_idx: (Required) The memory_idx of the memory you are enriching. If you are adding
+                to a new memory, set memory_idx to 'new'.
+            title: (Required) A short title describing what you learned. Title and content together
+                must be at most 5000 characters.
+            content: (Required) The knowledge you want to add. Use markdown formatting for
+                readability. Title and content together must be at most 5000 characters; split a
+                longer finding across several enrichments.
             tags: Tags describing the addition.
-            sources: Handles of the memories this addition draws on.
+            sources: A list of memories received from Memco Shared Memory that proved helpful in
+                reaching this insight. Up to 20 sources can be included.
             source: Who produced the content. Defaults to
                 :attr:`~memco.types.DataSource.AGENT`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
@@ -1574,11 +1818,13 @@ class AsyncSessionScope:
         feedback: Sequence[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
-        """Rate the results of a search made through this scope.
+        """Rate the relevance and correctness of search results. Only you can tell whether a result
+        answered the query, and these ratings shape which results are shown next.
 
-        Ratings are what move the reliability signal on an insight, and are the
-        only way the service learns whether a result actually answered the
-        query.
+        Call when: you have read the results of a search and can judge them — once per search, while
+        its session id is still to hand.
+
+        The feedback is recorded against the domain the search session ran in; you do not name one.
 
         Args:
             feedback: One rating per result. Each handle must be copied exactly
@@ -1607,16 +1853,21 @@ class AsyncSessionScope:
     async def revert_memory(
         self, operation_id: str, *, timeout: float | None = None
     ) -> RevertResult:
-        """Undo one of this caller's own writes.
+        """Undo a memory you just wrote, using the operation id that :meth:`create_memory` or
+        :meth:`enrich_memory` returned.
 
-        Every outcome is a successful call. An operation that was not found, has
-        expired, or is under moderation is reported through
-        :attr:`~memco.types.RevertResult.outcome` rather than raised,
-        because each describes caller-visible state rather than a failure.
+        Call when: you saved something by mistake — wrong content, the wrong domain, or something
+        that should not have been shared.
+
+        Your entry is always removed. The memory it belongs to is removed with it only when your
+        entry was the last one in it — so reverting a :meth:`create_memory`, or an
+        :meth:`enrich_memory` you sent with memory_idx 'new', removes that memory too, while
+        reverting an addition to a memory that holds other entries leaves the memory in place. You
+        can only revert your own writes, and only within 2 days.
 
         Args:
-            operation_id: The operation id a create or enrich returned, as
-                carried by :attr:`~memco.types.WriteResult.operation_id`.
+            operation_id: (Required) The operation id returned by the :meth:`create_memory` or
+                :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1636,28 +1887,26 @@ class AsyncSessionScope:
     async def import_memories(
         self, memories: Sequence[ImportedMemory], *, timeout: float | None = None
     ) -> ImportResult:
-        """Contribute many memories in one call, attributed to this scope's session.
+        """Fill a new or nearly empty workspace with the knowledge a team already holds, in one
+        call, so memory starts out useful instead of empty.
 
-        Each becomes an ordinary memory, evaluated on the way in exactly as
-        :meth:`create_memory` is, so this is a way to write a lot at once rather
-        than a way to write differently. Every memory is judged on its own, so a
-        refused entry does not stop the others.
+        Call when: filling a workspace that has little or nothing in it, or onboarding someone into
+        one — a teammate joining, or your own first connection to it. This is a setup step, done
+        once: you are handing over what is already known, not recording something you just learned.
+        Use :meth:`create_memory` for a single finding from this session.
 
-        A batch of any length is accepted. The service caps how many memories
-        one call may carry, so a longer batch is divided into groups of that
-        size and sent as several calls; the outcomes come back numbered against
-        the batch as submitted, not against the group each was sent in.
+        Pass either a domain or a session_id — a call naming neither is refused. Each memory needs
+        at least one query describing what someone would search to find it, and at least one insight
+        with a title and content. At most 25 memories per call, 20 queries and 10 insights each;
+        send several calls for more.
 
-        A batch mints no operation id, so there is no handle that undoes an
-        import. Resending one is safe: an import is written under an identity
-        derived from its own content, so a memory that already landed comes back
-        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
-        twice. That is also what to do if a call partway through a long batch
-        fails — resend the whole thing, and what already landed costs nothing.
+        Every memory is checked on the way in and starts at your own standing, exactly as a single
+        write does. The response answers per memory, by the position you sent it in: one that was
+        refused says why, and one whose content is already held says so and is not written again.
 
         Args:
-            memories: The memories to contribute. Each needs at least one query
-                and at least one insight.
+            memories: (Required) The memories to contribute. At least one, at most 25 per call; send
+                several calls for more.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:

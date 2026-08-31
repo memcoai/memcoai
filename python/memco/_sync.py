@@ -45,7 +45,7 @@ class Memco:
     Construction makes two calls. The first is the standard gRPC health
     endpoint, which is unauthenticated: it proves the host, port and TLS
     settings are sound. The second is
-    :meth:`~memco.operations.MemoryOperations.describe_domains`, which carries
+    :meth:`~memco.operations.MemoryOperations.list_domains`, which carries
     the credential — so a bad token fails here rather than on the first real
     call — and reports the input limits the service enforces. The client keeps
     those, and from then on refuses an oversized field locally instead of
@@ -117,7 +117,7 @@ class Memco:
             self._check_health()
             # Discarding the result: what is worth keeping — the limits and the
             # per-domain tag cap — is retained by the call itself.
-            self.memory.describe_domains()
+            self.memory.list_domains()
         except MemcoAuthenticationError:
             _log.error("credential rejected by %s", self._config.target)
             self.close()

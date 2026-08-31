@@ -38,8 +38,11 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.12"
-      # Standard library only, so this needs no dependency install at all.
+      # Standard library only, so neither of these needs a dependency install.
       - run: python scripts/verify_provenance.py
+      # The docstrings memco.agent reads are generated from the tool manifest.
+      # Drift here hands a model copy the service did not write.
+      - run: python scripts/sync_tool_docs.py --check
 
   lint:
     name: Lint
@@ -201,7 +204,11 @@ jobs:
 
       # Importing one known module would not notice a future generated
       # subpackage being dropped from the wheel, so compare against the source.
-      - name: Every generated module reached the wheel
+      # .json covers the tool manifest, which ships in the same tree. Nothing
+      # imports it — the SDK reads it at build time, not at runtime — so no
+      # import check would notice its absence, and a consumer that wants the
+      # definitions raw expects to find it in the installed package.
+      - name: Every generated file reached the wheel
         run: |
           python - <<'PY'
           import glob
@@ -211,12 +218,12 @@ jobs:
           source = {
               str(p).replace("\\", "/")
               for p in pathlib.Path("memco/memory").rglob("*")
-              if p.is_file() and p.suffix in {".py", ".pyi"}
+              if p.is_file() and p.suffix in {".py", ".pyi", ".json"}
           }
           shipped = set(zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0]).namelist())
           missing = sorted(source - shipped)
-          assert not missing, f"generated modules absent from the wheel: {missing}"
-          print(f"all {len(source)} generated modules shipped")
+          assert not missing, f"generated files absent from the wheel: {missing}"
+          print(f"all {len(source)} generated files shipped")
           PY
 
       # A missing py.typed makes every annotation invisible downstream without
@@ -337,7 +344,7 @@ jobs:
           from memco import Memco, provenance
           with Memco() as client:
               print("contract:", provenance().server_commit)
-              domains = client.memory.describe_domains().domains
+              domains = client.memory.list_domains().domains
               print("domains:", [d.slug for d in domains])
               assert domains, "the service returned no domains"
               session = client.memory.start_session(domains[0].slug)

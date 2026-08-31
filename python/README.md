@@ -43,7 +43,7 @@ Requires Python 3.10 or newer.
 from memco import Memco
 
 with Memco() as client:  # reads MEMCO_API_TOKEN
-    for domain in client.memory.describe_domains().domains:
+    for domain in client.memory.list_domains().domains:
         print(domain.slug, "-", domain.summary)
 
     session = client.memory.start_session("coding")
@@ -98,7 +98,7 @@ the loop. The SDK supplies all of it, from the session the tools are bound to:
 from memco import Memco, agent
 
 with Memco() as client:
-    entry = next(d for d in client.memory.describe_domains().domains if d.slug == "coding")
+    entry = next(d for d in client.memory.list_domains().domains if d.slug == "coding")
 
     with client.memory.with_session("coding") as session:
         toolset = session.tools()
@@ -124,6 +124,17 @@ result = toolset.call(call.function.name, call.function.arguments)   # JSON text
 `to_langchain` needs LangChain installed; the other two are plain data and need
 nothing. `AsyncMemco`'s session has the same `tools()`, awaitable and described
 identically.
+
+The description a model reads for each tool is the service's, not this SDK's. It
+arrives with every export as `memco/memory/tools.json` — the same copy the hosted
+MCP server publishes — and is written into the docstrings the toolset is built
+from, so a change of wording reaches you with a release rather than silently.
+
+Three parameters keep their own wording: `tags`, `feedback` and `source` are
+typed objects here and XML strings over MCP, so the service's copy would
+describe an encoding these schemas reject. The session and its domain are bound,
+so there is no `list_domains` or `start_session` tool either — `agent.briefing()`
+says so, since the service's copy mentions both.
 
 Every tool is bound to the session it was built from, so nothing a model sends
 can change which session a call is recorded under, and arguments are validated
@@ -152,7 +163,7 @@ account; both go in the same header. `MEMCO_API_KEY` is still honoured but warns
 Constructing a `Memco` makes two calls. It probes the service's health
 endpoint, so a bad host, port or TLS setting fails immediately rather than on
 your first call; that probe carries no credential, so it cannot check one.
-It then calls `describe_domains`, which does — a bad token fails here too — and
+It then calls `list_domains`, which does — a bad token fails here too — and
 which reports the input limits the service enforces. The client keeps those and
 applies them from then on, so an oversized field is refused locally instead of
 costing a round trip.
@@ -173,7 +184,7 @@ The memory operations live on `client.memory`.
 
 | Method | Purpose |
 |---|---|
-| `memory.describe_domains()` | Which domains this credential may name, and their tag vocabulary |
+| `memory.list_domains()` | Which domains this credential may name, and their tag vocabulary |
 | `memory.start_session(domain)` | Open a session so related searches are recorded as one series |
 | `memory.search(query, ...)` | Find memories answering a task-based query |
 | `memory.get_memory(idx)` | Fetch a memory a search returned only as a reference |

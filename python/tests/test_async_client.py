@@ -19,12 +19,12 @@ from .fake_server import Harness
 
 
 async def test_auth_metadata_is_bearer_with_a_capital_b(async_client: AsyncMemco, harness: Harness):
-    await async_client.memory.describe_domains()
+    await async_client.memory.list_domains()
     assert harness.memory.metadata[-1]["authorization"] == f"Bearer {TOKEN}"
 
 
 async def test_auth_metadata_is_sent_on_every_method(async_client: AsyncMemco, harness: Harness):
-    await async_client.memory.describe_domains()
+    await async_client.memory.list_domains()
     await async_client.memory.start_session("coding")
     assert len(harness.memory.metadata) == 2
     for sent in harness.memory.metadata:
@@ -66,11 +66,11 @@ async def test_unreachable_server_raises_unavailable():
 async def test_connect_fetches_the_limits(harness: Harness):
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False):
         pass
-    assert harness.memory.calls == ["DescribeDomains"]
+    assert harness.memory.calls == ["ListDomains"]
 
 
 async def test_the_fetched_limits_are_applied_to_later_calls(harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         limits=pb.Limits(max_query_characters=10)
     )
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False) as built:
@@ -117,7 +117,7 @@ async def test_server_errors_arrive_typed(
 ):
     harness.memory.error = (code, "boom")
     with pytest.raises(expected) as caught:
-        await async_client.memory.describe_domains()
+        await async_client.memory.list_domains()
     assert caught.value.code is code
 
 
@@ -131,10 +131,10 @@ async def test_validation_fires_before_any_rpc(async_client: AsyncMemco, harness
 
 
 async def test_every_operation_round_trips(async_client: AsyncMemco, harness: Harness):
-    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+    harness.memory.responses["ListDomains"] = pb.ListDomainsResponse(
         domains=[pb.DomainEntry(slug="coding")]
     )
-    assert [d.slug for d in (await async_client.memory.describe_domains()).domains] == ["coding"]
+    assert [d.slug for d in (await async_client.memory.list_domains()).domains] == ["coding"]
 
     session = await async_client.memory.start_session("coding")
     assert session.session_id == "session-a"
@@ -180,9 +180,9 @@ async def test_every_operation_round_trips(async_client: AsyncMemco, harness: Ha
 
 async def test_context_manager_closes_the_channel(harness: Harness):
     async with AsyncMemco(token=TOKEN, host=harness.address, tls=False) as connected:
-        await connected.memory.describe_domains()
+        await connected.memory.list_domains()
     with pytest.raises(errors.MemcoConfigError, match="closed"):
-        await connected.memory.describe_domains()
+        await connected.memory.list_domains()
 
 
 async def test_double_close_is_safe(harness: Harness):
@@ -199,7 +199,7 @@ async def test_provenance_is_reachable(async_client: AsyncMemco):
 async def test_the_user_agent_is_sent_by_the_async_client(
     async_client: AsyncMemco, harness: Harness
 ):
-    await async_client.memory.describe_domains()
+    await async_client.memory.list_domains()
     sent = harness.memory.metadata[-1]["user-agent"]
     # Prepended, not appended: gRPC's own token must survive or the transport
     # becomes unidentifiable.

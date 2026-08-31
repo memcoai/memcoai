@@ -97,6 +97,16 @@ asserts this covers the scope, so an operation added and not offered is a
 failure rather than an omission.
 """
 
+_ANSWERED = ("list_domains", "start_session")
+"""Operations the scope has already answered, named in the copy but not offered.
+
+The service's tool copy is written for a caller who picks a domain and opens a
+session per call, so it points at both — and it is right to, on the surface it
+was written for. Bound to a session neither is a tool here, so a model following
+that sentence would reach for something that does not exist. :func:`briefing`
+says so instead, which is cheaper than forking the service's words.
+"""
+
 _BOUND = frozenset({"self", "timeout", "source"})
 """Parameters the caller supplies, never the model.
 
@@ -561,14 +571,14 @@ def render(value: SearchResult | Memory | WriteResult | FeedbackResult | RevertR
 def briefing(domain: DomainEntry, instructions: Instructions) -> str:
     """Render what the service says about a domain, for a model to be told.
 
-    Every word of this comes from :meth:`~memco.operations.MemoryOperations.describe_domains`
+    Every word of this comes from :meth:`~memco.operations.MemoryOperations.list_domains`
     and from opening the session — what the domain holds, when to draw on it,
     what belongs in it, and the tag vocabulary it uses. Supply it up front
     rather than leaving a model to ask: guidance behind a tool only steers the
     models that reach for it.
 
     Args:
-        domain: The domain the session was opened in, from ``describe_domains``.
+        domain: The domain the session was opened in, from ``list_domains``.
         instructions: What the service said when the session was opened, as
             carried by the scope's ``instructions``.
 
@@ -576,7 +586,7 @@ def briefing(domain: DomainEntry, instructions: Instructions) -> str:
         The guidance as text, ready to be a system prompt or part of one.
 
     Example:
-        >>> entry = next(d for d in client.memory.describe_domains().domains
+        >>> entry = next(d for d in client.memory.list_domains().domains
         ...              if d.slug == "coding")
         >>> with client.memory.with_session("coding") as session:
         ...     print(agent.briefing(entry, session.instructions))
@@ -605,6 +615,11 @@ def briefing(domain: DomainEntry, instructions: Instructions) -> str:
         )
     if domain.max_tags_per_query:
         parts.append(f"At most {domain.max_tags_per_query} tags per call.")
+    parts.append(
+        f"The domain and the session are already chosen, so {' and '.join(_ANSWERED)} are "
+        "not among your tools: where a tool's description names one, what it would have "
+        "told you is above."
+    )
     parts.append(
         f"Pass {NEW_MEMORY!r} as memory_idx to {_PREFIX}enrich_memory to open a new memory."
     )
@@ -845,14 +860,18 @@ def _documented(lines: Sequence[str], section: str) -> dict[str, list[str]]:
 def _describe(method: Callable[..., object], name: str) -> tuple[str, dict[str, str]]:
     """Render an agent-facing description from an operation's docstring.
 
-    PLACEHOLDER. This copy belongs to the service — it is what steers a model,
-    and on most surfaces a tool's description is the only text that reliably
-    reaches one — but the contract does not carry it yet. Until the generated
-    client supplies it, the SDK's own docstrings are the best source available,
-    and the lint rules already keep them well-formed.
+    This copy belongs to the service — it is what steers a model, and on most
+    surfaces a tool's description is the only text that reliably reaches one. It
+    arrives with every export in ``memco/memory/tools.json``, the same copy the
+    hosted MCP server publishes, and ``scripts/sync_tool_docs.py`` writes it into
+    the docstrings this reads. So the manifest is the source and these
+    docstrings are its checked-in rendering, which is why the description a
+    model is handed is reviewable in a diff rather than assembled at import.
 
-    This function is the whole of the seam: every tool is built through it, so
-    when the contract gains per-tool descriptions only the body changes.
+    Reading the docstring rather than the manifest is deliberate: it keeps the
+    package free of a data file it would have to find at runtime, and it means
+    the reference a developer reads and the description a model reads cannot
+    say different things. ``tests/test_tool_copy.py`` holds them to that.
 
     Args:
         method: The session-scope method being described.

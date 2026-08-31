@@ -9,6 +9,7 @@ review unnoticed:
 2. ``python/requirements.txt`` matches the ``requires.python`` block in
    the descriptor.
 3. Both match the floors the generated modules assert at import time.
+4. Every language ships the same tool manifest, and it is not empty.
 
 Standard library only, so it runs anywhere without installing anything.
 """
@@ -16,6 +17,7 @@ Standard library only, so it runs anywhere without installing anything.
 from __future__ import annotations
 
 import hashlib
+import json
 import pathlib
 import re
 import sys
@@ -27,6 +29,14 @@ PROTO = ROOT / "proto" / "memco" / "memory" / "v1" / "memory.proto"
 PYTHON_ROOT = ROOT / "python"
 PYTHON_GENERATED = PYTHON_ROOT / "memco" / "memory"
 CONTRACT_PATH = "memco/memory/v1/memory.proto"
+MANIFESTS = (
+    "go/client/tools/tools.json",
+    "nodejs/client/src/gen/tools.json",
+    "python/memco/memory/tools.json",
+)
+"""The tool manifest, one copy per language tree. They are generated from one
+source and must arrive byte-identical."""
+
 
 failures: list[str] = []
 
@@ -189,6 +199,44 @@ def main() -> int:
         check(
             pins.get("protobuf", "").startswith(f">={gencode}"),
             f"protobuf floor {pins.get('protobuf')!r} matches gencode >={gencode}",
+        )
+
+    print("\n4. every language ships the same tool manifest")
+    manifests = {name: ROOT / name for name in MANIFESTS}
+    present = {name: path for name, path in manifests.items() if path.is_file()}
+    for name in MANIFESTS:
+        check(name in present, f"{name} is present")
+    if len(present) == len(MANIFESTS):
+        digests = {
+            name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in present.items()
+        }
+        agreed = len(set(digests.values())) == 1
+        shared = next(iter(digests.values()))
+        # Named individually when they disagree: reporting the first digest as
+        # though it were shared points at a file that is probably not the odd
+        # one out, and never says which is.
+        check(
+            agreed,
+            f"all {len(digests)} manifests agree at sha256={shared[:16]}..."
+            if agreed
+            else "the manifests differ: "
+            + ", ".join(f"{name}={digest[:16]}..." for name, digest in sorted(digests.items())),
+        )
+        first = next(iter(present.values()))
+        try:
+            published = json.loads(first.read_text("utf-8"))
+        except json.JSONDecodeError as invalid:
+            check(False, f"{first.relative_to(ROOT)} is valid JSON: {invalid}")
+            published = {}
+        tools = published.get("tools", [])
+        # Non-empty rather than a pinned count: three files shipping nothing
+        # agree perfectly, and `all(...)` over an empty list is True. A count
+        # would also red-light every export that publishes a new tool, and the
+        # tools are named exactly in python/tests/test_tool_copy.py already.
+        check(bool(tools), f"the manifest publishes tools ({len(tools)})")
+        check(
+            all(tool.get("name") and tool.get("description") for tool in tools),
+            "every published tool carries a name and a description",
         )
 
     print()

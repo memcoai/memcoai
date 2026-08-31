@@ -43,7 +43,7 @@ BATCH = [
                 title="gRPC retries are at-least-once, so writes stay out of the policy",
                 content=(
                     "A retry sent after the server committed produces a duplicate, not "
-                    "a second chance. Only DescribeDomains and GetMemory are replayed."
+                    "a second chance. Only ListDomains and GetMemory are replayed."
                 ),
             )
         ],

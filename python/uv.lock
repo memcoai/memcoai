@@ -1074,6 +1074,7 @@ name = "memco"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "googleapis-common-protos" },
     { name = "grpcio" },
     { name = "grpcio-health-checking" },
     { name = "grpcio-status" },
@@ -1100,6 +1101,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.1" },
+    { name = "googleapis-common-protos", specifier = ">=1.60.0,<2" },
     { name = "grpcio", specifier = ">=1.76.0,<2" },
     { name = "grpcio-health-checking", specifier = ">=1.76.0,<2" },
     { name = "grpcio-status", specifier = ">=1.76.0,<2" },

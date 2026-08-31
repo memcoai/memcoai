@@ -49,6 +49,15 @@ reliability signal built from what readers reported back about it.
 The generated gRPC clients for [Go](go/) and [Node](nodejs/) are also published
 here and can be used directly against the API.
 
+Each language tree also carries `tools.json`, a byte-identical manifest of the
+agent-facing tool definitions — the same copy the hosted MCP server publishes, so
+an agent built on an SDK is steered by the service's words rather than each SDK's
+own. Go ships an accessor for it at `go/client/tools`; the Python SDK writes it
+into the docstrings its `session.tools()` is built from. Tool names in it are
+canonical snake_case and a tool referenced in the prose is a `${tool:...}`
+marker, because the three generators disagree on method casing — resolve the
+markers to the spelling your client exposes rather than shipping them to a model.
+
 ### Installing before the packages are published
 
 Until `memco` is on PyPI, install it from the **`dev`** branch of this
@@ -119,8 +128,9 @@ See [`python/README.md`](python/README.md) for the full guide and
 proto/            the service contract, for reference
 python/           the Python SDK
   memco/            hand-written SDK
-  memco/memory/     generated gRPC client
-go/, nodejs/      generated gRPC clients
+  memco/memory/     generated gRPC client, and the tool manifest
+go/, nodejs/      generated gRPC clients, and the tool manifest
+scripts/          repository checks, standard library only
 ```
 
 Generated code is replaced wholesale each time it is regenerated, so please do

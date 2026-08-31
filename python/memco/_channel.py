@@ -43,7 +43,7 @@ Computed once so the synchronous and asynchronous builders cannot disagree.
 _MEMORY_SERVICE = memory_pb2.DESCRIPTOR.services_by_name["MemoryService"].full_name
 _HEALTH_SERVICE = health_pb2.DESCRIPTOR.services_by_name["Health"].full_name
 
-RETRYABLE_METHODS = ("DescribeDomains", "GetMemory")
+RETRYABLE_METHODS = ("ListDomains", "GetMemory")
 """The memory methods a lost connection may safely be replayed on.
 
 gRPC's configurable retries are at-least-once: a retry sent after the server

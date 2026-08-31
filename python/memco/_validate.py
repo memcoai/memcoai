@@ -10,7 +10,7 @@ client would keep rejecting requests the service had started accepting, locally,
 with no way for the caller to tell why.
 
 They are applied all the same, but only once the service has reported them on a
-``DescribeDomains`` response — see :mod:`memco._limits`. The helpers below that
+``ListDomains`` response — see :mod:`memco._limits`. The helpers below that
 take a cap treat zero as "nothing was reported" and check nothing. Two of the
 caps **trim** rather than refuse, because the service trims: raising would
 reject a call it would have accepted.
@@ -178,7 +178,7 @@ def check_domain(domain: str) -> None:
     """Validate a domain slug.
 
     Args:
-        domain: The slug, as returned by ``describe_domains``.
+        domain: The slug, as returned by ``list_domains``.
 
     Raises:
         MemcoInvalidRequestError: If it is blank.

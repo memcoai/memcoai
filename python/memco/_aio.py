@@ -160,7 +160,7 @@ class AsyncMemco:
         """Verify the connection, running the checks the constructor could not.
 
         Probes the health endpoint, then calls
-        :meth:`~memco.operations.AsyncMemoryOperations.describe_domains`, which
+        :meth:`~memco.operations.AsyncMemoryOperations.list_domains`, which
         proves the credential and teaches the client the input limits the
         service enforces. Calling this more than once simply repeats both.
 
@@ -178,7 +178,7 @@ class AsyncMemco:
             await self._check_health()
             # Discarding the result: what is worth keeping — the limits and the
             # per-domain tag cap — is retained by the call itself.
-            await self.memory.describe_domains()
+            await self.memory.list_domains()
         except MemcoAuthenticationError:
             _log.error("credential rejected by %s", self._config.target)
             await self._reset()

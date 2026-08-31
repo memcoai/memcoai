@@ -43,7 +43,7 @@ def test_instructions_keep_empty_strings():
 
 def test_repeated_fields_become_tuples():
     result = to_domain_list(
-        pb.DescribeDomainsResponse(
+        pb.ListDomainsResponse(
             domains=[pb.DomainEntry(slug="coding", filter_tag_types=["language"])]
         )
     )
@@ -97,10 +97,10 @@ def test_revert_result_carries_a_typed_outcome():
 def test_server_commit_reaches_the_caller():
     # It names the build that answered, which is what a bug report quotes. It is
     # not provenance().server_commit, which is the commit this wheel was built from.
-    assert to_domain_list(pb.DescribeDomainsResponse(server_commit="8317b7b")).server_commit == (
+    assert to_domain_list(pb.ListDomainsResponse(server_commit="8317b7b")).server_commit == (
         "8317b7b"
     )
-    assert to_domain_list(pb.DescribeDomainsResponse()).server_commit == ""
+    assert to_domain_list(pb.ListDomainsResponse()).server_commit == ""
 
 
 def test_import_result_carries_one_typed_outcome_per_entry():

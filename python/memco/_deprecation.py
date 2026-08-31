@@ -1,6 +1,6 @@
 """Surfacing the deprecation notice the service returns.
 
-The service reports on every ``DescribeDomains`` whether what the caller is
+The service reports on every ``ListDomains`` whether what the caller is
 using has been superseded — either the API version or this SDK build — and
 supplies the remedy as text. Three rules govern how that is shown, and each
 exists because breaking it makes the notice useless:

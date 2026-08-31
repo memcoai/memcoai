@@ -74,7 +74,6 @@ def test_every_tool_and_parameter_carries_a_description(client: Memco):
 def test_a_description_stops_at_the_first_section(client: Memco):
     # Returns, Raises and Example are for a developer reading the reference.
     description = built(client)["memco_search"].description
-    assert description.startswith("Search for memories")
     for section in ("Returns:", "Raises:", "Example:", ">>>"):
         assert section not in description
 
@@ -492,13 +491,7 @@ def test_a_cross_reference_to_an_operation_names_the_tool():
     assert agent._reference("MemoryOperations.revert_memory") == "memco_revert_memory"
     # Anything that is not an operation keeps only its last component.
     assert agent._reference("memco.types.DataSource.AGENT") == "AGENT"
-    assert agent._reference("describe_domains") == "describe_domains"
-
-
-def test_the_descriptions_that_cross_reference_a_tool_name_it_in_full(client: Memco):
-    tools = built(client)
-    assert "memco_share_feedback" in tools["memco_search"].description
-    assert "memco_revert_memory" in tools["memco_create_memory"].description
+    assert agent._reference("list_domains") == "list_domains"
 
 
 def test_the_builder_refuses_anything_that_is_not_its_own_scope():

@@ -55,3 +55,13 @@ repos:
         language: system
         pass_filenames: false
         files: '^(proto/|[a-z]+/client/|python/memco/memory/|python/memco/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'
+
+      # The docstrings are where the service's tool copy lands, so they are a
+      # generated artefact even though they are hand-editable. Fires on the
+      # manifest and on the two modules it writes into.
+      - id: tool-docs
+        name: tool copy matches the manifest
+        entry: python3 scripts/sync_tool_docs.py --check
+        language: system
+        pass_filenames: false
+        files: '^(scripts/sync_tool_docs\.py|python/memco/(memory/tools\.json|operations\.py|types\.py))$'

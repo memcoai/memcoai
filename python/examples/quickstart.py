@@ -15,7 +15,7 @@ def main() -> None:
     # the service's health endpoint and fetches its input limits, so a bad
     # endpoint or a bad token fails here rather than on the first real call.
     with Memco() as client:
-        domains = client.memory.describe_domains().domains
+        domains = client.memory.list_domains().domains
         print(f"{len(domains)} domain(s) available:")
         for domain in domains:
             print(f"  {domain.slug:12s} {domain.summary.splitlines()[0]}")

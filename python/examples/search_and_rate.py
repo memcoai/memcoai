@@ -28,7 +28,7 @@ def main() -> None:
             "how does gRPC health checking interact with an auth interceptor",
             session_id=session.session_id,
             # Which tag types narrow results and which merely boost them is
-            # per-domain; describe_domains() describes them. A wrong filtering tag
+            # per-domain; list_domains() describes them. A wrong filtering tag
             # returns nothing at all, so start without tags if unsure.
             tags=[Tag(type="language", value="python", version="3.12")],
         )

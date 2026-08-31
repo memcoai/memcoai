@@ -19,7 +19,7 @@ LANGUAGES := $(patsubst %/Makefile,%,$(wildcard */Makefile))
 # language has nothing to do for one.
 FANOUT := install lint format typecheck test test-all docs build clean
 
-.PHONY: help provenance check $(FANOUT)
+.PHONY: help provenance tool-docs tool-docs-check check $(FANOUT)
 
 define fanout
 @for lang in $(LANGUAGES); do \
@@ -30,7 +30,7 @@ endef
 
 help:  ## Show this help
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
-		| awk -F':.*?## ' '{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+		| awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 	@printf '\n  languages: %s\n' "$(LANGUAGES)"
 	@printf '  language-specific targets: make -C <language> help\n'
 
@@ -64,4 +64,10 @@ clean:  ## Remove build and cache artefacts
 provenance:  ## Verify every generated client matches the contract it claims
 	python3 scripts/verify_provenance.py
 
-check: lint typecheck test provenance docs  ## Everything CI runs
+tool-docs:  ## Write the service's tool copy into the SDK docstrings
+	python3 scripts/sync_tool_docs.py
+
+tool-docs-check:  ## Verify the docstrings still carry the manifest's copy
+	python3 scripts/sync_tool_docs.py --check
+
+check: lint typecheck test provenance tool-docs-check docs  ## Everything CI runs

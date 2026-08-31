@@ -123,7 +123,11 @@ ignore = [
 # methods, and the channel type itself. Narrowing these would be a fiction.
 "memco/_auth.py" = ["ANN401"]
 "memco/_channel.py" = ["ANN401"]
-"memco/operations.py" = ["ANN401"]
+# D205: the operation summaries are the service's own copy, written in by
+# scripts/sync_tool_docs.py. The first sentence of most of them is longer than
+# one source line, and reflowing it to fit would fork the copy from the
+# manifest it is generated from.
+"memco/operations.py" = ["ANN401", "D205"]
 "memco/_aio.py" = ["ANN401"]
 "memco/_sync.py" = ["ANN401"]
 # Tests: names are the documentation, asserts are the point, reaching into a

@@ -186,7 +186,7 @@ class MemcoSunsetError(MemcoPreconditionFailedError):
     """What the caller is using is past its sunset date and is no longer served.
 
     The end state of a deprecation: the service announced it on every
-    ``DescribeDomains`` while the version still worked, and now refuses it.
+    ``ListDomains`` while the version still worked, and now refuses it.
     Nothing was done, and retrying will not help until the caller upgrades.
 
     Both clients verify their connection before returning one, so a blocked
