@@ -153,6 +153,69 @@ func (RevertOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{1}
 }
 
+// ImportStatus is what became of one memory of a batch.
+type ImportStatus int32
+
+const (
+	ImportStatus_IMPORT_STATUS_UNSPECIFIED ImportStatus = 0
+	// Accepted and queued for writing.
+	ImportStatus_IMPORT_STATUS_QUEUED ImportStatus = 1
+	// The entry itself was not usable; `errors` says what about it.
+	ImportStatus_IMPORT_STATUS_REJECTED ImportStatus = 2
+	// The entry was usable but could not be queued. Resubmitting it is the remedy;
+	// an import is written under an identity derived from its own content, so a
+	// memory that did land is not duplicated by sending it again.
+	ImportStatus_IMPORT_STATUS_ERROR ImportStatus = 3
+	// The content is already in memory, so nothing was written and nothing was
+	// charged. Sending the same batch again is safe and free.
+	ImportStatus_IMPORT_STATUS_DUPLICATE ImportStatus = 4
+)
+
+// Enum value maps for ImportStatus.
+var (
+	ImportStatus_name = map[int32]string{
+		0: "IMPORT_STATUS_UNSPECIFIED",
+		1: "IMPORT_STATUS_QUEUED",
+		2: "IMPORT_STATUS_REJECTED",
+		3: "IMPORT_STATUS_ERROR",
+		4: "IMPORT_STATUS_DUPLICATE",
+	}
+	ImportStatus_value = map[string]int32{
+		"IMPORT_STATUS_UNSPECIFIED": 0,
+		"IMPORT_STATUS_QUEUED":      1,
+		"IMPORT_STATUS_REJECTED":    2,
+		"IMPORT_STATUS_ERROR":       3,
+		"IMPORT_STATUS_DUPLICATE":   4,
+	}
+)
+
+func (x ImportStatus) Enum() *ImportStatus {
+	p := new(ImportStatus)
+	*p = x
+	return p
+}
+
+func (x ImportStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImportStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_memco_memory_v1_memory_proto_enumTypes[2].Descriptor()
+}
+
+func (ImportStatus) Type() protoreflect.EnumType {
+	return &file_memco_memory_v1_memory_proto_enumTypes[2]
+}
+
+func (x ImportStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImportStatus.Descriptor instead.
+func (ImportStatus) EnumDescriptor() ([]byte, []int) {
+	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{2}
+}
+
 // Instructions is the model-facing guidance accompanying a result, held apart
 // from the data so a caller can render its own document or use this one. Each
 // part arrives already rendered for its domain; a part with nothing to say is
@@ -497,7 +560,10 @@ type DescribeDomainsResponse struct {
 	DeprecationMessage string `protobuf:"bytes,5,opt,name=deprecation_message,json=deprecationMessage,proto3" json:"deprecation_message,omitempty"`
 	// sunset_date is when what the caller uses stops working, as YYYY-MM-DD.
 	// Empty when no date is set, which is not a promise that none will be.
-	SunsetDate    string `protobuf:"bytes,6,opt,name=sunset_date,json=sunsetDate,proto3" json:"sunset_date,omitempty"`
+	SunsetDate string `protobuf:"bytes,6,opt,name=sunset_date,json=sunsetDate,proto3" json:"sunset_date,omitempty"`
+	// server_commit names the build that answered, so a caller can identify it in
+	// a bug report.
+	ServerCommit  string `protobuf:"bytes,7,opt,name=server_commit,json=serverCommit,proto3" json:"server_commit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -574,6 +640,13 @@ func (x *DescribeDomainsResponse) GetSunsetDate() string {
 	return ""
 }
 
+func (x *DescribeDomainsResponse) GetServerCommit() string {
+	if x != nil {
+		return x.ServerCommit
+	}
+	return ""
+}
+
 // Limits are the caps the server enforces, published so a client can check its
 // input before spending a round trip on a call that would be refused.
 //
@@ -600,8 +673,16 @@ type Limits struct {
 	// max_feedback_entries bounds `feedback` entries per ShareFeedback call.
 	// Exceeding it is refused with INVALID_ARGUMENT.
 	MaxFeedbackEntries int32 `protobuf:"varint,5,opt,name=max_feedback_entries,json=maxFeedbackEntries,proto3" json:"max_feedback_entries,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The four import caps. Each REFUSES rather than trims, so a client should
+	// split a batch that exceeds one rather than send it and have it rejected.
+	// max_import_memories bounds `memories` per ImportMemories call; the other
+	// three bound one entry of it.
+	MaxImportMemories          int32 `protobuf:"varint,6,opt,name=max_import_memories,json=maxImportMemories,proto3" json:"max_import_memories,omitempty"`
+	MaxImportQueriesPerMemory  int32 `protobuf:"varint,7,opt,name=max_import_queries_per_memory,json=maxImportQueriesPerMemory,proto3" json:"max_import_queries_per_memory,omitempty"`
+	MaxImportInsightsPerMemory int32 `protobuf:"varint,8,opt,name=max_import_insights_per_memory,json=maxImportInsightsPerMemory,proto3" json:"max_import_insights_per_memory,omitempty"`
+	MaxImportTagsPerMemory     int32 `protobuf:"varint,9,opt,name=max_import_tags_per_memory,json=maxImportTagsPerMemory,proto3" json:"max_import_tags_per_memory,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *Limits) Reset() {
@@ -665,6 +746,34 @@ func (x *Limits) GetMaxSources() int32 {
 func (x *Limits) GetMaxFeedbackEntries() int32 {
 	if x != nil {
 		return x.MaxFeedbackEntries
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxImportMemories() int32 {
+	if x != nil {
+		return x.MaxImportMemories
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxImportQueriesPerMemory() int32 {
+	if x != nil {
+		return x.MaxImportQueriesPerMemory
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxImportInsightsPerMemory() int32 {
+	if x != nil {
+		return x.MaxImportInsightsPerMemory
+	}
+	return 0
+}
+
+func (x *Limits) GetMaxImportTagsPerMemory() int32 {
+	if x != nil {
+		return x.MaxImportTagsPerMemory
 	}
 	return 0
 }
@@ -1861,6 +1970,307 @@ func (x *RevertMemoryResponse) GetInstructions() *Instructions {
 	return nil
 }
 
+type ImportMemoriesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// domain is required unless session_id is set, which supplies the domain of
+	// the session it names. Every memory of the batch is imported into that one
+	// domain; a batch cannot span domains.
+	Domain   string            `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
+	Memories []*ImportedMemory `protobuf:"bytes,2,rep,name=memories,proto3" json:"memories,omitempty"`
+	// session_id names the session this knowledge was contributed during, so a
+	// batch gathered in the course of a task belongs to that series of work
+	// rather than standing on its own. Omitting it files the memories under no
+	// session, which is what a standalone upload wants.
+	SessionId     string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportMemoriesRequest) Reset() {
+	*x = ImportMemoriesRequest{}
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportMemoriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportMemoriesRequest) ProtoMessage() {}
+
+func (x *ImportMemoriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportMemoriesRequest.ProtoReflect.Descriptor instead.
+func (*ImportMemoriesRequest) Descriptor() ([]byte, []int) {
+	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ImportMemoriesRequest) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *ImportMemoriesRequest) GetMemories() []*ImportedMemory {
+	if x != nil {
+		return x.Memories
+	}
+	return nil
+}
+
+func (x *ImportMemoriesRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// ImportedMemory is one memory to contribute: what it should be found by, and
+// what it holds.
+type ImportedMemory struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// queries are what someone would search to find this memory. At least one is
+	// required.
+	Queries []string `protobuf:"bytes,1,rep,name=queries,proto3" json:"queries,omitempty"`
+	// insights are what the memory holds. At least one is required.
+	Insights      []*ImportedInsight `protobuf:"bytes,2,rep,name=insights,proto3" json:"insights,omitempty"`
+	Tags          []*Tag             `protobuf:"bytes,3,rep,name=tags,proto3" json:"tags,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportedMemory) Reset() {
+	*x = ImportedMemory{}
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportedMemory) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportedMemory) ProtoMessage() {}
+
+func (x *ImportedMemory) ProtoReflect() protoreflect.Message {
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportedMemory.ProtoReflect.Descriptor instead.
+func (*ImportedMemory) Descriptor() ([]byte, []int) {
+	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ImportedMemory) GetQueries() []string {
+	if x != nil {
+		return x.Queries
+	}
+	return nil
+}
+
+func (x *ImportedMemory) GetInsights() []*ImportedInsight {
+	if x != nil {
+		return x.Insights
+	}
+	return nil
+}
+
+func (x *ImportedMemory) GetTags() []*Tag {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+type ImportedInsight struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Content       string                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportedInsight) Reset() {
+	*x = ImportedInsight{}
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportedInsight) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportedInsight) ProtoMessage() {}
+
+func (x *ImportedInsight) ProtoReflect() protoreflect.Message {
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportedInsight.ProtoReflect.Descriptor instead.
+func (*ImportedInsight) Descriptor() ([]byte, []int) {
+	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ImportedInsight) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ImportedInsight) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+type ImportMemoriesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// results holds one entry per memory submitted, in the order they were sent.
+	Results       []*ImportOutcome `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	Instructions  *Instructions    `protobuf:"bytes,2,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportMemoriesResponse) Reset() {
+	*x = ImportMemoriesResponse{}
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportMemoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportMemoriesResponse) ProtoMessage() {}
+
+func (x *ImportMemoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportMemoriesResponse.ProtoReflect.Descriptor instead.
+func (*ImportMemoriesResponse) Descriptor() ([]byte, []int) {
+	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ImportMemoriesResponse) GetResults() []*ImportOutcome {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *ImportMemoriesResponse) GetInstructions() *Instructions {
+	if x != nil {
+		return x.Instructions
+	}
+	return nil
+}
+
+// ImportOutcome is what happened to one memory of the batch, addressed by its
+// position in the request: an import mints no handle a caller could name it by.
+type ImportOutcome struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Index  int32                  `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	Status ImportStatus           `protobuf:"varint,2,opt,name=status,proto3,enum=memco.memory.v1.ImportStatus" json:"status,omitempty"`
+	// errors says what was wrong with an entry that was not queued, and is empty
+	// for one that was.
+	Errors        []string `protobuf:"bytes,3,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportOutcome) Reset() {
+	*x = ImportOutcome{}
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportOutcome) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportOutcome) ProtoMessage() {}
+
+func (x *ImportOutcome) ProtoReflect() protoreflect.Message {
+	mi := &file_memco_memory_v1_memory_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportOutcome.ProtoReflect.Descriptor instead.
+func (*ImportOutcome) Descriptor() ([]byte, []int) {
+	return file_memco_memory_v1_memory_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ImportOutcome) GetIndex() int32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *ImportOutcome) GetStatus() ImportStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ImportStatus_IMPORT_STATUS_UNSPECIFIED
+}
+
+func (x *ImportOutcome) GetErrors() []string {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
 var File_memco_memory_v1_memory_proto protoreflect.FileDescriptor
 
 const file_memco_memory_v1_memory_proto_rawDesc = "" +
@@ -1891,7 +2301,7 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\x11version_tag_types\x18\t \x03(\tR\x0fversionTagTypes\x12+\n" +
 	"\x12max_tags_per_query\x18\n" +
 	" \x01(\x05R\x0fmaxTagsPerQuery\"\x18\n" +
-	"\x16DescribeDomainsRequest\"\xb7\x02\n" +
+	"\x16DescribeDomainsRequest\"\xdc\x02\n" +
 	"\x17DescribeDomainsResponse\x126\n" +
 	"\adomains\x18\x01 \x03(\v2\x1c.memco.memory.v1.DomainEntryR\adomains\x12A\n" +
 	"\finstructions\x18\x02 \x01(\v2\x1d.memco.memory.v1.InstructionsR\finstructions\x12/\n" +
@@ -1901,14 +2311,19 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"deprecated\x12/\n" +
 	"\x13deprecation_message\x18\x05 \x01(\tR\x12deprecationMessage\x12\x1f\n" +
 	"\vsunset_date\x18\x06 \x01(\tR\n" +
-	"sunsetDate\"\xeb\x01\n" +
+	"sunsetDate\x12#\n" +
+	"\rserver_commit\x18\a \x01(\tR\fserverCommit\"\xdd\x03\n" +
 	"\x06Limits\x120\n" +
 	"\x14max_query_characters\x18\x01 \x01(\x05R\x12maxQueryCharacters\x12.\n" +
 	"\x13max_text_characters\x18\x02 \x01(\x05R\x11maxTextCharacters\x12,\n" +
 	"\x12max_idx_characters\x18\x03 \x01(\x05R\x10maxIdxCharacters\x12\x1f\n" +
 	"\vmax_sources\x18\x04 \x01(\x05R\n" +
 	"maxSources\x120\n" +
-	"\x14max_feedback_entries\x18\x05 \x01(\x05R\x12maxFeedbackEntries\"-\n" +
+	"\x14max_feedback_entries\x18\x05 \x01(\x05R\x12maxFeedbackEntries\x12.\n" +
+	"\x13max_import_memories\x18\x06 \x01(\x05R\x11maxImportMemories\x12@\n" +
+	"\x1dmax_import_queries_per_memory\x18\a \x01(\x05R\x19maxImportQueriesPerMemory\x12B\n" +
+	"\x1emax_import_insights_per_memory\x18\b \x01(\x05R\x1amaxImportInsightsPerMemory\x12:\n" +
+	"\x1amax_import_tags_per_memory\x18\t \x01(\x05R\x16maxImportTagsPerMemory\"-\n" +
 	"\x13StartSessionRequest\x12\x16\n" +
 	"\x06domain\x18\x01 \x01(\tR\x06domain\"x\n" +
 	"\x14StartSessionResponse\x12\x1d\n" +
@@ -1997,7 +2412,26 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\x14RevertMemoryResponse\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x128\n" +
 	"\aoutcome\x18\x02 \x01(\x0e2\x1e.memco.memory.v1.RevertOutcomeR\aoutcome\x12A\n" +
-	"\finstructions\x18\x03 \x01(\v2\x1d.memco.memory.v1.InstructionsR\finstructions*V\n" +
+	"\finstructions\x18\x03 \x01(\v2\x1d.memco.memory.v1.InstructionsR\finstructions\"\x8b\x01\n" +
+	"\x15ImportMemoriesRequest\x12\x16\n" +
+	"\x06domain\x18\x01 \x01(\tR\x06domain\x12;\n" +
+	"\bmemories\x18\x02 \x03(\v2\x1f.memco.memory.v1.ImportedMemoryR\bmemories\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\"\x92\x01\n" +
+	"\x0eImportedMemory\x12\x18\n" +
+	"\aqueries\x18\x01 \x03(\tR\aqueries\x12<\n" +
+	"\binsights\x18\x02 \x03(\v2 .memco.memory.v1.ImportedInsightR\binsights\x12(\n" +
+	"\x04tags\x18\x03 \x03(\v2\x14.memco.memory.v1.TagR\x04tags\"A\n" +
+	"\x0fImportedInsight\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"\x95\x01\n" +
+	"\x16ImportMemoriesResponse\x128\n" +
+	"\aresults\x18\x01 \x03(\v2\x1e.memco.memory.v1.ImportOutcomeR\aresults\x12A\n" +
+	"\finstructions\x18\x02 \x01(\v2\x1d.memco.memory.v1.InstructionsR\finstructions\"t\n" +
+	"\rImportOutcome\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\x05R\x05index\x125\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1d.memco.memory.v1.ImportStatusR\x06status\x12\x16\n" +
+	"\x06errors\x18\x03 \x03(\tR\x06errors*V\n" +
 	"\n" +
 	"DataSource\x12\x1b\n" +
 	"\x17DATA_SOURCE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -2011,7 +2445,13 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\x15REVERT_OUTCOME_MERGED\x10\x04\x12\x1c\n" +
 	"\x18REVERT_OUTCOME_NOT_FOUND\x10\x05\x12\x1a\n" +
 	"\x16REVERT_OUTCOME_EXPIRED\x10\x06\x12\x1a\n" +
-	"\x16REVERT_OUTCOME_REFUSED\x10\a2\xe8\x05\n" +
+	"\x16REVERT_OUTCOME_REFUSED\x10\a*\x99\x01\n" +
+	"\fImportStatus\x12\x1d\n" +
+	"\x19IMPORT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14IMPORT_STATUS_QUEUED\x10\x01\x12\x1a\n" +
+	"\x16IMPORT_STATUS_REJECTED\x10\x02\x12\x17\n" +
+	"\x13IMPORT_STATUS_ERROR\x10\x03\x12\x1b\n" +
+	"\x17IMPORT_STATUS_DUPLICATE\x10\x042\xcb\x06\n" +
 	"\rMemoryService\x12d\n" +
 	"\x0fDescribeDomains\x12'.memco.memory.v1.DescribeDomainsRequest\x1a(.memco.memory.v1.DescribeDomainsResponse\x12[\n" +
 	"\fStartSession\x12$.memco.memory.v1.StartSessionRequest\x1a%.memco.memory.v1.StartSessionResponse\x12I\n" +
@@ -2020,7 +2460,8 @@ const file_memco_memory_v1_memory_proto_rawDesc = "" +
 	"\fCreateMemory\x12$.memco.memory.v1.CreateMemoryRequest\x1a%.memco.memory.v1.CreateMemoryResponse\x12[\n" +
 	"\fEnrichMemory\x12$.memco.memory.v1.EnrichMemoryRequest\x1a%.memco.memory.v1.EnrichMemoryResponse\x12^\n" +
 	"\rShareFeedback\x12%.memco.memory.v1.ShareFeedbackRequest\x1a&.memco.memory.v1.ShareFeedbackResponse\x12[\n" +
-	"\fRevertMemory\x12$.memco.memory.v1.RevertMemoryRequest\x1a%.memco.memory.v1.RevertMemoryResponseB=Z;github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1b\x06proto3"
+	"\fRevertMemory\x12$.memco.memory.v1.RevertMemoryRequest\x1a%.memco.memory.v1.RevertMemoryResponse\x12a\n" +
+	"\x0eImportMemories\x12&.memco.memory.v1.ImportMemoriesRequest\x1a'.memco.memory.v1.ImportMemoriesResponseB=Z;github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1b\x06proto3"
 
 var (
 	file_memco_memory_v1_memory_proto_rawDescOnce sync.Once
@@ -2034,78 +2475,92 @@ func file_memco_memory_v1_memory_proto_rawDescGZIP() []byte {
 	return file_memco_memory_v1_memory_proto_rawDescData
 }
 
-var file_memco_memory_v1_memory_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_memco_memory_v1_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_memco_memory_v1_memory_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_memco_memory_v1_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_memco_memory_v1_memory_proto_goTypes = []any{
 	(DataSource)(0),                 // 0: memco.memory.v1.DataSource
 	(RevertOutcome)(0),              // 1: memco.memory.v1.RevertOutcome
-	(*Instructions)(nil),            // 2: memco.memory.v1.Instructions
-	(*Tag)(nil),                     // 3: memco.memory.v1.Tag
-	(*DomainEntry)(nil),             // 4: memco.memory.v1.DomainEntry
-	(*DescribeDomainsRequest)(nil),  // 5: memco.memory.v1.DescribeDomainsRequest
-	(*DescribeDomainsResponse)(nil), // 6: memco.memory.v1.DescribeDomainsResponse
-	(*Limits)(nil),                  // 7: memco.memory.v1.Limits
-	(*StartSessionRequest)(nil),     // 8: memco.memory.v1.StartSessionRequest
-	(*StartSessionResponse)(nil),    // 9: memco.memory.v1.StartSessionResponse
-	(*SearchRequest)(nil),           // 10: memco.memory.v1.SearchRequest
-	(*SearchResponse)(nil),          // 11: memco.memory.v1.SearchResponse
-	(*MemoryResult)(nil),            // 12: memco.memory.v1.MemoryResult
-	(*InsightResult)(nil),           // 13: memco.memory.v1.InsightResult
-	(*GetMemoryRequest)(nil),        // 14: memco.memory.v1.GetMemoryRequest
-	(*GetMemoryResponse)(nil),       // 15: memco.memory.v1.GetMemoryResponse
-	(*CreateMemoryRequest)(nil),     // 16: memco.memory.v1.CreateMemoryRequest
-	(*CreateMemoryResponse)(nil),    // 17: memco.memory.v1.CreateMemoryResponse
-	(*EnrichMemoryRequest)(nil),     // 18: memco.memory.v1.EnrichMemoryRequest
-	(*EnrichMemoryResponse)(nil),    // 19: memco.memory.v1.EnrichMemoryResponse
-	(*ShareFeedbackRequest)(nil),    // 20: memco.memory.v1.ShareFeedbackRequest
-	(*FeedbackRating)(nil),          // 21: memco.memory.v1.FeedbackRating
-	(*ShareFeedbackResponse)(nil),   // 22: memco.memory.v1.ShareFeedbackResponse
-	(*FeedbackEntry)(nil),           // 23: memco.memory.v1.FeedbackEntry
-	(*RevertMemoryRequest)(nil),     // 24: memco.memory.v1.RevertMemoryRequest
-	(*RevertMemoryResponse)(nil),    // 25: memco.memory.v1.RevertMemoryResponse
+	(ImportStatus)(0),               // 2: memco.memory.v1.ImportStatus
+	(*Instructions)(nil),            // 3: memco.memory.v1.Instructions
+	(*Tag)(nil),                     // 4: memco.memory.v1.Tag
+	(*DomainEntry)(nil),             // 5: memco.memory.v1.DomainEntry
+	(*DescribeDomainsRequest)(nil),  // 6: memco.memory.v1.DescribeDomainsRequest
+	(*DescribeDomainsResponse)(nil), // 7: memco.memory.v1.DescribeDomainsResponse
+	(*Limits)(nil),                  // 8: memco.memory.v1.Limits
+	(*StartSessionRequest)(nil),     // 9: memco.memory.v1.StartSessionRequest
+	(*StartSessionResponse)(nil),    // 10: memco.memory.v1.StartSessionResponse
+	(*SearchRequest)(nil),           // 11: memco.memory.v1.SearchRequest
+	(*SearchResponse)(nil),          // 12: memco.memory.v1.SearchResponse
+	(*MemoryResult)(nil),            // 13: memco.memory.v1.MemoryResult
+	(*InsightResult)(nil),           // 14: memco.memory.v1.InsightResult
+	(*GetMemoryRequest)(nil),        // 15: memco.memory.v1.GetMemoryRequest
+	(*GetMemoryResponse)(nil),       // 16: memco.memory.v1.GetMemoryResponse
+	(*CreateMemoryRequest)(nil),     // 17: memco.memory.v1.CreateMemoryRequest
+	(*CreateMemoryResponse)(nil),    // 18: memco.memory.v1.CreateMemoryResponse
+	(*EnrichMemoryRequest)(nil),     // 19: memco.memory.v1.EnrichMemoryRequest
+	(*EnrichMemoryResponse)(nil),    // 20: memco.memory.v1.EnrichMemoryResponse
+	(*ShareFeedbackRequest)(nil),    // 21: memco.memory.v1.ShareFeedbackRequest
+	(*FeedbackRating)(nil),          // 22: memco.memory.v1.FeedbackRating
+	(*ShareFeedbackResponse)(nil),   // 23: memco.memory.v1.ShareFeedbackResponse
+	(*FeedbackEntry)(nil),           // 24: memco.memory.v1.FeedbackEntry
+	(*RevertMemoryRequest)(nil),     // 25: memco.memory.v1.RevertMemoryRequest
+	(*RevertMemoryResponse)(nil),    // 26: memco.memory.v1.RevertMemoryResponse
+	(*ImportMemoriesRequest)(nil),   // 27: memco.memory.v1.ImportMemoriesRequest
+	(*ImportedMemory)(nil),          // 28: memco.memory.v1.ImportedMemory
+	(*ImportedInsight)(nil),         // 29: memco.memory.v1.ImportedInsight
+	(*ImportMemoriesResponse)(nil),  // 30: memco.memory.v1.ImportMemoriesResponse
+	(*ImportOutcome)(nil),           // 31: memco.memory.v1.ImportOutcome
 }
 var file_memco_memory_v1_memory_proto_depIdxs = []int32{
-	4,  // 0: memco.memory.v1.DescribeDomainsResponse.domains:type_name -> memco.memory.v1.DomainEntry
-	2,  // 1: memco.memory.v1.DescribeDomainsResponse.instructions:type_name -> memco.memory.v1.Instructions
-	7,  // 2: memco.memory.v1.DescribeDomainsResponse.limits:type_name -> memco.memory.v1.Limits
-	2,  // 3: memco.memory.v1.StartSessionResponse.instructions:type_name -> memco.memory.v1.Instructions
-	3,  // 4: memco.memory.v1.SearchRequest.tags:type_name -> memco.memory.v1.Tag
-	12, // 5: memco.memory.v1.SearchResponse.memories:type_name -> memco.memory.v1.MemoryResult
-	2,  // 6: memco.memory.v1.SearchResponse.instructions:type_name -> memco.memory.v1.Instructions
-	13, // 7: memco.memory.v1.MemoryResult.insights:type_name -> memco.memory.v1.InsightResult
-	12, // 8: memco.memory.v1.GetMemoryResponse.memory:type_name -> memco.memory.v1.MemoryResult
-	3,  // 9: memco.memory.v1.CreateMemoryRequest.tags:type_name -> memco.memory.v1.Tag
+	5,  // 0: memco.memory.v1.DescribeDomainsResponse.domains:type_name -> memco.memory.v1.DomainEntry
+	3,  // 1: memco.memory.v1.DescribeDomainsResponse.instructions:type_name -> memco.memory.v1.Instructions
+	8,  // 2: memco.memory.v1.DescribeDomainsResponse.limits:type_name -> memco.memory.v1.Limits
+	3,  // 3: memco.memory.v1.StartSessionResponse.instructions:type_name -> memco.memory.v1.Instructions
+	4,  // 4: memco.memory.v1.SearchRequest.tags:type_name -> memco.memory.v1.Tag
+	13, // 5: memco.memory.v1.SearchResponse.memories:type_name -> memco.memory.v1.MemoryResult
+	3,  // 6: memco.memory.v1.SearchResponse.instructions:type_name -> memco.memory.v1.Instructions
+	14, // 7: memco.memory.v1.MemoryResult.insights:type_name -> memco.memory.v1.InsightResult
+	13, // 8: memco.memory.v1.GetMemoryResponse.memory:type_name -> memco.memory.v1.MemoryResult
+	4,  // 9: memco.memory.v1.CreateMemoryRequest.tags:type_name -> memco.memory.v1.Tag
 	0,  // 10: memco.memory.v1.CreateMemoryRequest.source:type_name -> memco.memory.v1.DataSource
-	2,  // 11: memco.memory.v1.CreateMemoryResponse.instructions:type_name -> memco.memory.v1.Instructions
-	3,  // 12: memco.memory.v1.EnrichMemoryRequest.tags:type_name -> memco.memory.v1.Tag
+	3,  // 11: memco.memory.v1.CreateMemoryResponse.instructions:type_name -> memco.memory.v1.Instructions
+	4,  // 12: memco.memory.v1.EnrichMemoryRequest.tags:type_name -> memco.memory.v1.Tag
 	0,  // 13: memco.memory.v1.EnrichMemoryRequest.source:type_name -> memco.memory.v1.DataSource
-	2,  // 14: memco.memory.v1.EnrichMemoryResponse.instructions:type_name -> memco.memory.v1.Instructions
-	21, // 15: memco.memory.v1.ShareFeedbackRequest.feedback:type_name -> memco.memory.v1.FeedbackRating
-	23, // 16: memco.memory.v1.ShareFeedbackResponse.entries:type_name -> memco.memory.v1.FeedbackEntry
-	2,  // 17: memco.memory.v1.ShareFeedbackResponse.instructions:type_name -> memco.memory.v1.Instructions
+	3,  // 14: memco.memory.v1.EnrichMemoryResponse.instructions:type_name -> memco.memory.v1.Instructions
+	22, // 15: memco.memory.v1.ShareFeedbackRequest.feedback:type_name -> memco.memory.v1.FeedbackRating
+	24, // 16: memco.memory.v1.ShareFeedbackResponse.entries:type_name -> memco.memory.v1.FeedbackEntry
+	3,  // 17: memco.memory.v1.ShareFeedbackResponse.instructions:type_name -> memco.memory.v1.Instructions
 	1,  // 18: memco.memory.v1.RevertMemoryResponse.outcome:type_name -> memco.memory.v1.RevertOutcome
-	2,  // 19: memco.memory.v1.RevertMemoryResponse.instructions:type_name -> memco.memory.v1.Instructions
-	5,  // 20: memco.memory.v1.MemoryService.DescribeDomains:input_type -> memco.memory.v1.DescribeDomainsRequest
-	8,  // 21: memco.memory.v1.MemoryService.StartSession:input_type -> memco.memory.v1.StartSessionRequest
-	10, // 22: memco.memory.v1.MemoryService.Search:input_type -> memco.memory.v1.SearchRequest
-	14, // 23: memco.memory.v1.MemoryService.GetMemory:input_type -> memco.memory.v1.GetMemoryRequest
-	16, // 24: memco.memory.v1.MemoryService.CreateMemory:input_type -> memco.memory.v1.CreateMemoryRequest
-	18, // 25: memco.memory.v1.MemoryService.EnrichMemory:input_type -> memco.memory.v1.EnrichMemoryRequest
-	20, // 26: memco.memory.v1.MemoryService.ShareFeedback:input_type -> memco.memory.v1.ShareFeedbackRequest
-	24, // 27: memco.memory.v1.MemoryService.RevertMemory:input_type -> memco.memory.v1.RevertMemoryRequest
-	6,  // 28: memco.memory.v1.MemoryService.DescribeDomains:output_type -> memco.memory.v1.DescribeDomainsResponse
-	9,  // 29: memco.memory.v1.MemoryService.StartSession:output_type -> memco.memory.v1.StartSessionResponse
-	11, // 30: memco.memory.v1.MemoryService.Search:output_type -> memco.memory.v1.SearchResponse
-	15, // 31: memco.memory.v1.MemoryService.GetMemory:output_type -> memco.memory.v1.GetMemoryResponse
-	17, // 32: memco.memory.v1.MemoryService.CreateMemory:output_type -> memco.memory.v1.CreateMemoryResponse
-	19, // 33: memco.memory.v1.MemoryService.EnrichMemory:output_type -> memco.memory.v1.EnrichMemoryResponse
-	22, // 34: memco.memory.v1.MemoryService.ShareFeedback:output_type -> memco.memory.v1.ShareFeedbackResponse
-	25, // 35: memco.memory.v1.MemoryService.RevertMemory:output_type -> memco.memory.v1.RevertMemoryResponse
-	28, // [28:36] is the sub-list for method output_type
-	20, // [20:28] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	3,  // 19: memco.memory.v1.RevertMemoryResponse.instructions:type_name -> memco.memory.v1.Instructions
+	28, // 20: memco.memory.v1.ImportMemoriesRequest.memories:type_name -> memco.memory.v1.ImportedMemory
+	29, // 21: memco.memory.v1.ImportedMemory.insights:type_name -> memco.memory.v1.ImportedInsight
+	4,  // 22: memco.memory.v1.ImportedMemory.tags:type_name -> memco.memory.v1.Tag
+	31, // 23: memco.memory.v1.ImportMemoriesResponse.results:type_name -> memco.memory.v1.ImportOutcome
+	3,  // 24: memco.memory.v1.ImportMemoriesResponse.instructions:type_name -> memco.memory.v1.Instructions
+	2,  // 25: memco.memory.v1.ImportOutcome.status:type_name -> memco.memory.v1.ImportStatus
+	6,  // 26: memco.memory.v1.MemoryService.DescribeDomains:input_type -> memco.memory.v1.DescribeDomainsRequest
+	9,  // 27: memco.memory.v1.MemoryService.StartSession:input_type -> memco.memory.v1.StartSessionRequest
+	11, // 28: memco.memory.v1.MemoryService.Search:input_type -> memco.memory.v1.SearchRequest
+	15, // 29: memco.memory.v1.MemoryService.GetMemory:input_type -> memco.memory.v1.GetMemoryRequest
+	17, // 30: memco.memory.v1.MemoryService.CreateMemory:input_type -> memco.memory.v1.CreateMemoryRequest
+	19, // 31: memco.memory.v1.MemoryService.EnrichMemory:input_type -> memco.memory.v1.EnrichMemoryRequest
+	21, // 32: memco.memory.v1.MemoryService.ShareFeedback:input_type -> memco.memory.v1.ShareFeedbackRequest
+	25, // 33: memco.memory.v1.MemoryService.RevertMemory:input_type -> memco.memory.v1.RevertMemoryRequest
+	27, // 34: memco.memory.v1.MemoryService.ImportMemories:input_type -> memco.memory.v1.ImportMemoriesRequest
+	7,  // 35: memco.memory.v1.MemoryService.DescribeDomains:output_type -> memco.memory.v1.DescribeDomainsResponse
+	10, // 36: memco.memory.v1.MemoryService.StartSession:output_type -> memco.memory.v1.StartSessionResponse
+	12, // 37: memco.memory.v1.MemoryService.Search:output_type -> memco.memory.v1.SearchResponse
+	16, // 38: memco.memory.v1.MemoryService.GetMemory:output_type -> memco.memory.v1.GetMemoryResponse
+	18, // 39: memco.memory.v1.MemoryService.CreateMemory:output_type -> memco.memory.v1.CreateMemoryResponse
+	20, // 40: memco.memory.v1.MemoryService.EnrichMemory:output_type -> memco.memory.v1.EnrichMemoryResponse
+	23, // 41: memco.memory.v1.MemoryService.ShareFeedback:output_type -> memco.memory.v1.ShareFeedbackResponse
+	26, // 42: memco.memory.v1.MemoryService.RevertMemory:output_type -> memco.memory.v1.RevertMemoryResponse
+	30, // 43: memco.memory.v1.MemoryService.ImportMemories:output_type -> memco.memory.v1.ImportMemoriesResponse
+	35, // [35:44] is the sub-list for method output_type
+	26, // [26:35] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_memco_memory_v1_memory_proto_init() }
@@ -2120,8 +2575,8 @@ func file_memco_memory_v1_memory_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_memco_memory_v1_memory_proto_rawDesc), len(file_memco_memory_v1_memory_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   24,
+			NumEnums:      3,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

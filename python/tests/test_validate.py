@@ -6,7 +6,16 @@ import pytest
 import memco
 from memco import _validate as v
 from memco.errors import MemcoInvalidRequestError
-from memco.types import FeedbackRating
+from memco.types import FeedbackRating, ImportedInsight, ImportedMemory, Tag
+
+
+def imported(**overrides) -> ImportedMemory:
+    """One valid imported memory, with fields swapped out per test."""
+    fields = {
+        "queries": ["how does X work"],
+        "insights": [ImportedInsight(title="T", content="C")],
+    }
+    return ImportedMemory(**{**fields, **overrides})
 
 
 def test_blank_values_are_rejected():
@@ -84,3 +93,61 @@ def test_errors_carry_invalid_argument_status():
     with pytest.raises(MemcoInvalidRequestError) as caught:
         v.check_query("")
     assert caught.value.code is grpc.StatusCode.INVALID_ARGUMENT
+
+
+# --- import batches: a bad entry must be locatable in the batch -----------
+
+
+def test_an_import_must_not_be_empty():
+    with pytest.raises(MemcoInvalidRequestError, match="memories"):
+        v.check_import_memories([])
+
+
+def test_an_imported_memory_needs_a_query_and_an_insight():
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[0\].*query"):
+        v.check_import_memories([imported(queries=[])])
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[0\].*insight"):
+        v.check_import_memories([imported(insights=[])])
+
+
+def test_a_bare_string_is_not_a_sequence_of_queries():
+    # A str satisfies Sequence[str], so neither the annotation nor the type
+    # checker catches this; iterating it would file one query per character.
+    with pytest.raises(MemcoInvalidRequestError, match="single string"):
+        v.check_import_memories([imported(queries="how does X work")])
+
+
+def test_a_blank_field_names_the_entry_it_is_in():
+    # A batch gives the caller no other way to find the offending entry.
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[1\] queries\[0\]"):
+        v.check_import_memories([imported(), imported(queries=["  "])])
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[1\] insights\[0\] title"):
+        v.check_import_memories(
+            [imported(), imported(insights=[ImportedInsight(title=" ", content="C")])]
+        )
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[1\] insights\[0\] content"):
+        v.check_import_memories(
+            [imported(), imported(insights=[ImportedInsight(title="T", content="")])]
+        )
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[1\] tag value"):
+        v.check_import_memories([imported(), imported(tags=[Tag(type="language", value="")])])
+
+
+def test_import_batch_size_is_not_checked_locally():
+    # As everywhere else: the service owns the numbers.
+    v.check_import_memories([imported()] * 1000)
+    v.check_import_memories([imported(queries=[f"q{n}" for n in range(1000)])])
+
+
+def test_a_one_shot_iterable_is_refused_rather_than_silently_dropped():
+    # Validation walks the batch, then the request builder walks it again to
+    # size and build it. A generator is empty by the second pass, so the call
+    # would send nothing at all and report success — and an import mints no
+    # handle, so `results` coming back empty is the caller's only signal.
+    with pytest.raises(MemcoInvalidRequestError, match="memories must be a sequence"):
+        # Suppressed because mypy rejecting this is the whole reason the guard
+        # exists: annotations are not enforced at runtime, and the caller who
+        # streams a batch in is not necessarily the one running a type checker.
+        v.check_import_memories(imported() for _ in range(3))  # type: ignore[arg-type]
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[0\] queries must be a sequence"):
+        v.check_import_memories([imported(queries=(f"q{n}" for n in range(3)))])

@@ -27,14 +27,15 @@ const (
 	MemoryService_EnrichMemory_FullMethodName    = "/memco.memory.v1.MemoryService/EnrichMemory"
 	MemoryService_ShareFeedback_FullMethodName   = "/memco.memory.v1.MemoryService/ShareFeedback"
 	MemoryService_RevertMemory_FullMethodName    = "/memco.memory.v1.MemoryService/RevertMemory"
+	MemoryService_ImportMemories_FullMethodName  = "/memco.memory.v1.MemoryService/ImportMemories"
 )
 
 // MemoryServiceClient is the client API for MemoryService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// MemoryService is the shared memory surface: the eight operations a client
-// uses to find knowledge, contribute to it, and rate what it was given.
+// MemoryService is the shared memory surface: the operations a client uses to
+// find knowledge, contribute to it, and rate what it was given.
 //
 // Every identifier crossing this boundary is an external handle a previous
 // response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -67,6 +68,21 @@ type MemoryServiceClient interface {
 	// that write returned. Every outcome is a successful call: expired, refused
 	// and not_found report a caller-visible state, not a service failure.
 	RevertMemory(ctx context.Context, in *RevertMemoryRequest, opts ...grpc.CallOption) (*RevertMemoryResponse, error)
+	// ImportMemories contributes many memories in one call. Each becomes an
+	// ordinary memory — evaluated on the way in and carrying the contributor's own
+	// reliability, exactly as CreateMemory does — so this is a way to write a lot
+	// at once, not a way to write differently.
+	//
+	// Every memory is judged on its own, so a refused entry does not stop the
+	// others, and each is written asynchronously: the response reports what was
+	// accepted rather than what now exists.
+	//
+	// A batch carries no operation id. RevertMemory addresses a single write, and
+	// there is no handle that undoes an import.
+	//
+	// Naming a session records the batch against it, as CreateMemory and
+	// EnrichMemory do, and supplies the domain the memories are imported into.
+	ImportMemories(ctx context.Context, in *ImportMemoriesRequest, opts ...grpc.CallOption) (*ImportMemoriesResponse, error)
 }
 
 type memoryServiceClient struct {
@@ -157,12 +173,22 @@ func (c *memoryServiceClient) RevertMemory(ctx context.Context, in *RevertMemory
 	return out, nil
 }
 
+func (c *memoryServiceClient) ImportMemories(ctx context.Context, in *ImportMemoriesRequest, opts ...grpc.CallOption) (*ImportMemoriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportMemoriesResponse)
+	err := c.cc.Invoke(ctx, MemoryService_ImportMemories_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MemoryServiceServer is the server API for MemoryService service.
 // All implementations must embed UnimplementedMemoryServiceServer
 // for forward compatibility.
 //
-// MemoryService is the shared memory surface: the eight operations a client
-// uses to find knowledge, contribute to it, and rate what it was given.
+// MemoryService is the shared memory surface: the operations a client uses to
+// find knowledge, contribute to it, and rate what it was given.
 //
 // Every identifier crossing this boundary is an external handle a previous
 // response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -195,6 +221,21 @@ type MemoryServiceServer interface {
 	// that write returned. Every outcome is a successful call: expired, refused
 	// and not_found report a caller-visible state, not a service failure.
 	RevertMemory(context.Context, *RevertMemoryRequest) (*RevertMemoryResponse, error)
+	// ImportMemories contributes many memories in one call. Each becomes an
+	// ordinary memory — evaluated on the way in and carrying the contributor's own
+	// reliability, exactly as CreateMemory does — so this is a way to write a lot
+	// at once, not a way to write differently.
+	//
+	// Every memory is judged on its own, so a refused entry does not stop the
+	// others, and each is written asynchronously: the response reports what was
+	// accepted rather than what now exists.
+	//
+	// A batch carries no operation id. RevertMemory addresses a single write, and
+	// there is no handle that undoes an import.
+	//
+	// Naming a session records the batch against it, as CreateMemory and
+	// EnrichMemory do, and supplies the domain the memories are imported into.
+	ImportMemories(context.Context, *ImportMemoriesRequest) (*ImportMemoriesResponse, error)
 	mustEmbedUnimplementedMemoryServiceServer()
 }
 
@@ -228,6 +269,9 @@ func (UnimplementedMemoryServiceServer) ShareFeedback(context.Context, *ShareFee
 }
 func (UnimplementedMemoryServiceServer) RevertMemory(context.Context, *RevertMemoryRequest) (*RevertMemoryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevertMemory not implemented")
+}
+func (UnimplementedMemoryServiceServer) ImportMemories(context.Context, *ImportMemoriesRequest) (*ImportMemoriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ImportMemories not implemented")
 }
 func (UnimplementedMemoryServiceServer) mustEmbedUnimplementedMemoryServiceServer() {}
 func (UnimplementedMemoryServiceServer) testEmbeddedByValue()                       {}
@@ -394,6 +438,24 @@ func _MemoryService_RevertMemory_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MemoryService_ImportMemories_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportMemoriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoryServiceServer).ImportMemories(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoryService_ImportMemories_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoryServiceServer).ImportMemories(ctx, req.(*ImportMemoriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MemoryService_ServiceDesc is the grpc.ServiceDesc for MemoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -432,6 +494,10 @@ var MemoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevertMemory",
 			Handler:    _MemoryService_RevertMemory_Handler,
+		},
+		{
+			MethodName: "ImportMemories",
+			Handler:    _MemoryService_ImportMemories_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

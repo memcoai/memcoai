@@ -32,7 +32,14 @@ def built(client: Memco) -> dict[str, agent.Tool]:
 # `tools` is how a caller reaches the toolset, not an operation to put in it.
 # Naming it here is the point: anything else added to the scope has to be
 # decided about rather than becoming model-callable on its own.
-NOT_AN_OPERATION = {"tools"}
+#
+# `import_memories` is a decision rather than an oversight. Its argument is a
+# sequence of memories each holding sequences of queries, insights and tags, and
+# `agent._fields` refuses any dataclass field that is not a scalar — describing
+# it would mean teaching the schema builder to recurse. A model has no use for
+# it either: a batch mints no operation id, so nothing a model imports can be
+# undone, and bulk upload is a standalone job rather than an in-loop step.
+NOT_AN_OPERATION = {"tools", "import_memories"}
 
 
 def test_the_offered_operations_are_exactly_what_the_scope_carries():

@@ -181,6 +181,7 @@ The memory operations live on `client.memory`.
 | `memory.enrich_memory(...)` | Add to a memory a search returned, or open a new one |
 | `memory.share_feedback(...)` | Rate the results of one search |
 | `memory.revert_memory(operation_id)` | Undo one of your own writes |
+| `memory.import_memories(memories, ...)` | Contribute many memories at once, splitting the batch as the service requires |
 
 ## Errors
 

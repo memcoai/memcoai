@@ -66,6 +66,7 @@ nitpick_ignore = [
     # no documentation inventory and are an implementation detail.
     ("py:class", "memco.memory.v1.memory_pb2.Tag"),
     ("py:class", "memco.memory.v1.memory_pb2.FeedbackRating"),
+    ("py:class", "memco.memory.v1.memory_pb2.ImportedInsight"),
     # Set in __init__ rather than at class level, so napoleon renders them as
     # instance-variable fields, which are not cross-reference targets.
     ("py:attr", "MemcoAPIError.code"),

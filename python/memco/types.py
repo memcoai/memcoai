@@ -13,6 +13,7 @@ without defensive copying.
 from __future__ import annotations
 
 import enum
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -25,6 +26,11 @@ __all__ = [
     "FeedbackEntry",
     "FeedbackRating",
     "FeedbackResult",
+    "ImportOutcome",
+    "ImportResult",
+    "ImportStatus",
+    "ImportedInsight",
+    "ImportedMemory",
     "Insight",
     "Instructions",
     "Limits",
@@ -106,6 +112,49 @@ class RevertOutcome(enum.Enum):
 
     @classmethod
     def from_wire(cls, value: int) -> RevertOutcome:
+        """Convert a wire value, tolerating one this SDK does not know.
+
+        Args:
+            value: The enum value as it arrived on the wire.
+
+        Returns:
+            The matching member, or :attr:`UNSPECIFIED` if the service sent a
+            value added after this SDK was released.
+        """
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.UNSPECIFIED
+
+
+class ImportStatus(enum.Enum):
+    """What became of one memory of an imported batch.
+
+    Every memory is judged on its own, so a refused entry does not stop the
+    others. None of these is an error: each reports what happened to one entry
+    of a call that succeeded.
+
+    Attributes:
+        UNSPECIFIED: No status was reported.
+        QUEUED: Accepted and queued for writing.
+        REJECTED: The entry itself was not usable; its ``errors`` say what about
+            it.
+        ERROR: The entry was usable but could not be queued. Resubmitting it is
+            the remedy: an import is written under an identity derived from its
+            own content, so a memory that did land is not duplicated by sending
+            it again.
+        DUPLICATE: The content is already in memory, so nothing was written and
+            nothing was charged. Sending the same batch again is safe and free.
+    """
+
+    UNSPECIFIED = 0
+    QUEUED = 1
+    REJECTED = 2
+    ERROR = 3
+    DUPLICATE = 4
+
+    @classmethod
+    def from_wire(cls, value: int) -> ImportStatus:
         """Convert a wire value, tolerating one this SDK does not know.
 
         Args:
@@ -239,6 +288,17 @@ class Limits:
             trims to match instead of rejecting a call the service would accept.
         max_feedback_entries: Bounds the ratings in one feedback call. Exceeding
             it is refused.
+        max_import_memories: Bounds the memories in one import call — one
+            *call*, not one batch. Exceeding it is refused, so the SDK divides a
+            longer batch into groups of this size and makes several calls; a
+            caller does not have to chunk against it.
+        max_import_queries_per_memory: Bounds the queries on one imported
+            memory. Exceeding it is refused.
+        max_import_insights_per_memory: Bounds the insights on one imported
+            memory. Exceeding it is refused.
+        max_import_tags_per_memory: Bounds the tags on one imported memory.
+            Exceeding it is refused — unlike the per-domain cap reported by
+            :attr:`DomainEntry.max_tags_per_query`, which trims.
     """
 
     max_query_characters: int
@@ -246,6 +306,10 @@ class Limits:
     max_idx_characters: int
     max_sources: int
     max_feedback_entries: int
+    max_import_memories: int
+    max_import_queries_per_memory: int
+    max_import_insights_per_memory: int
+    max_import_tags_per_memory: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,6 +329,10 @@ class DomainList:
             deprecated. It is the whole of what a caller should be shown.
         sunset_date: When what the caller uses stops working, or ``None`` when
             no date is set — which is not a promise that none will be.
+        server_commit: The build that answered this call, for quoting in a bug
+            report. Empty against a service that does not report one. This is
+            not :func:`~memco.provenance`'s ``server_commit``, which is the
+            commit the installed package was generated from.
     """
 
     domains: tuple[DomainEntry, ...]
@@ -273,6 +341,7 @@ class DomainList:
     deprecated: bool
     deprecation_message: str
     sunset_date: date | None
+    server_commit: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -478,6 +547,97 @@ class RevertResult:
 
     operation_id: str | None
     outcome: RevertOutcome
+    instructions: Instructions
+
+
+@dataclass(frozen=True, slots=True)
+class ImportedInsight:
+    """One insight to contribute as part of an imported memory.
+
+    Attributes:
+        title: Short title.
+        content: The insight itself.
+
+    Example:
+        >>> ImportedInsight(title="Bearer is case-sensitive",
+        ...                 content="Lowercase 'bearer' is rejected.")
+        ImportedInsight(title='Bearer is case-sensitive', content="Lowercase 'bearer' is rejected.")
+    """
+
+    title: str
+    content: str
+
+    def to_proto(self) -> _pb.ImportedInsight:
+        """Convert to the wire message.
+
+        Returns:
+            The protobuf ``ImportedInsight``.
+        """
+        return _pb.ImportedInsight(title=self.title, content=self.content)
+
+
+@dataclass(frozen=True, slots=True)
+class ImportedMemory:
+    """One memory to contribute: what it should be found by, and what it holds.
+
+    Attributes:
+        queries: What someone would search to find this memory. At least one is
+            required.
+        insights: What the memory holds. At least one is required.
+        tags: Tags describing the subject and context.
+
+    Example:
+        >>> memory = ImportedMemory(
+        ...     queries=["how do I authenticate against the memory API"],
+        ...     insights=[ImportedInsight(title="Bearer is case-sensitive",
+        ...                               content="Lowercase 'bearer' is rejected.")],
+        ...     tags=[Tag(type="language", value="python")],
+        ... )
+    """
+
+    queries: Sequence[str]
+    insights: Sequence[ImportedInsight]
+    tags: Sequence[Tag] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ImportOutcome:
+    """What happened to one memory of an imported batch.
+
+    An import mints no handle a caller could name a memory by, so an outcome is
+    addressed by the position its memory held in the request.
+
+    Attributes:
+        index: The position of this memory in the submitted batch.
+        status: What became of it.
+        errors: What was wrong with an entry that was not queued. Empty for one
+            that was.
+    """
+
+    index: int
+    status: ImportStatus
+    errors: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ImportResult:
+    """What an import accepted.
+
+    Each memory is written asynchronously, so this reports what was accepted
+    rather than what now exists. There is no operation id: a batch mints none,
+    and nothing undoes an import.
+
+    Attributes:
+        results: One outcome per memory submitted, in the order they were sent.
+        instructions: Guidance accompanying the result.
+
+    Example:
+        >>> result = client.memory.import_memories(batch, domain="coding")
+        >>> [(o.index, o.status.name) for o in result.results]
+        [(0, 'QUEUED'), (1, 'DUPLICATE')]
+    """
+
+    results: tuple[ImportOutcome, ...]
     instructions: Instructions
 
 

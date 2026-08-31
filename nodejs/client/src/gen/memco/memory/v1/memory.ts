@@ -160,6 +160,69 @@ export function revertOutcomeToJSON(object: RevertOutcome): string {
   }
 }
 
+/** ImportStatus is what became of one memory of a batch. */
+export enum ImportStatus {
+  IMPORT_STATUS_UNSPECIFIED = 0,
+  /** IMPORT_STATUS_QUEUED - Accepted and queued for writing. */
+  IMPORT_STATUS_QUEUED = 1,
+  /** IMPORT_STATUS_REJECTED - The entry itself was not usable; `errors` says what about it. */
+  IMPORT_STATUS_REJECTED = 2,
+  /**
+   * IMPORT_STATUS_ERROR - The entry was usable but could not be queued. Resubmitting it is the remedy;
+   * an import is written under an identity derived from its own content, so a
+   * memory that did land is not duplicated by sending it again.
+   */
+  IMPORT_STATUS_ERROR = 3,
+  /**
+   * IMPORT_STATUS_DUPLICATE - The content is already in memory, so nothing was written and nothing was
+   * charged. Sending the same batch again is safe and free.
+   */
+  IMPORT_STATUS_DUPLICATE = 4,
+  UNRECOGNIZED = -1,
+}
+
+export function importStatusFromJSON(object: any): ImportStatus {
+  switch (object) {
+    case 0:
+    case "IMPORT_STATUS_UNSPECIFIED":
+      return ImportStatus.IMPORT_STATUS_UNSPECIFIED;
+    case 1:
+    case "IMPORT_STATUS_QUEUED":
+      return ImportStatus.IMPORT_STATUS_QUEUED;
+    case 2:
+    case "IMPORT_STATUS_REJECTED":
+      return ImportStatus.IMPORT_STATUS_REJECTED;
+    case 3:
+    case "IMPORT_STATUS_ERROR":
+      return ImportStatus.IMPORT_STATUS_ERROR;
+    case 4:
+    case "IMPORT_STATUS_DUPLICATE":
+      return ImportStatus.IMPORT_STATUS_DUPLICATE;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return ImportStatus.UNRECOGNIZED;
+  }
+}
+
+export function importStatusToJSON(object: ImportStatus): string {
+  switch (object) {
+    case ImportStatus.IMPORT_STATUS_UNSPECIFIED:
+      return "IMPORT_STATUS_UNSPECIFIED";
+    case ImportStatus.IMPORT_STATUS_QUEUED:
+      return "IMPORT_STATUS_QUEUED";
+    case ImportStatus.IMPORT_STATUS_REJECTED:
+      return "IMPORT_STATUS_REJECTED";
+    case ImportStatus.IMPORT_STATUS_ERROR:
+      return "IMPORT_STATUS_ERROR";
+    case ImportStatus.IMPORT_STATUS_DUPLICATE:
+      return "IMPORT_STATUS_DUPLICATE";
+    case ImportStatus.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /**
  * Instructions is the model-facing guidance accompanying a result, held apart
  * from the data so a caller can render its own document or use this one. Each
@@ -272,6 +335,11 @@ export interface DescribeDomainsResponse {
    * Empty when no date is set, which is not a promise that none will be.
    */
   sunsetDate: string;
+  /**
+   * server_commit names the build that answered, so a caller can identify it in
+   * a bug report.
+   */
+  serverCommit: string;
 }
 
 /**
@@ -311,6 +379,16 @@ export interface Limits {
    * Exceeding it is refused with INVALID_ARGUMENT.
    */
   maxFeedbackEntries: number;
+  /**
+   * The four import caps. Each REFUSES rather than trims, so a client should
+   * split a batch that exceeds one rather than send it and have it rejected.
+   * max_import_memories bounds `memories` per ImportMemories call; the other
+   * three bound one entry of it.
+   */
+  maxImportMemories: number;
+  maxImportQueriesPerMemory: number;
+  maxImportInsightsPerMemory: number;
+  maxImportTagsPerMemory: number;
 }
 
 export interface StartSessionRequest {
@@ -512,6 +590,63 @@ export interface RevertMemoryResponse {
   operationId: string;
   outcome: RevertOutcome;
   instructions?: Instructions | undefined;
+}
+
+export interface ImportMemoriesRequest {
+  /**
+   * domain is required unless session_id is set, which supplies the domain of
+   * the session it names. Every memory of the batch is imported into that one
+   * domain; a batch cannot span domains.
+   */
+  domain: string;
+  memories: ImportedMemory[];
+  /**
+   * session_id names the session this knowledge was contributed during, so a
+   * batch gathered in the course of a task belongs to that series of work
+   * rather than standing on its own. Omitting it files the memories under no
+   * session, which is what a standalone upload wants.
+   */
+  sessionId: string;
+}
+
+/**
+ * ImportedMemory is one memory to contribute: what it should be found by, and
+ * what it holds.
+ */
+export interface ImportedMemory {
+  /**
+   * queries are what someone would search to find this memory. At least one is
+   * required.
+   */
+  queries: string[];
+  /** insights are what the memory holds. At least one is required. */
+  insights: ImportedInsight[];
+  tags: Tag[];
+}
+
+export interface ImportedInsight {
+  title: string;
+  content: string;
+}
+
+export interface ImportMemoriesResponse {
+  /** results holds one entry per memory submitted, in the order they were sent. */
+  results: ImportOutcome[];
+  instructions?: Instructions | undefined;
+}
+
+/**
+ * ImportOutcome is what happened to one memory of the batch, addressed by its
+ * position in the request: an import mints no handle a caller could name it by.
+ */
+export interface ImportOutcome {
+  index: number;
+  status: ImportStatus;
+  /**
+   * errors says what was wrong with an entry that was not queued, and is empty
+   * for one that was.
+   */
+  errors: string[];
 }
 
 function createBaseInstructions(): Instructions {
@@ -1000,6 +1135,7 @@ function createBaseDescribeDomainsResponse(): DescribeDomainsResponse {
     deprecated: false,
     deprecationMessage: "",
     sunsetDate: "",
+    serverCommit: "",
   };
 }
 
@@ -1022,6 +1158,9 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     }
     if (message.sunsetDate !== "") {
       writer.uint32(50).string(message.sunsetDate);
+    }
+    if (message.serverCommit !== "") {
+      writer.uint32(58).string(message.serverCommit);
     }
     return writer;
   },
@@ -1081,6 +1220,14 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
           message.sunsetDate = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.serverCommit = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1098,6 +1245,7 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
       deprecated: isSet(object.deprecated) ? globalThis.Boolean(object.deprecated) : false,
       deprecationMessage: isSet(object.deprecationMessage) ? globalThis.String(object.deprecationMessage) : "",
       sunsetDate: isSet(object.sunsetDate) ? globalThis.String(object.sunsetDate) : "",
+      serverCommit: isSet(object.serverCommit) ? globalThis.String(object.serverCommit) : "",
     };
   },
 
@@ -1121,6 +1269,9 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     if (message.sunsetDate !== "") {
       obj.sunsetDate = message.sunsetDate;
     }
+    if (message.serverCommit !== "") {
+      obj.serverCommit = message.serverCommit;
+    }
     return obj;
   },
 
@@ -1139,12 +1290,23 @@ export const DescribeDomainsResponse: MessageFns<DescribeDomainsResponse> = {
     message.deprecated = object.deprecated ?? false;
     message.deprecationMessage = object.deprecationMessage ?? "";
     message.sunsetDate = object.sunsetDate ?? "";
+    message.serverCommit = object.serverCommit ?? "";
     return message;
   },
 };
 
 function createBaseLimits(): Limits {
-  return { maxQueryCharacters: 0, maxTextCharacters: 0, maxIdxCharacters: 0, maxSources: 0, maxFeedbackEntries: 0 };
+  return {
+    maxQueryCharacters: 0,
+    maxTextCharacters: 0,
+    maxIdxCharacters: 0,
+    maxSources: 0,
+    maxFeedbackEntries: 0,
+    maxImportMemories: 0,
+    maxImportQueriesPerMemory: 0,
+    maxImportInsightsPerMemory: 0,
+    maxImportTagsPerMemory: 0,
+  };
 }
 
 export const Limits: MessageFns<Limits> = {
@@ -1163,6 +1325,18 @@ export const Limits: MessageFns<Limits> = {
     }
     if (message.maxFeedbackEntries !== 0) {
       writer.uint32(40).int32(message.maxFeedbackEntries);
+    }
+    if (message.maxImportMemories !== 0) {
+      writer.uint32(48).int32(message.maxImportMemories);
+    }
+    if (message.maxImportQueriesPerMemory !== 0) {
+      writer.uint32(56).int32(message.maxImportQueriesPerMemory);
+    }
+    if (message.maxImportInsightsPerMemory !== 0) {
+      writer.uint32(64).int32(message.maxImportInsightsPerMemory);
+    }
+    if (message.maxImportTagsPerMemory !== 0) {
+      writer.uint32(72).int32(message.maxImportTagsPerMemory);
     }
     return writer;
   },
@@ -1214,6 +1388,38 @@ export const Limits: MessageFns<Limits> = {
           message.maxFeedbackEntries = reader.int32();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.maxImportMemories = reader.int32();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.maxImportQueriesPerMemory = reader.int32();
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.maxImportInsightsPerMemory = reader.int32();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.maxImportTagsPerMemory = reader.int32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1230,6 +1436,16 @@ export const Limits: MessageFns<Limits> = {
       maxIdxCharacters: isSet(object.maxIdxCharacters) ? globalThis.Number(object.maxIdxCharacters) : 0,
       maxSources: isSet(object.maxSources) ? globalThis.Number(object.maxSources) : 0,
       maxFeedbackEntries: isSet(object.maxFeedbackEntries) ? globalThis.Number(object.maxFeedbackEntries) : 0,
+      maxImportMemories: isSet(object.maxImportMemories) ? globalThis.Number(object.maxImportMemories) : 0,
+      maxImportQueriesPerMemory: isSet(object.maxImportQueriesPerMemory)
+        ? globalThis.Number(object.maxImportQueriesPerMemory)
+        : 0,
+      maxImportInsightsPerMemory: isSet(object.maxImportInsightsPerMemory)
+        ? globalThis.Number(object.maxImportInsightsPerMemory)
+        : 0,
+      maxImportTagsPerMemory: isSet(object.maxImportTagsPerMemory)
+        ? globalThis.Number(object.maxImportTagsPerMemory)
+        : 0,
     };
   },
 
@@ -1250,6 +1466,18 @@ export const Limits: MessageFns<Limits> = {
     if (message.maxFeedbackEntries !== 0) {
       obj.maxFeedbackEntries = Math.round(message.maxFeedbackEntries);
     }
+    if (message.maxImportMemories !== 0) {
+      obj.maxImportMemories = Math.round(message.maxImportMemories);
+    }
+    if (message.maxImportQueriesPerMemory !== 0) {
+      obj.maxImportQueriesPerMemory = Math.round(message.maxImportQueriesPerMemory);
+    }
+    if (message.maxImportInsightsPerMemory !== 0) {
+      obj.maxImportInsightsPerMemory = Math.round(message.maxImportInsightsPerMemory);
+    }
+    if (message.maxImportTagsPerMemory !== 0) {
+      obj.maxImportTagsPerMemory = Math.round(message.maxImportTagsPerMemory);
+    }
     return obj;
   },
 
@@ -1263,6 +1491,10 @@ export const Limits: MessageFns<Limits> = {
     message.maxIdxCharacters = object.maxIdxCharacters ?? 0;
     message.maxSources = object.maxSources ?? 0;
     message.maxFeedbackEntries = object.maxFeedbackEntries ?? 0;
+    message.maxImportMemories = object.maxImportMemories ?? 0;
+    message.maxImportQueriesPerMemory = object.maxImportQueriesPerMemory ?? 0;
+    message.maxImportInsightsPerMemory = object.maxImportInsightsPerMemory ?? 0;
+    message.maxImportTagsPerMemory = object.maxImportTagsPerMemory ?? 0;
     return message;
   },
 };
@@ -3049,9 +3281,445 @@ export const RevertMemoryResponse: MessageFns<RevertMemoryResponse> = {
   },
 };
 
+function createBaseImportMemoriesRequest(): ImportMemoriesRequest {
+  return { domain: "", memories: [], sessionId: "" };
+}
+
+export const ImportMemoriesRequest: MessageFns<ImportMemoriesRequest> = {
+  encode(message: ImportMemoriesRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.domain !== "") {
+      writer.uint32(10).string(message.domain);
+    }
+    for (const v of message.memories) {
+      ImportedMemory.encode(v!, writer.uint32(18).fork()).join();
+    }
+    if (message.sessionId !== "") {
+      writer.uint32(26).string(message.sessionId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ImportMemoriesRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseImportMemoriesRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.domain = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.memories.push(ImportedMemory.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.sessionId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ImportMemoriesRequest {
+    return {
+      domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
+      memories: globalThis.Array.isArray(object?.memories)
+        ? object.memories.map((e: any) => ImportedMemory.fromJSON(e))
+        : [],
+      sessionId: isSet(object.sessionId) ? globalThis.String(object.sessionId) : "",
+    };
+  },
+
+  toJSON(message: ImportMemoriesRequest): unknown {
+    const obj: any = {};
+    if (message.domain !== "") {
+      obj.domain = message.domain;
+    }
+    if (message.memories?.length) {
+      obj.memories = message.memories.map((e) => ImportedMemory.toJSON(e));
+    }
+    if (message.sessionId !== "") {
+      obj.sessionId = message.sessionId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ImportMemoriesRequest>, I>>(base?: I): ImportMemoriesRequest {
+    return ImportMemoriesRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ImportMemoriesRequest>, I>>(object: I): ImportMemoriesRequest {
+    const message = createBaseImportMemoriesRequest();
+    message.domain = object.domain ?? "";
+    message.memories = object.memories?.map((e) => ImportedMemory.fromPartial(e)) || [];
+    message.sessionId = object.sessionId ?? "";
+    return message;
+  },
+};
+
+function createBaseImportedMemory(): ImportedMemory {
+  return { queries: [], insights: [], tags: [] };
+}
+
+export const ImportedMemory: MessageFns<ImportedMemory> = {
+  encode(message: ImportedMemory, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.queries) {
+      writer.uint32(10).string(v!);
+    }
+    for (const v of message.insights) {
+      ImportedInsight.encode(v!, writer.uint32(18).fork()).join();
+    }
+    for (const v of message.tags) {
+      Tag.encode(v!, writer.uint32(26).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ImportedMemory {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseImportedMemory();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.queries.push(reader.string());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.insights.push(ImportedInsight.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.tags.push(Tag.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ImportedMemory {
+    return {
+      queries: globalThis.Array.isArray(object?.queries) ? object.queries.map((e: any) => globalThis.String(e)) : [],
+      insights: globalThis.Array.isArray(object?.insights)
+        ? object.insights.map((e: any) => ImportedInsight.fromJSON(e))
+        : [],
+      tags: globalThis.Array.isArray(object?.tags) ? object.tags.map((e: any) => Tag.fromJSON(e)) : [],
+    };
+  },
+
+  toJSON(message: ImportedMemory): unknown {
+    const obj: any = {};
+    if (message.queries?.length) {
+      obj.queries = message.queries;
+    }
+    if (message.insights?.length) {
+      obj.insights = message.insights.map((e) => ImportedInsight.toJSON(e));
+    }
+    if (message.tags?.length) {
+      obj.tags = message.tags.map((e) => Tag.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ImportedMemory>, I>>(base?: I): ImportedMemory {
+    return ImportedMemory.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ImportedMemory>, I>>(object: I): ImportedMemory {
+    const message = createBaseImportedMemory();
+    message.queries = object.queries?.map((e) => e) || [];
+    message.insights = object.insights?.map((e) => ImportedInsight.fromPartial(e)) || [];
+    message.tags = object.tags?.map((e) => Tag.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseImportedInsight(): ImportedInsight {
+  return { title: "", content: "" };
+}
+
+export const ImportedInsight: MessageFns<ImportedInsight> = {
+  encode(message: ImportedInsight, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.title !== "") {
+      writer.uint32(10).string(message.title);
+    }
+    if (message.content !== "") {
+      writer.uint32(18).string(message.content);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ImportedInsight {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseImportedInsight();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.title = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.content = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ImportedInsight {
+    return {
+      title: isSet(object.title) ? globalThis.String(object.title) : "",
+      content: isSet(object.content) ? globalThis.String(object.content) : "",
+    };
+  },
+
+  toJSON(message: ImportedInsight): unknown {
+    const obj: any = {};
+    if (message.title !== "") {
+      obj.title = message.title;
+    }
+    if (message.content !== "") {
+      obj.content = message.content;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ImportedInsight>, I>>(base?: I): ImportedInsight {
+    return ImportedInsight.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ImportedInsight>, I>>(object: I): ImportedInsight {
+    const message = createBaseImportedInsight();
+    message.title = object.title ?? "";
+    message.content = object.content ?? "";
+    return message;
+  },
+};
+
+function createBaseImportMemoriesResponse(): ImportMemoriesResponse {
+  return { results: [], instructions: undefined };
+}
+
+export const ImportMemoriesResponse: MessageFns<ImportMemoriesResponse> = {
+  encode(message: ImportMemoriesResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.results) {
+      ImportOutcome.encode(v!, writer.uint32(10).fork()).join();
+    }
+    if (message.instructions !== undefined) {
+      Instructions.encode(message.instructions, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ImportMemoriesResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseImportMemoriesResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.results.push(ImportOutcome.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.instructions = Instructions.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ImportMemoriesResponse {
+    return {
+      results: globalThis.Array.isArray(object?.results)
+        ? object.results.map((e: any) => ImportOutcome.fromJSON(e))
+        : [],
+      instructions: isSet(object.instructions) ? Instructions.fromJSON(object.instructions) : undefined,
+    };
+  },
+
+  toJSON(message: ImportMemoriesResponse): unknown {
+    const obj: any = {};
+    if (message.results?.length) {
+      obj.results = message.results.map((e) => ImportOutcome.toJSON(e));
+    }
+    if (message.instructions !== undefined) {
+      obj.instructions = Instructions.toJSON(message.instructions);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ImportMemoriesResponse>, I>>(base?: I): ImportMemoriesResponse {
+    return ImportMemoriesResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ImportMemoriesResponse>, I>>(object: I): ImportMemoriesResponse {
+    const message = createBaseImportMemoriesResponse();
+    message.results = object.results?.map((e) => ImportOutcome.fromPartial(e)) || [];
+    message.instructions = (object.instructions !== undefined && object.instructions !== null)
+      ? Instructions.fromPartial(object.instructions)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseImportOutcome(): ImportOutcome {
+  return { index: 0, status: 0, errors: [] };
+}
+
+export const ImportOutcome: MessageFns<ImportOutcome> = {
+  encode(message: ImportOutcome, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.index !== 0) {
+      writer.uint32(8).int32(message.index);
+    }
+    if (message.status !== 0) {
+      writer.uint32(16).int32(message.status);
+    }
+    for (const v of message.errors) {
+      writer.uint32(26).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ImportOutcome {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseImportOutcome();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.index = reader.int32();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.status = reader.int32() as any;
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.errors.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ImportOutcome {
+    return {
+      index: isSet(object.index) ? globalThis.Number(object.index) : 0,
+      status: isSet(object.status) ? importStatusFromJSON(object.status) : 0,
+      errors: globalThis.Array.isArray(object?.errors) ? object.errors.map((e: any) => globalThis.String(e)) : [],
+    };
+  },
+
+  toJSON(message: ImportOutcome): unknown {
+    const obj: any = {};
+    if (message.index !== 0) {
+      obj.index = Math.round(message.index);
+    }
+    if (message.status !== 0) {
+      obj.status = importStatusToJSON(message.status);
+    }
+    if (message.errors?.length) {
+      obj.errors = message.errors;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ImportOutcome>, I>>(base?: I): ImportOutcome {
+    return ImportOutcome.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ImportOutcome>, I>>(object: I): ImportOutcome {
+    const message = createBaseImportOutcome();
+    message.index = object.index ?? 0;
+    message.status = object.status ?? 0;
+    message.errors = object.errors?.map((e) => e) || [];
+    return message;
+  },
+};
+
 /**
- * MemoryService is the shared memory surface: the eight operations a client
- * uses to find knowledge, contribute to it, and rate what it was given.
+ * MemoryService is the shared memory surface: the operations a client uses to
+ * find knowledge, contribute to it, and rate what it was given.
  *
  * Every identifier crossing this boundary is an external handle a previous
  * response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -3164,6 +3832,31 @@ export const MemoryServiceService = {
     responseSerialize: (value: RevertMemoryResponse) => Buffer.from(RevertMemoryResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer) => RevertMemoryResponse.decode(value),
   },
+  /**
+   * ImportMemories contributes many memories in one call. Each becomes an
+   * ordinary memory — evaluated on the way in and carrying the contributor's own
+   * reliability, exactly as CreateMemory does — so this is a way to write a lot
+   * at once, not a way to write differently.
+   *
+   * Every memory is judged on its own, so a refused entry does not stop the
+   * others, and each is written asynchronously: the response reports what was
+   * accepted rather than what now exists.
+   *
+   * A batch carries no operation id. RevertMemory addresses a single write, and
+   * there is no handle that undoes an import.
+   *
+   * Naming a session records the batch against it, as CreateMemory and
+   * EnrichMemory do, and supplies the domain the memories are imported into.
+   */
+  importMemories: {
+    path: "/memco.memory.v1.MemoryService/ImportMemories",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: ImportMemoriesRequest) => Buffer.from(ImportMemoriesRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ImportMemoriesRequest.decode(value),
+    responseSerialize: (value: ImportMemoriesResponse) => Buffer.from(ImportMemoriesResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ImportMemoriesResponse.decode(value),
+  },
 } as const;
 
 export interface MemoryServiceServer extends UntypedServiceImplementation {
@@ -3207,6 +3900,23 @@ export interface MemoryServiceServer extends UntypedServiceImplementation {
    * and not_found report a caller-visible state, not a service failure.
    */
   revertMemory: handleUnaryCall<RevertMemoryRequest, RevertMemoryResponse>;
+  /**
+   * ImportMemories contributes many memories in one call. Each becomes an
+   * ordinary memory — evaluated on the way in and carrying the contributor's own
+   * reliability, exactly as CreateMemory does — so this is a way to write a lot
+   * at once, not a way to write differently.
+   *
+   * Every memory is judged on its own, so a refused entry does not stop the
+   * others, and each is written asynchronously: the response reports what was
+   * accepted rather than what now exists.
+   *
+   * A batch carries no operation id. RevertMemory addresses a single write, and
+   * there is no handle that undoes an import.
+   *
+   * Naming a session records the batch against it, as CreateMemory and
+   * EnrichMemory do, and supplies the domain the memories are imported into.
+   */
+  importMemories: handleUnaryCall<ImportMemoriesRequest, ImportMemoriesResponse>;
 }
 
 export interface MemoryServiceClient extends Client {
@@ -3361,6 +4071,37 @@ export interface MemoryServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: RevertMemoryResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * ImportMemories contributes many memories in one call. Each becomes an
+   * ordinary memory — evaluated on the way in and carrying the contributor's own
+   * reliability, exactly as CreateMemory does — so this is a way to write a lot
+   * at once, not a way to write differently.
+   *
+   * Every memory is judged on its own, so a refused entry does not stop the
+   * others, and each is written asynchronously: the response reports what was
+   * accepted rather than what now exists.
+   *
+   * A batch carries no operation id. RevertMemory addresses a single write, and
+   * there is no handle that undoes an import.
+   *
+   * Naming a session records the batch against it, as CreateMemory and
+   * EnrichMemory do, and supplies the domain the memories are imported into.
+   */
+  importMemories(
+    request: ImportMemoriesRequest,
+    callback: (error: ServiceError | null, response: ImportMemoriesResponse) => void,
+  ): ClientUnaryCall;
+  importMemories(
+    request: ImportMemoriesRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ImportMemoriesResponse) => void,
+  ): ClientUnaryCall;
+  importMemories(
+    request: ImportMemoriesRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ImportMemoriesResponse) => void,
   ): ClientUnaryCall;
 }
 

@@ -175,7 +175,7 @@ def test_enrich_requires_a_session(client: Memco, harness: Harness):
     assert harness.memory.calls == []
 
 
-# --- the eight operations ------------------------------------------------
+# --- the operations ------------------------------------------------------
 
 
 def test_describe_domains(client: Memco, harness: Harness):
@@ -221,6 +221,51 @@ def test_share_feedback(client: Memco):
         feedback=[types.FeedbackRating(idx="memory-a-1", relevant=True, correct=True)],
     )
     assert result.session_id == "session-a"
+
+
+def test_import_memories(client: Memco, harness: Harness):
+    result = client.memory.import_memories(
+        [
+            types.ImportedMemory(
+                queries=["how does X work", "and how does X fail"],
+                insights=[types.ImportedInsight(title="first", content="one")],
+            ),
+            types.ImportedMemory(
+                queries=["how does Y work"],
+                insights=[types.ImportedInsight(title="second", content="two")],
+            ),
+        ],
+        domain="coding",
+    )
+    # An import mints no handle, so an outcome is addressed by the position its
+    # memory held in the request. Assert the batch off the wire: the outcomes
+    # come back in arrival order whatever was sent, so reading them alone would
+    # pass even if the entries had been reordered, dropped or flattened.
+    sent = harness.memory.requests["ImportMemories"]
+    assert sent.domain == "coding"
+    assert [list(memory.queries) for memory in sent.memories] == [
+        ["how does X work", "and how does X fail"],
+        ["how does Y work"],
+    ]
+    assert [(i.title, i.content) for m in sent.memories for i in m.insights] == [
+        ("first", "one"),
+        ("second", "two"),
+    ]
+    assert [outcome.index for outcome in result.results] == [0, 1]
+    assert all(o.status is types.ImportStatus.QUEUED for o in result.results)
+
+
+def test_import_requires_a_domain_or_a_session(client: Memco, harness: Harness):
+    harness.memory.calls.clear()
+    with pytest.raises(errors.MemcoInvalidRequestError):
+        client.memory.import_memories(
+            [
+                types.ImportedMemory(
+                    queries=["q"], insights=[types.ImportedInsight(title="t", content="c")]
+                )
+            ]
+        )
+    assert harness.memory.calls == []
 
 
 def test_revert_memory_reports_an_outcome_rather_than_raising(client: Memco):

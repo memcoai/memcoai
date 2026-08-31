@@ -20,6 +20,7 @@ the framework wiring and nothing more.
 | [`quickstart_async.py`](quickstart_async.py) | The same, on `AsyncClient` |
 | [`search_and_rate.py`](search_and_rate.py) | The full read loop: session, search, rate what came back |
 | [`contribute.py`](contribute.py) | Write knowledge back, and undo it |
+| [`import_memories.py`](import_memories.py) | Contribute many memories at once, and read what became of each |
 | [`handling_errors.py`](handling_errors.py) | Every failure mode, and what to do about each |
 | [`concurrent_searches_async.py`](concurrent_searches_async.py) | Many searches on one connection |
 | [`langchain_agent.py`](langchain_agent.py) | Wiring `memco.agent` into a LangChain agent |

@@ -54,6 +54,12 @@ Deliberately absent, and why each one is worse than it looks:
 
 * ``CreateMemory``, ``EnrichMemory``, ``ShareFeedback``, ``RevertMemory`` mint
   an operation id on the terminal side. A replay writes twice.
+* ``ImportMemories`` mints none, and the service writes each entry under an
+  identity derived from its own content, so a replay genuinely does not write
+  twice. It is still out: the second attempt reports what the first already
+  landed as ``DUPLICATE`` rather than ``QUEUED``, and that is the field a caller
+  reads to find out what its upload achieved. Retrying would silently answer a
+  question about this call with the state left by the previous one.
 * ``StartSession`` mints a session id.
 * ``Search`` mints one too. The contract is explicit that omitting
   ``session_id`` opens a session and returns it on the response, so replaying

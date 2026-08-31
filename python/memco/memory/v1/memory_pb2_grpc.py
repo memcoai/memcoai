@@ -26,8 +26,8 @@ if _version_not_supported:
 
 
 class MemoryServiceStub(object):
-    """MemoryService is the shared memory surface: the eight operations a client
-    uses to find knowledge, contribute to it, and rate what it was given.
+    """MemoryService is the shared memory surface: the operations a client uses to
+    find knowledge, contribute to it, and rate what it was given.
 
     Every identifier crossing this boundary is an external handle a previous
     response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -81,11 +81,16 @@ class MemoryServiceStub(object):
                 request_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.RevertMemoryRequest.SerializeToString,
                 response_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.RevertMemoryResponse.FromString,
                 _registered_method=True)
+        self.ImportMemories = channel.unary_unary(
+                '/memco.memory.v1.MemoryService/ImportMemories',
+                request_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.ImportMemoriesRequest.SerializeToString,
+                response_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.ImportMemoriesResponse.FromString,
+                _registered_method=True)
 
 
 class MemoryServiceServicer(object):
-    """MemoryService is the shared memory surface: the eight operations a client
-    uses to find knowledge, contribute to it, and rate what it was given.
+    """MemoryService is the shared memory surface: the operations a client uses to
+    find knowledge, contribute to it, and rate what it was given.
 
     Every identifier crossing this boundary is an external handle a previous
     response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -159,6 +164,26 @@ class MemoryServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ImportMemories(self, request, context):
+        """ImportMemories contributes many memories in one call. Each becomes an
+        ordinary memory — evaluated on the way in and carrying the contributor's own
+        reliability, exactly as CreateMemory does — so this is a way to write a lot
+        at once, not a way to write differently.
+
+        Every memory is judged on its own, so a refused entry does not stop the
+        others, and each is written asynchronously: the response reports what was
+        accepted rather than what now exists.
+
+        A batch carries no operation id. RevertMemory addresses a single write, and
+        there is no handle that undoes an import.
+
+        Naming a session records the batch against it, as CreateMemory and
+        EnrichMemory do, and supplies the domain the memories are imported into.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_MemoryServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -202,6 +227,11 @@ def add_MemoryServiceServicer_to_server(servicer, server):
                     request_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.RevertMemoryRequest.FromString,
                     response_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.RevertMemoryResponse.SerializeToString,
             ),
+            'ImportMemories': grpc.unary_unary_rpc_method_handler(
+                    servicer.ImportMemories,
+                    request_deserializer=memco_dot_memory_dot_v1_dot_memory__pb2.ImportMemoriesRequest.FromString,
+                    response_serializer=memco_dot_memory_dot_v1_dot_memory__pb2.ImportMemoriesResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'memco.memory.v1.MemoryService', rpc_method_handlers)
@@ -211,8 +241,8 @@ def add_MemoryServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class MemoryService(object):
-    """MemoryService is the shared memory surface: the eight operations a client
-    uses to find knowledge, contribute to it, and rate what it was given.
+    """MemoryService is the shared memory surface: the operations a client uses to
+    find knowledge, contribute to it, and rate what it was given.
 
     Every identifier crossing this boundary is an external handle a previous
     response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -426,6 +456,33 @@ class MemoryService(object):
             '/memco.memory.v1.MemoryService/RevertMemory',
             memco_dot_memory_dot_v1_dot_memory__pb2.RevertMemoryRequest.SerializeToString,
             memco_dot_memory_dot_v1_dot_memory__pb2.RevertMemoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ImportMemories(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memco.memory.v1.MemoryService/ImportMemories',
+            memco_dot_memory_dot_v1_dot_memory__pb2.ImportMemoriesRequest.SerializeToString,
+            memco_dot_memory_dot_v1_dot_memory__pb2.ImportMemoriesResponse.FromString,
             options,
             channel_credentials,
             insecure,

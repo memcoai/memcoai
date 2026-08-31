@@ -16,6 +16,8 @@ from .types import (
     DomainList,
     FeedbackRating,
     FeedbackResult,
+    ImportedMemory,
+    ImportResult,
     Instructions,
     Memory,
     RevertResult,
@@ -414,6 +416,77 @@ class MemoryOperations:
         request = _requests.revert_memory_request(operation_id, self._known)
         return _convert.to_revert_result(self._call(self._stub.RevertMemory, request, timeout))
 
+    def import_memories(
+        self,
+        memories: Sequence[ImportedMemory],
+        *,
+        domain: str | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+    ) -> ImportResult:
+        """Contribute many memories in one call.
+
+        Each becomes an ordinary memory, evaluated on the way in exactly as
+        :meth:`create_memory` is, so this is a way to write a lot at once rather
+        than a way to write differently. Every memory is judged on its own, so a
+        refused entry does not stop the others.
+
+        A batch of any length is accepted. The service caps how many memories
+        one call may carry, so a longer batch is divided into groups of that
+        size and sent as several calls; the outcomes come back numbered against
+        the batch as submitted, not against the group each was sent in.
+
+        A batch mints no operation id, so there is no handle that undoes an
+        import. Resending one is safe: an import is written under an identity
+        derived from its own content, so a memory that already landed comes back
+        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
+        twice. That is also what to do if a call partway through a long batch
+        fails — resend the whole thing, and what already landed costs nothing.
+
+        Args:
+            memories: The memories to contribute. Each needs at least one query
+                and at least one insight.
+            domain: Slug of the domain to import into. Required unless
+                ``session_id`` is given. A batch cannot span domains.
+            session_id: The session this knowledge was contributed during.
+                Omitting it files the memories under no session, which is what a
+                standalone upload wants.
+            timeout: Per-call deadline in seconds. Defaults to the client's.
+
+        Returns:
+            One outcome per memory submitted, in the order they were sent.
+
+        Raises:
+            MemcoInvalidRequestError: If the batch is empty, if an entry is
+                invalid or exceeds a reported per-entry cap, or if neither a
+                domain nor a session was given.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> result = client.memory.import_memories(
+            ...     [
+            ...         ImportedMemory(
+            ...             queries=["how do I authenticate against the memory API"],
+            ...             insights=[ImportedInsight(title="Bearer is case-sensitive",
+            ...                                       content="Lowercase 'bearer' is rejected.")],
+            ...             tags=[Tag(type="language", value="python")],
+            ...         )
+            ...     ],
+            ...     domain="coding",
+            ... )
+            >>> [(o.index, o.status.name) for o in result.results]
+            [(0, 'QUEUED')]
+        """
+        batches = _requests.import_memories_requests(
+            memories, domain=domain, session_id=session_id, known=self._known
+        )
+        return _convert.to_import_result(
+            [
+                (offset, self._call(self._stub.ImportMemories, request, timeout))
+                for offset, request in batches
+            ]
+        )
+
 
 class AsyncMemoryOperations:
     """The memory operations, on an asyncio client.
@@ -806,6 +879,77 @@ class AsyncMemoryOperations:
             await self._call(self._stub.RevertMemory, request, timeout)
         )
 
+    async def import_memories(
+        self,
+        memories: Sequence[ImportedMemory],
+        *,
+        domain: str | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+    ) -> ImportResult:
+        """Contribute many memories in one call.
+
+        Each becomes an ordinary memory, evaluated on the way in exactly as
+        :meth:`create_memory` is, so this is a way to write a lot at once rather
+        than a way to write differently. Every memory is judged on its own, so a
+        refused entry does not stop the others.
+
+        A batch of any length is accepted. The service caps how many memories
+        one call may carry, so a longer batch is divided into groups of that
+        size and sent as several calls; the outcomes come back numbered against
+        the batch as submitted, not against the group each was sent in.
+
+        A batch mints no operation id, so there is no handle that undoes an
+        import. Resending one is safe: an import is written under an identity
+        derived from its own content, so a memory that already landed comes back
+        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
+        twice. That is also what to do if a call partway through a long batch
+        fails — resend the whole thing, and what already landed costs nothing.
+
+        Args:
+            memories: The memories to contribute. Each needs at least one query
+                and at least one insight.
+            domain: Slug of the domain to import into. Required unless
+                ``session_id`` is given. A batch cannot span domains.
+            session_id: The session this knowledge was contributed during.
+                Omitting it files the memories under no session, which is what a
+                standalone upload wants.
+            timeout: Per-call deadline in seconds. Defaults to the client's.
+
+        Returns:
+            One outcome per memory submitted, in the order they were sent.
+
+        Raises:
+            MemcoInvalidRequestError: If the batch is empty, if an entry is
+                invalid or exceeds a reported per-entry cap, or if neither a
+                domain nor a session was given.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> result = await client.memory.import_memories(
+            ...     [
+            ...         ImportedMemory(
+            ...             queries=["how do I authenticate against the memory API"],
+            ...             insights=[ImportedInsight(title="Bearer is case-sensitive",
+            ...                                       content="Lowercase 'bearer' is rejected.")],
+            ...             tags=[Tag(type="language", value="python")],
+            ...         )
+            ...     ],
+            ...     domain="coding",
+            ... )
+            >>> [(o.index, o.status.name) for o in result.results]
+            [(0, 'QUEUED')]
+        """
+        batches = _requests.import_memories_requests(
+            memories, domain=domain, session_id=session_id, known=self._known
+        )
+        return _convert.to_import_result(
+            [
+                (offset, await self._call(self._stub.ImportMemories, request, timeout))
+                for offset, request in batches
+            ]
+        )
+
 
 class SessionScope:
     """The memory operations with one session already applied.
@@ -1105,6 +1249,58 @@ class SessionScope:
             ...     print("outside the revert window")
         """
         return self._operations.revert_memory(operation_id, timeout=timeout)
+
+    def import_memories(
+        self, memories: Sequence[ImportedMemory], *, timeout: float | None = None
+    ) -> ImportResult:
+        """Contribute many memories in one call, attributed to this scope's session.
+
+        Each becomes an ordinary memory, evaluated on the way in exactly as
+        :meth:`create_memory` is, so this is a way to write a lot at once rather
+        than a way to write differently. Every memory is judged on its own, so a
+        refused entry does not stop the others.
+
+        A batch of any length is accepted. The service caps how many memories
+        one call may carry, so a longer batch is divided into groups of that
+        size and sent as several calls; the outcomes come back numbered against
+        the batch as submitted, not against the group each was sent in.
+
+        A batch mints no operation id, so there is no handle that undoes an
+        import. Resending one is safe: an import is written under an identity
+        derived from its own content, so a memory that already landed comes back
+        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
+        twice. That is also what to do if a call partway through a long batch
+        fails — resend the whole thing, and what already landed costs nothing.
+
+        Args:
+            memories: The memories to contribute. Each needs at least one query
+                and at least one insight.
+            timeout: Per-call deadline in seconds. Defaults to the client's.
+
+        Returns:
+            One outcome per memory submitted, in the order they were sent.
+
+        Raises:
+            MemcoInvalidRequestError: If the batch is empty, or if an entry is
+                invalid or exceeds a reported per-entry cap.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> result = session.import_memories(
+            ...     [
+            ...         ImportedMemory(
+            ...             queries=["how do I authenticate against the memory API"],
+            ...             insights=[ImportedInsight(title="Bearer is case-sensitive",
+            ...                                       content="Lowercase 'bearer' is rejected.")],
+            ...         )
+            ...     ]
+            ... )
+            >>> [(o.index, o.status.name) for o in result.results]
+            [(0, 'QUEUED')]
+        """
+        return self._operations.import_memories(
+            memories, session_id=self.session_id, timeout=timeout
+        )
 
     def tools(self) -> Toolset:
         """This session's operations, described and rendered for an LLM.
@@ -1436,6 +1632,58 @@ class AsyncSessionScope:
             ...     print("outside the revert window")
         """
         return await self._operations.revert_memory(operation_id, timeout=timeout)
+
+    async def import_memories(
+        self, memories: Sequence[ImportedMemory], *, timeout: float | None = None
+    ) -> ImportResult:
+        """Contribute many memories in one call, attributed to this scope's session.
+
+        Each becomes an ordinary memory, evaluated on the way in exactly as
+        :meth:`create_memory` is, so this is a way to write a lot at once rather
+        than a way to write differently. Every memory is judged on its own, so a
+        refused entry does not stop the others.
+
+        A batch of any length is accepted. The service caps how many memories
+        one call may carry, so a longer batch is divided into groups of that
+        size and sent as several calls; the outcomes come back numbered against
+        the batch as submitted, not against the group each was sent in.
+
+        A batch mints no operation id, so there is no handle that undoes an
+        import. Resending one is safe: an import is written under an identity
+        derived from its own content, so a memory that already landed comes back
+        as :attr:`~memco.types.ImportStatus.DUPLICATE` rather than being written
+        twice. That is also what to do if a call partway through a long batch
+        fails — resend the whole thing, and what already landed costs nothing.
+
+        Args:
+            memories: The memories to contribute. Each needs at least one query
+                and at least one insight.
+            timeout: Per-call deadline in seconds. Defaults to the client's.
+
+        Returns:
+            One outcome per memory submitted, in the order they were sent.
+
+        Raises:
+            MemcoInvalidRequestError: If the batch is empty, or if an entry is
+                invalid or exceeds a reported per-entry cap.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> result = await session.import_memories(
+            ...     [
+            ...         ImportedMemory(
+            ...             queries=["how do I authenticate against the memory API"],
+            ...             insights=[ImportedInsight(title="Bearer is case-sensitive",
+            ...                                       content="Lowercase 'bearer' is rejected.")],
+            ...         )
+            ...     ]
+            ... )
+            >>> [(o.index, o.status.name) for o in result.results]
+            [(0, 'QUEUED')]
+        """
+        return await self._operations.import_memories(
+            memories, session_id=self.session_id, timeout=timeout
+        )
 
     def tools(self) -> AsyncToolset:
         """This session's operations, described and rendered for an LLM.

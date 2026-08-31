@@ -126,10 +126,10 @@ async def test_validation_fires_before_any_rpc(async_client: AsyncMemco, harness
     assert harness.memory.calls == []
 
 
-# --- the eight operations ------------------------------------------------
+# --- the operations ------------------------------------------------------
 
 
-async def test_all_eight_operations_round_trip(async_client: AsyncMemco, harness: Harness):
+async def test_every_operation_round_trips(async_client: AsyncMemco, harness: Harness):
     harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
         domains=[pb.DomainEntry(slug="coding")]
     )
@@ -161,6 +161,17 @@ async def test_all_eight_operations_round_trip(async_client: AsyncMemco, harness
 
     reverted = await async_client.memory.revert_memory("create-a")
     assert reverted.outcome is types.RevertOutcome.MERGED
+
+    imported = await async_client.memory.import_memories(
+        [
+            types.ImportedMemory(
+                queries=["how does X work"],
+                insights=[types.ImportedInsight(title="t", content="c")],
+            )
+        ],
+        session_id=session.session_id,
+    )
+    assert [o.status for o in imported.results] == [types.ImportStatus.QUEUED]
 
 
 # --- lifecycle -----------------------------------------------------------

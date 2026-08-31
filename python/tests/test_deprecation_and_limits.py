@@ -7,7 +7,7 @@ from datetime import date
 
 import pytest
 
-from memco import Memco, MemcoDeprecationWarning, errors, types
+from memco import AsyncMemco, Memco, MemcoDeprecationWarning, errors, types
 from memco._deprecation import reset_warnings
 from memco.memory.v1 import memory_pb2 as pb
 
@@ -54,6 +54,10 @@ def test_limits_reach_the_caller(client: Memco, harness: Harness):
             max_idx_characters=32,
             max_sources=3,
             max_feedback_entries=5,
+            max_import_memories=50,
+            max_import_queries_per_memory=6,
+            max_import_insights_per_memory=7,
+            max_import_tags_per_memory=8,
         )
     )
     limits = client.memory.describe_domains().limits
@@ -61,6 +65,10 @@ def test_limits_reach_the_caller(client: Memco, harness: Harness):
     assert limits.max_query_characters == 100
     assert limits.max_text_characters == 200
     assert limits.max_sources == 3
+    assert limits.max_import_memories == 50
+    assert limits.max_import_queries_per_memory == 6
+    assert limits.max_import_insights_per_memory == 7
+    assert limits.max_import_tags_per_memory == 8
 
 
 def test_per_domain_tag_cap_reaches_the_caller(client: Memco, harness: Harness):
@@ -182,7 +190,7 @@ def test_the_warning_category_is_visible_by_default():
     assert issubclass(MemcoDeprecationWarning, FutureWarning)
 
 
-# --- limits: four refuse, two trim ---------------------------------------
+# --- limits: eight refuse, two trim --------------------------------------
 
 
 def limited(client: Memco, harness: Harness, **limits) -> None:
@@ -260,3 +268,116 @@ def test_limits_are_not_applied_before_they_are_known(client: Memco, harness: Ha
     # Nothing has taught the client any limits, so the service rules.
     client.memory.search("x" * 5000, domain="coding")
     assert harness.memory.calls == ["Search"]
+
+
+# --- limits: the import caps all refuse, and name the entry at fault ------
+
+
+def imported(**overrides) -> types.ImportedMemory:
+    """One valid imported memory, with fields swapped out per test."""
+    fields = {
+        "queries": ["how does X work"],
+        "insights": [types.ImportedInsight(title="t", content="c")],
+    }
+    return types.ImportedMemory(**{**fields, **overrides})
+
+
+def test_a_batch_over_the_reported_cap_is_split_rather_than_refused(
+    client: Memco, harness: Harness
+):
+    # The cap bounds one call, not one batch. A caller with more memories than
+    # the service takes at once should not have to discover the number and chunk
+    # against it, so the SDK splits and calls again.
+    limited(client, harness, max_import_memories=2)
+    harness.memory.calls.clear()
+    result = client.memory.import_memories([imported()] * 5, domain="coding")
+    assert harness.memory.calls == ["ImportMemories"] * 3
+    # Each group numbers its own results from zero, so without a remap the
+    # caller would get 0,1,0,1,0 and be unable to tell the entries apart.
+    assert [outcome.index for outcome in result.results] == [0, 1, 2, 3, 4]
+    # The last group carries the remainder; none exceeds the cap.
+    assert len(harness.memory.requests["ImportMemories"].memories) == 1
+
+
+async def test_the_async_client_splits_a_long_batch_too(async_client: AsyncMemco, harness: Harness):
+    # The async side awaits inside the comprehension that makes the calls, which
+    # is unusual enough to pin: the two surfaces have to split identically.
+    harness.memory.responses["DescribeDomains"] = pb.DescribeDomainsResponse(
+        limits=pb.Limits(max_import_memories=2)
+    )
+    await async_client.memory.describe_domains()
+    harness.memory.calls.clear()
+    result = await async_client.memory.import_memories([imported()] * 5, domain="coding")
+    assert harness.memory.calls == ["ImportMemories"] * 3
+    assert [outcome.index for outcome in result.results] == [0, 1, 2, 3, 4]
+
+
+def test_an_unreported_import_cap_sends_the_whole_batch_in_one_call(
+    client: Memco, harness: Harness
+):
+    # No cap reported means the service rules, here as everywhere else: the SDK
+    # does not invent a group size of its own to split against.
+    harness.memory.calls.clear()
+    result = client.memory.import_memories([imported()] * 5, domain="coding")
+    assert harness.memory.calls == ["ImportMemories"]
+    assert len(harness.memory.requests["ImportMemories"].memories) == 5
+    assert [outcome.index for outcome in result.results] == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.parametrize(
+    ("cap", "entry", "expected"),
+    [
+        ("max_import_queries_per_memory", {"queries": ["a", "b", "c"]}, r"memories\[1\] queries"),
+        (
+            "max_import_insights_per_memory",
+            {"insights": [types.ImportedInsight(title="t", content="c")] * 3},
+            r"memories\[1\] insights",
+        ),
+        (
+            "max_import_tags_per_memory",
+            {"tags": [types.Tag(type="language", value=f"v{n}") for n in range(3)]},
+            r"memories\[1\] tags",
+        ),
+    ],
+)
+def test_a_per_entry_import_cap_refuses_and_names_the_entry(
+    client: Memco, harness: Harness, cap: str, entry: dict[str, object], expected: str
+):
+    # A batch gives the caller no handle to address one memory by, so the index
+    # is the only thing that says which of them has to be cut down.
+    limited(client, harness, **{cap: 2})
+    harness.memory.calls.clear()
+    with pytest.raises(errors.MemcoInvalidRequestError, match=expected):
+        client.memory.import_memories([imported(), imported(**entry)], domain="coding")
+    assert harness.memory.calls == []
+
+
+def test_an_imported_insight_is_bounded_by_the_text_cap(client: Memco, harness: Harness):
+    limited(client, harness, max_text_characters=100)
+    harness.memory.calls.clear()
+    # 60 + 60 exceeds 100 even though neither alone does, as everywhere else.
+    with pytest.raises(errors.MemcoInvalidRequestError, match=r"memories\[0\] insights\[0\]"):
+        client.memory.import_memories(
+            [imported(insights=[types.ImportedInsight(title="t" * 60, content="c" * 60)])],
+            domain="coding",
+        )
+    assert harness.memory.calls == []
+    client.memory.import_memories(
+        [imported(insights=[types.ImportedInsight(title="t" * 40, content="c" * 40)])],
+        domain="coding",
+    )
+
+
+def test_the_import_tag_cap_refuses_where_the_domain_cap_trims(client: Memco, harness: Harness):
+    # Two caps meet on the same field and disagree about what to do. The import
+    # cap refuses, so it is checked against what the caller supplied — checking
+    # it after the domain trim would make it unreachable.
+    limited(client, harness, max_tags=1, max_import_tags_per_memory=2)
+    harness.memory.calls.clear()
+    tags = [types.Tag(type="language", value=f"v{n}") for n in range(3)]
+    with pytest.raises(errors.MemcoInvalidRequestError, match=r"memories\[0\] tags"):
+        client.memory.import_memories([imported(tags=tags)], domain="coding")
+    assert harness.memory.calls == []
+    # Within the refusing cap, the trimming one still trims rather than raising.
+    client.memory.import_memories([imported(tags=tags[:2])], domain="coding")
+    assert len(harness.memory.requests["ImportMemories"].memories[0].tags) == 1

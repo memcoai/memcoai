@@ -14,7 +14,7 @@ import pytest
 
 from memco import AsyncMemco, Memco
 from memco.errors import MemcoUnavailableError
-from memco.types import FeedbackRating
+from memco.types import FeedbackRating, ImportedInsight, ImportedMemory
 
 from .fake_server import Harness
 
@@ -43,6 +43,19 @@ def test_a_write_is_not_retried(client: Memco, harness: Harness):
         client.memory.create_memory(query="q", title="t", content="c", domain="coding")
     # The whole point: one attempt, so a committed write cannot be duplicated.
     assert harness.memory.calls == ["CreateMemory"]
+
+
+def test_an_import_is_not_retried(client: Memco, harness: Harness):
+    # The service dedupes by content, so a replay would not write twice — but it
+    # would report DUPLICATE for what this call itself queued, which is the one
+    # thing an importer reads the outcomes to learn.
+    harness.memory.transient_errors["ImportMemories"] = [BLIP]
+    with pytest.raises(MemcoUnavailableError):
+        client.memory.import_memories(
+            [ImportedMemory(queries=["q"], insights=[ImportedInsight(title="t", content="c")])],
+            domain="coding",
+        )
+    assert harness.memory.calls == ["ImportMemories"]
 
 
 def test_opening_a_session_is_not_retried(client: Memco, harness: Harness):

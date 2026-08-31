@@ -9,6 +9,7 @@ from memco import types
 from memco._convert import (
     to_domain_list,
     to_feedback_result,
+    to_import_result,
     to_memory,
     to_revert_result,
     to_search_result,
@@ -23,6 +24,8 @@ def test_enums_fold_unknown_wire_values_to_unspecified():
     assert types.DataSource.from_wire(999) is types.DataSource.UNSPECIFIED
     assert types.RevertOutcome.from_wire(4) is types.RevertOutcome.MERGED
     assert types.RevertOutcome.from_wire(999) is types.RevertOutcome.UNSPECIFIED
+    assert types.ImportStatus.from_wire(4) is types.ImportStatus.DUPLICATE
+    assert types.ImportStatus.from_wire(999) is types.ImportStatus.UNSPECIFIED
 
 
 def test_results_are_frozen():
@@ -91,6 +94,83 @@ def test_revert_result_carries_a_typed_outcome():
     assert result.outcome is types.RevertOutcome.MEMORY_REMOVED
 
 
+def test_server_commit_reaches_the_caller():
+    # It names the build that answered, which is what a bug report quotes. It is
+    # not provenance().server_commit, which is the commit this wheel was built from.
+    assert to_domain_list(pb.DescribeDomainsResponse(server_commit="8317b7b")).server_commit == (
+        "8317b7b"
+    )
+    assert to_domain_list(pb.DescribeDomainsResponse()).server_commit == ""
+
+
+def test_import_result_carries_one_typed_outcome_per_entry():
+    # The indices are deliberately not their own positions: reading them off
+    # enumerate() instead of off the field would pass an in-order fixture.
+    result = to_import_result(
+        [
+            (
+                0,
+                pb.ImportMemoriesResponse(
+                    results=[
+                        pb.ImportOutcome(index=2, status=pb.IMPORT_STATUS_QUEUED),
+                        pb.ImportOutcome(index=0, status=pb.IMPORT_STATUS_DUPLICATE),
+                        pb.ImportOutcome(
+                            index=1,
+                            status=pb.IMPORT_STATUS_REJECTED,
+                            errors=["queries must not be empty"],
+                        ),
+                    ]
+                ),
+            )
+        ]
+    )
+    assert isinstance(result.results, tuple)
+    assert [outcome.index for outcome in result.results] == [2, 0, 1]
+    assert result.results[0].status is types.ImportStatus.QUEUED
+    assert result.results[1].status is types.ImportStatus.DUPLICATE
+    assert result.results[2].errors == ("queries must not be empty",)
+    # An entry that was queued carries no errors, rather than a None.
+    assert result.results[0].errors == ()
+
+
+def test_split_groups_are_renumbered_against_the_whole_batch():
+    # Each call numbers its own results from zero. Merging them without the
+    # offset would report index 0 once per group and identify nothing.
+    result = to_import_result(
+        [
+            (
+                0,
+                pb.ImportMemoriesResponse(
+                    results=[
+                        pb.ImportOutcome(index=0, status=pb.IMPORT_STATUS_QUEUED),
+                        pb.ImportOutcome(index=1, status=pb.IMPORT_STATUS_QUEUED),
+                    ],
+                    instructions=pb.Instructions(content="first"),
+                ),
+            ),
+            (
+                2,
+                pb.ImportMemoriesResponse(
+                    results=[
+                        pb.ImportOutcome(index=0, status=pb.IMPORT_STATUS_DUPLICATE),
+                        pb.ImportOutcome(index=1, status=pb.IMPORT_STATUS_QUEUED),
+                    ],
+                    instructions=pb.Instructions(content="second"),
+                ),
+            ),
+        ]
+    )
+    assert [outcome.index for outcome in result.results] == [0, 1, 2, 3]
+    assert result.results[2].status is types.ImportStatus.DUPLICATE
+    # The groups are one operation in one domain; one set of guidance is right.
+    assert result.instructions.content == "first"
+
+
+def test_an_imported_insight_converts_to_its_wire_message():
+    message = types.ImportedInsight(title="T", content="C").to_proto()
+    assert (message.title, message.content) == ("T", "C")
+
+
 def test_search_result_nests_memories_and_insights():
     response = pb.SearchResponse(
         session_id="session-a",
@@ -155,3 +235,9 @@ def test_revert_outcome_matches_the_contract():
     for member in types.RevertOutcome:
         assert pb.RevertOutcome.Name(member.value) == f"REVERT_OUTCOME_{member.name}"
     assert len(types.RevertOutcome) == len(pb.RevertOutcome.keys())
+
+
+def test_import_status_matches_the_contract():
+    for member in types.ImportStatus:
+        assert pb.ImportStatus.Name(member.value) == f"IMPORT_STATUS_{member.name}"
+    assert len(types.ImportStatus) == len(pb.ImportStatus.keys())

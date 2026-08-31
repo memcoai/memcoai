@@ -25,7 +25,7 @@ from memco._convert import _to_date
 from memco._provenance import parse
 from memco.memory.v1 import memory_pb2 as pb
 from memco.memory.v1 import memory_pb2_grpc as pbg
-from memco.types import DataSource, Tag
+from memco.types import DataSource, ImportedInsight, ImportedMemory, Tag
 
 from .conftest import TOKEN
 from .fake_server import FakeHealthService, FakeMemoryService, Harness
@@ -571,6 +571,78 @@ def test_unencodable_text_is_a_typed_error(field):
             tags=None,
             source=DataSource.AGENT,
         )
+
+
+@pytest.mark.parametrize("field", ["queries", "title", "content"])
+def test_unencodable_text_in_an_import_is_a_typed_error(field):
+    # Same defect, one call further out: every ImportedMemory message has to be
+    # built inside the guard, not assembled into a list before it.
+    bad = "bad \ud800 here"
+    insight = ImportedInsight(
+        title=bad if field == "title" else "t",
+        content=bad if field == "content" else "c",
+    )
+    memory = ImportedMemory(queries=[bad] if field == "queries" else ["q"], insights=[insight])
+    with pytest.raises(errors.MemcoInvalidRequestError):
+        requests.import_memories_requests([memory], domain="coding", session_id=None)
+
+
+def _taking_a_tag(tag: Tag) -> dict[str, object]:
+    """Every request builder that accepts tags, called with one."""
+    return {
+        "search": lambda: requests.search_request(
+            "q", domain="coding", session_id=None, tags=[tag]
+        ),
+        "create": lambda: requests.create_memory_request(
+            query="q",
+            title="t",
+            content="c",
+            domain="coding",
+            session_id=None,
+            tags=[tag],
+            source=DataSource.AGENT,
+        ),
+        "enrich": lambda: requests.enrich_memory_request(
+            memory_idx="new",
+            session_id="session-a",
+            title="t",
+            content="c",
+            tags=[tag],
+            sources=None,
+            source=DataSource.AGENT,
+        ),
+        "import": lambda: requests.import_memories_requests(
+            [
+                ImportedMemory(
+                    queries=["q"], insights=[ImportedInsight(title="t", content="c")], tags=[tag]
+                )
+            ],
+            domain="coding",
+            session_id=None,
+        ),
+    }
+
+
+@pytest.mark.parametrize("builder", ["search", "create", "enrich", "import"])
+@pytest.mark.parametrize("part", ["type", "value"])
+def test_unencodable_tag_text_is_a_typed_error(builder, part):
+    # The guard above covers the scalar fields, but tags were converted to their
+    # wire messages *before* the builder was entered, so a surrogate in a tag
+    # escaped as a raw UnicodeEncodeError from every call that takes tags.
+    bad = "bad \ud800 here"
+    tag = Tag(
+        type=bad if part == "type" else "language",
+        value=bad if part == "value" else "python",
+    )
+    with pytest.raises(errors.MemcoInvalidRequestError):
+        _taking_a_tag(tag)[builder]()  # type: ignore[operator]
+
+
+def test_a_blank_tag_keeps_its_own_message_through_the_guard():
+    # The guard rewrites what it catches. A validation failure is not its to
+    # rewrite, so it has to pass through with the message the validator wrote.
+    with pytest.raises(errors.MemcoInvalidRequestError, match="tag value must not be empty"):
+        requests.search_request("q", domain="coding", session_id=None, tags=[Tag("language", "")])
 
 
 # --- review: the deprecation warning was attributed inside the package ----

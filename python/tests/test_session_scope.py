@@ -48,6 +48,19 @@ def test_a_scoped_rating_sends_the_session_id(client: Memco, harness: Harness):
     assert harness.memory.requests["ShareFeedback"].session_id == "session-a"
 
 
+def test_a_scoped_import_sends_the_session_id(client: Memco, harness: Harness):
+    client.memory.with_session("coding").import_memories(
+        [
+            types.ImportedMemory(
+                queries=["how does X work"],
+                insights=[types.ImportedInsight(title="t", content="c")],
+            )
+        ]
+    )
+    assert harness.memory.requests["ImportMemories"].session_id == "session-a"
+    assert harness.memory.requests["ImportMemories"].domain == ""
+
+
 def test_the_scope_forwards_the_operations_that_carry_no_session(client: Memco):
     scope = client.memory.with_session("coding")
     assert scope.get_memory("memory-a-1").idx == "memory-a-1"
@@ -102,6 +115,22 @@ async def test_the_async_scope_opens_one_session_however_often_it_is_reached(
     async with opener as second:
         assert second is first
     assert harness.memory.calls == ["StartSession"]
+
+
+async def test_the_async_scope_sends_the_session_id_on_an_import(
+    async_client: AsyncMemco, harness: Harness
+):
+    async with async_client.memory.with_session("coding") as scope:
+        await scope.import_memories(
+            [
+                types.ImportedMemory(
+                    queries=["how does X work"],
+                    insights=[types.ImportedInsight(title="t", content="c")],
+                )
+            ]
+        )
+    assert harness.memory.requests["ImportMemories"].session_id == "session-a"
+    assert harness.memory.requests["ImportMemories"].domain == ""
 
 
 async def test_an_awaited_async_scope_is_still_a_context_manager(

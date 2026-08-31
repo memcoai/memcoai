@@ -98,6 +98,22 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
             request,
         )
 
+    def ImportMemories(self, request, context):  # noqa: N802
+        # One outcome per memory submitted, in the order they were sent: an
+        # import addresses its entries by position, so a test that maps them
+        # wrongly has to be able to show it.
+        return self._handle(
+            "ImportMemories",
+            context,
+            pb.ImportMemoriesResponse(
+                results=[
+                    pb.ImportOutcome(index=at, status=pb.IMPORT_STATUS_QUEUED)
+                    for at, _ in enumerate(request.memories)
+                ]
+            ),
+            request,
+        )
+
 
 class FakeHealthService(health_pb2_grpc.HealthServicer):  # type: ignore[misc]
     """Reports whatever status it was set to, and refuses Watch as the real one does.

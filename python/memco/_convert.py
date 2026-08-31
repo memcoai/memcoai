@@ -14,6 +14,7 @@ Two conventions apply throughout:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 
 from memco.memory.v1 import memory_pb2 as _pb
@@ -23,6 +24,9 @@ from .types import (
     DomainList,
     FeedbackEntry,
     FeedbackResult,
+    ImportOutcome,
+    ImportResult,
+    ImportStatus,
     Insight,
     Instructions,
     Limits,
@@ -37,6 +41,7 @@ from .types import (
 __all__ = [
     "to_domain_list",
     "to_feedback_result",
+    "to_import_result",
     "to_memory",
     "to_revert_result",
     "to_search_result",
@@ -182,6 +187,10 @@ def _to_limits(message: _pb.DescribeDomainsResponse) -> Limits | None:
         max_idx_characters=limits.max_idx_characters,
         max_sources=limits.max_sources,
         max_feedback_entries=limits.max_feedback_entries,
+        max_import_memories=limits.max_import_memories,
+        max_import_queries_per_memory=limits.max_import_queries_per_memory,
+        max_import_insights_per_memory=limits.max_import_insights_per_memory,
+        max_import_tags_per_memory=limits.max_import_tags_per_memory,
     )
 
 
@@ -201,6 +210,7 @@ def to_domain_list(message: _pb.DescribeDomainsResponse) -> DomainList:
         deprecated=message.deprecated,
         deprecation_message=message.deprecation_message,
         sunset_date=_to_date(message.sunset_date),
+        server_commit=message.server_commit,
     )
 
 
@@ -304,4 +314,55 @@ def to_revert_result(message: _pb.RevertMemoryResponse) -> RevertResult:
         operation_id=_optional(message.operation_id),
         outcome=RevertOutcome.from_wire(message.outcome),
         instructions=_to_instructions(message.instructions),
+    )
+
+
+def _to_import_outcome(message: _pb.ImportOutcome, offset: int) -> ImportOutcome:
+    """Convert one entry of an import response.
+
+    Args:
+        message: The generated outcome.
+        offset: The position the group's first memory held in the whole batch.
+
+    Returns:
+        The immutable equivalent, with the status as a typed enum and the index
+        moved from the group's own numbering to the caller's. A status this SDK
+        does not recognise folds to
+        :attr:`~memco.types.ImportStatus.UNSPECIFIED`.
+    """
+    return ImportOutcome(
+        index=offset + message.index,
+        status=ImportStatus.from_wire(message.status),
+        errors=tuple(message.errors),
+    )
+
+
+def to_import_result(
+    answered: Sequence[tuple[int, _pb.ImportMemoriesResponse]],
+) -> ImportResult:
+    """Convert the responses to the calls one import took.
+
+    A batch above the service's per-call cap is sent as several calls, and each
+    numbers its own results from zero. Re-numbering them against the batch the
+    caller submitted is what keeps :attr:`~memco.types.ImportOutcome.index`
+    meaning what it says — without it a split batch reports position 0 once per
+    group and identifies nothing.
+
+    Args:
+        answered: One ``(offset, response)`` per call made, in order. Never
+            empty: an empty batch is refused before any call is built.
+
+    Returns:
+        The immutable equivalent, one outcome per memory submitted, in the order
+        they were sent.
+    """
+    return ImportResult(
+        results=tuple(
+            _to_import_outcome(outcome, offset)
+            for offset, message in answered
+            for outcome in message.results
+        ),
+        # The calls are one operation in one domain, so their guidance is the
+        # same; the first is as good as any and there is always one.
+        instructions=_to_instructions(answered[0][1].instructions),
     )

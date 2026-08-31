@@ -27,8 +27,8 @@ GRPC_GENERATED_VERSION: str
 GRPC_VERSION: str
 
 class MemoryServiceStub:
-    """MemoryService is the shared memory surface: the eight operations a client
-    uses to find knowledge, contribute to it, and rate what it was given.
+    """MemoryService is the shared memory surface: the operations a client uses to
+    find knowledge, contribute to it, and rate what it was given.
 
     Every identifier crossing this boundary is an external handle a previous
     response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -73,11 +73,27 @@ class MemoryServiceStub:
     that write returned. Every outcome is a successful call: expired, refused
     and not_found report a caller-visible state, not a service failure.
     """
+    ImportMemories: _grpc.UnaryUnaryMultiCallable[_memory_pb2.ImportMemoriesRequest, _memory_pb2.ImportMemoriesResponse]
+    """ImportMemories contributes many memories in one call. Each becomes an
+    ordinary memory — evaluated on the way in and carrying the contributor's own
+    reliability, exactly as CreateMemory does — so this is a way to write a lot
+    at once, not a way to write differently.
+
+    Every memory is judged on its own, so a refused entry does not stop the
+    others, and each is written asynchronously: the response reports what was
+    accepted rather than what now exists.
+
+    A batch carries no operation id. RevertMemory addresses a single write, and
+    there is no handle that undoes an import.
+
+    Naming a session records the batch against it, as CreateMemory and
+    EnrichMemory do, and supplies the domain the memories are imported into.
+    """
 
 @_typing.type_check_only
 class MemoryServiceAsyncStub(MemoryServiceStub):
-    """MemoryService is the shared memory surface: the eight operations a client
-    uses to find knowledge, contribute to it, and rate what it was given.
+    """MemoryService is the shared memory surface: the operations a client uses to
+    find knowledge, contribute to it, and rate what it was given.
 
     Every identifier crossing this boundary is an external handle a previous
     response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -119,10 +135,26 @@ class MemoryServiceAsyncStub(MemoryServiceStub):
     that write returned. Every outcome is a successful call: expired, refused
     and not_found report a caller-visible state, not a service failure.
     """
+    ImportMemories: _aio.UnaryUnaryMultiCallable[_memory_pb2.ImportMemoriesRequest, _memory_pb2.ImportMemoriesResponse]  # type: ignore[assignment]
+    """ImportMemories contributes many memories in one call. Each becomes an
+    ordinary memory — evaluated on the way in and carrying the contributor's own
+    reliability, exactly as CreateMemory does — so this is a way to write a lot
+    at once, not a way to write differently.
+
+    Every memory is judged on its own, so a refused entry does not stop the
+    others, and each is written asynchronously: the response reports what was
+    accepted rather than what now exists.
+
+    A batch carries no operation id. RevertMemory addresses a single write, and
+    there is no handle that undoes an import.
+
+    Naming a session records the batch against it, as CreateMemory and
+    EnrichMemory do, and supplies the domain the memories are imported into.
+    """
 
 class MemoryServiceServicer(metaclass=_abc_1.ABCMeta):
-    """MemoryService is the shared memory surface: the eight operations a client
-    uses to find knowledge, contribute to it, and rate what it was given.
+    """MemoryService is the shared memory surface: the operations a client uses to
+    find knowledge, contribute to it, and rate what it was given.
 
     Every identifier crossing this boundary is an external handle a previous
     response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -209,6 +241,28 @@ class MemoryServiceServicer(metaclass=_abc_1.ABCMeta):
         """RevertMemory undoes the caller's own write, addressed by the operation id
         that write returned. Every outcome is a successful call: expired, refused
         and not_found report a caller-visible state, not a service failure.
+        """
+
+    @_abc_1.abstractmethod
+    def ImportMemories(
+        self,
+        request: _memory_pb2.ImportMemoriesRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_memory_pb2.ImportMemoriesResponse, _abc.Awaitable[_memory_pb2.ImportMemoriesResponse]]:
+        """ImportMemories contributes many memories in one call. Each becomes an
+        ordinary memory — evaluated on the way in and carrying the contributor's own
+        reliability, exactly as CreateMemory does — so this is a way to write a lot
+        at once, not a way to write differently.
+
+        Every memory is judged on its own, so a refused entry does not stop the
+        others, and each is written asynchronously: the response reports what was
+        accepted rather than what now exists.
+
+        A batch carries no operation id. RevertMemory addresses a single write, and
+        there is no handle that undoes an import.
+
+        Naming a session records the batch against it, as CreateMemory and
+        EnrichMemory do, and supplies the domain the memories are imported into.
         """
 
 def add_MemoryServiceServicer_to_server(servicer: MemoryServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

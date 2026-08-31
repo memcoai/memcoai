@@ -7,8 +7,8 @@ package memco.memory.v1;
 // reaches every client, which must never be told the server's own repository.
 option go_package = "github.com/memcoai/memco/go/client/memco/memory/v1;memoryv1";
 
-// MemoryService is the shared memory surface: the eight operations a client
-// uses to find knowledge, contribute to it, and rate what it was given.
+// MemoryService is the shared memory surface: the operations a client uses to
+// find knowledge, contribute to it, and rate what it was given.
 //
 // Every identifier crossing this boundary is an external handle a previous
 // response issued — "session-<h>", "create-<h>", "memory-<h>-N" — never a row
@@ -48,6 +48,22 @@ service MemoryService {
   // that write returned. Every outcome is a successful call: expired, refused
   // and not_found report a caller-visible state, not a service failure.
   rpc RevertMemory(RevertMemoryRequest) returns (RevertMemoryResponse);
+
+  // ImportMemories contributes many memories in one call. Each becomes an
+  // ordinary memory — evaluated on the way in and carrying the contributor's own
+  // reliability, exactly as CreateMemory does — so this is a way to write a lot
+  // at once, not a way to write differently.
+  //
+  // Every memory is judged on its own, so a refused entry does not stop the
+  // others, and each is written asynchronously: the response reports what was
+  // accepted rather than what now exists.
+  //
+  // A batch carries no operation id. RevertMemory addresses a single write, and
+  // there is no handle that undoes an import.
+  //
+  // Naming a session records the batch against it, as CreateMemory and
+  // EnrichMemory do, and supplies the domain the memories are imported into.
+  rpc ImportMemories(ImportMemoriesRequest) returns (ImportMemoriesResponse);
 }
 
 // Instructions is the model-facing guidance accompanying a result, held apart
@@ -135,6 +151,9 @@ message DescribeDomainsResponse {
   // sunset_date is when what the caller uses stops working, as YYYY-MM-DD.
   // Empty when no date is set, which is not a promise that none will be.
   string sunset_date = 6;
+  // server_commit names the build that answered, so a caller can identify it in
+  // a bug report.
+  string server_commit = 7;
 }
 
 // Limits are the caps the server enforces, published so a client can check its
@@ -162,6 +181,14 @@ message Limits {
   // max_feedback_entries bounds `feedback` entries per ShareFeedback call.
   // Exceeding it is refused with INVALID_ARGUMENT.
   int32 max_feedback_entries = 5;
+  // The four import caps. Each REFUSES rather than trims, so a client should
+  // split a batch that exceeds one rather than send it and have it rejected.
+  // max_import_memories bounds `memories` per ImportMemories call; the other
+  // three bound one entry of it.
+  int32 max_import_memories = 6;
+  int32 max_import_queries_per_memory = 7;
+  int32 max_import_insights_per_memory = 8;
+  int32 max_import_tags_per_memory = 9;
 }
 
 message StartSessionRequest {
@@ -369,4 +396,65 @@ message RevertMemoryResponse {
   string operation_id = 1;
   RevertOutcome outcome = 2;
   Instructions instructions = 3;
+}
+
+// ImportStatus is what became of one memory of a batch.
+enum ImportStatus {
+  IMPORT_STATUS_UNSPECIFIED = 0;
+  // Accepted and queued for writing.
+  IMPORT_STATUS_QUEUED = 1;
+  // The entry itself was not usable; `errors` says what about it.
+  IMPORT_STATUS_REJECTED = 2;
+  // The entry was usable but could not be queued. Resubmitting it is the remedy;
+  // an import is written under an identity derived from its own content, so a
+  // memory that did land is not duplicated by sending it again.
+  IMPORT_STATUS_ERROR = 3;
+  // The content is already in memory, so nothing was written and nothing was
+  // charged. Sending the same batch again is safe and free.
+  IMPORT_STATUS_DUPLICATE = 4;
+}
+
+message ImportMemoriesRequest {
+  // domain is required unless session_id is set, which supplies the domain of
+  // the session it names. Every memory of the batch is imported into that one
+  // domain; a batch cannot span domains.
+  string domain = 1;
+  repeated ImportedMemory memories = 2;
+  // session_id names the session this knowledge was contributed during, so a
+  // batch gathered in the course of a task belongs to that series of work
+  // rather than standing on its own. Omitting it files the memories under no
+  // session, which is what a standalone upload wants.
+  string session_id = 3;
+}
+
+// ImportedMemory is one memory to contribute: what it should be found by, and
+// what it holds.
+message ImportedMemory {
+  // queries are what someone would search to find this memory. At least one is
+  // required.
+  repeated string queries = 1;
+  // insights are what the memory holds. At least one is required.
+  repeated ImportedInsight insights = 2;
+  repeated Tag tags = 3;
+}
+
+message ImportedInsight {
+  string title = 1;
+  string content = 2;
+}
+
+message ImportMemoriesResponse {
+  // results holds one entry per memory submitted, in the order they were sent.
+  repeated ImportOutcome results = 1;
+  Instructions instructions = 2;
+}
+
+// ImportOutcome is what happened to one memory of the batch, addressed by its
+// position in the request: an import mints no handle a caller could name it by.
+message ImportOutcome {
+  int32 index = 1;
+  ImportStatus status = 2;
+  // errors says what was wrong with an entry that was not queued, and is empty
+  // for one that was.
+  repeated string errors = 3;
 }

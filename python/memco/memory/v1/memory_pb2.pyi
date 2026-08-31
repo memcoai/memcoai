@@ -23,6 +23,14 @@ class RevertOutcome(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     REVERT_OUTCOME_NOT_FOUND: _ClassVar[RevertOutcome]
     REVERT_OUTCOME_EXPIRED: _ClassVar[RevertOutcome]
     REVERT_OUTCOME_REFUSED: _ClassVar[RevertOutcome]
+
+class ImportStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    IMPORT_STATUS_UNSPECIFIED: _ClassVar[ImportStatus]
+    IMPORT_STATUS_QUEUED: _ClassVar[ImportStatus]
+    IMPORT_STATUS_REJECTED: _ClassVar[ImportStatus]
+    IMPORT_STATUS_ERROR: _ClassVar[ImportStatus]
+    IMPORT_STATUS_DUPLICATE: _ClassVar[ImportStatus]
 DATA_SOURCE_UNSPECIFIED: DataSource
 DATA_SOURCE_USER: DataSource
 DATA_SOURCE_AGENT: DataSource
@@ -34,6 +42,11 @@ REVERT_OUTCOME_MERGED: RevertOutcome
 REVERT_OUTCOME_NOT_FOUND: RevertOutcome
 REVERT_OUTCOME_EXPIRED: RevertOutcome
 REVERT_OUTCOME_REFUSED: RevertOutcome
+IMPORT_STATUS_UNSPECIFIED: ImportStatus
+IMPORT_STATUS_QUEUED: ImportStatus
+IMPORT_STATUS_REJECTED: ImportStatus
+IMPORT_STATUS_ERROR: ImportStatus
+IMPORT_STATUS_DUPLICATE: ImportStatus
 
 class Instructions(_message.Message):
     __slots__ = ("content", "policy", "adding", "rating", "next")
@@ -88,34 +101,44 @@ class DescribeDomainsRequest(_message.Message):
     def __init__(self) -> None: ...
 
 class DescribeDomainsResponse(_message.Message):
-    __slots__ = ("domains", "instructions", "limits", "deprecated", "deprecation_message", "sunset_date")
+    __slots__ = ("domains", "instructions", "limits", "deprecated", "deprecation_message", "sunset_date", "server_commit")
     DOMAINS_FIELD_NUMBER: _ClassVar[int]
     INSTRUCTIONS_FIELD_NUMBER: _ClassVar[int]
     LIMITS_FIELD_NUMBER: _ClassVar[int]
     DEPRECATED_FIELD_NUMBER: _ClassVar[int]
     DEPRECATION_MESSAGE_FIELD_NUMBER: _ClassVar[int]
     SUNSET_DATE_FIELD_NUMBER: _ClassVar[int]
+    SERVER_COMMIT_FIELD_NUMBER: _ClassVar[int]
     domains: _containers.RepeatedCompositeFieldContainer[DomainEntry]
     instructions: Instructions
     limits: Limits
     deprecated: bool
     deprecation_message: str
     sunset_date: str
-    def __init__(self, domains: _Optional[_Iterable[_Union[DomainEntry, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ..., deprecated: bool = ..., deprecation_message: _Optional[str] = ..., sunset_date: _Optional[str] = ...) -> None: ...
+    server_commit: str
+    def __init__(self, domains: _Optional[_Iterable[_Union[DomainEntry, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ..., deprecated: bool = ..., deprecation_message: _Optional[str] = ..., sunset_date: _Optional[str] = ..., server_commit: _Optional[str] = ...) -> None: ...
 
 class Limits(_message.Message):
-    __slots__ = ("max_query_characters", "max_text_characters", "max_idx_characters", "max_sources", "max_feedback_entries")
+    __slots__ = ("max_query_characters", "max_text_characters", "max_idx_characters", "max_sources", "max_feedback_entries", "max_import_memories", "max_import_queries_per_memory", "max_import_insights_per_memory", "max_import_tags_per_memory")
     MAX_QUERY_CHARACTERS_FIELD_NUMBER: _ClassVar[int]
     MAX_TEXT_CHARACTERS_FIELD_NUMBER: _ClassVar[int]
     MAX_IDX_CHARACTERS_FIELD_NUMBER: _ClassVar[int]
     MAX_SOURCES_FIELD_NUMBER: _ClassVar[int]
     MAX_FEEDBACK_ENTRIES_FIELD_NUMBER: _ClassVar[int]
+    MAX_IMPORT_MEMORIES_FIELD_NUMBER: _ClassVar[int]
+    MAX_IMPORT_QUERIES_PER_MEMORY_FIELD_NUMBER: _ClassVar[int]
+    MAX_IMPORT_INSIGHTS_PER_MEMORY_FIELD_NUMBER: _ClassVar[int]
+    MAX_IMPORT_TAGS_PER_MEMORY_FIELD_NUMBER: _ClassVar[int]
     max_query_characters: int
     max_text_characters: int
     max_idx_characters: int
     max_sources: int
     max_feedback_entries: int
-    def __init__(self, max_query_characters: _Optional[int] = ..., max_text_characters: _Optional[int] = ..., max_idx_characters: _Optional[int] = ..., max_sources: _Optional[int] = ..., max_feedback_entries: _Optional[int] = ...) -> None: ...
+    max_import_memories: int
+    max_import_queries_per_memory: int
+    max_import_insights_per_memory: int
+    max_import_tags_per_memory: int
+    def __init__(self, max_query_characters: _Optional[int] = ..., max_text_characters: _Optional[int] = ..., max_idx_characters: _Optional[int] = ..., max_sources: _Optional[int] = ..., max_feedback_entries: _Optional[int] = ..., max_import_memories: _Optional[int] = ..., max_import_queries_per_memory: _Optional[int] = ..., max_import_insights_per_memory: _Optional[int] = ..., max_import_tags_per_memory: _Optional[int] = ...) -> None: ...
 
 class StartSessionRequest(_message.Message):
     __slots__ = ("domain",)
@@ -310,3 +333,49 @@ class RevertMemoryResponse(_message.Message):
     outcome: RevertOutcome
     instructions: Instructions
     def __init__(self, operation_id: _Optional[str] = ..., outcome: _Optional[_Union[RevertOutcome, str]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ...) -> None: ...
+
+class ImportMemoriesRequest(_message.Message):
+    __slots__ = ("domain", "memories", "session_id")
+    DOMAIN_FIELD_NUMBER: _ClassVar[int]
+    MEMORIES_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    domain: str
+    memories: _containers.RepeatedCompositeFieldContainer[ImportedMemory]
+    session_id: str
+    def __init__(self, domain: _Optional[str] = ..., memories: _Optional[_Iterable[_Union[ImportedMemory, _Mapping]]] = ..., session_id: _Optional[str] = ...) -> None: ...
+
+class ImportedMemory(_message.Message):
+    __slots__ = ("queries", "insights", "tags")
+    QUERIES_FIELD_NUMBER: _ClassVar[int]
+    INSIGHTS_FIELD_NUMBER: _ClassVar[int]
+    TAGS_FIELD_NUMBER: _ClassVar[int]
+    queries: _containers.RepeatedScalarFieldContainer[str]
+    insights: _containers.RepeatedCompositeFieldContainer[ImportedInsight]
+    tags: _containers.RepeatedCompositeFieldContainer[Tag]
+    def __init__(self, queries: _Optional[_Iterable[str]] = ..., insights: _Optional[_Iterable[_Union[ImportedInsight, _Mapping]]] = ..., tags: _Optional[_Iterable[_Union[Tag, _Mapping]]] = ...) -> None: ...
+
+class ImportedInsight(_message.Message):
+    __slots__ = ("title", "content")
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    title: str
+    content: str
+    def __init__(self, title: _Optional[str] = ..., content: _Optional[str] = ...) -> None: ...
+
+class ImportMemoriesResponse(_message.Message):
+    __slots__ = ("results", "instructions")
+    RESULTS_FIELD_NUMBER: _ClassVar[int]
+    INSTRUCTIONS_FIELD_NUMBER: _ClassVar[int]
+    results: _containers.RepeatedCompositeFieldContainer[ImportOutcome]
+    instructions: Instructions
+    def __init__(self, results: _Optional[_Iterable[_Union[ImportOutcome, _Mapping]]] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ...) -> None: ...
+
+class ImportOutcome(_message.Message):
+    __slots__ = ("index", "status", "errors")
+    INDEX_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    ERRORS_FIELD_NUMBER: _ClassVar[int]
+    index: int
+    status: ImportStatus
+    errors: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, index: _Optional[int] = ..., status: _Optional[_Union[ImportStatus, str]] = ..., errors: _Optional[_Iterable[str]] = ...) -> None: ...

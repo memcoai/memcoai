@@ -18,7 +18,7 @@ from memco.memory.v1 import memory_pb2 as _pb
 from . import _validate
 from ._limits import Known
 from .errors import MemcoNotFoundError
-from .types import DataSource, FeedbackRating, Tag
+from .types import DataSource, FeedbackRating, ImportedMemory, Tag
 
 _M = TypeVar("_M", bound=Message)
 
@@ -27,6 +27,7 @@ __all__ = [
     "describe_domains_request",
     "enrich_memory_request",
     "get_memory_request",
+    "import_memories_requests",
     "require_memory",
     "revert_memory_request",
     "search_request",
@@ -62,6 +63,12 @@ def _built(build: Callable[[], _M]) -> _M:
 def _tags(tags: Iterable[Tag] | None, cap: int = 0) -> list[_pb.Tag]:
     """Convert public tags to wire messages.
 
+    Call this from inside the ``_built`` callable, never before it. Building a
+    tag constructs a protobuf message, so a tag carrying text protobuf cannot
+    encode raises there — and outside the guard that escapes as a raw
+    ``UnicodeEncodeError``. Validation failures are unaffected either way: they
+    are not ``ValueError``, so the guard does not rewrite them.
+
     Args:
         tags: The tags supplied by the caller, if any. Consumed exactly once,
             so a generator is safe here.
@@ -92,13 +99,17 @@ def _check_handle(value: str, field: str, known: Known | None) -> None:
         _validate.check_within(value, field, known.limits.max_idx_characters)
 
 
-def _check_text_together(title: str, content: str, caps: Known) -> None:
+def _check_text_together(
+    title: str, content: str, caps: Known, field: str = "title and content"
+) -> None:
     """Apply the reported cap on title and content, which it bounds jointly.
 
     Args:
         title: The title supplied by the caller.
         content: The content supplied by the caller.
         caps: What the service has reported.
+        field: Field name, used verbatim in the error message. A call carrying
+            more than one pair names which one this is.
 
     Raises:
         MemcoInvalidRequestError: If their combined length exceeds the cap.
@@ -106,7 +117,7 @@ def _check_text_together(title: str, content: str, caps: Known) -> None:
     limit = caps.limits.max_text_characters if caps.limits else 0
     if limit and len(title) + len(content) > limit:
         raise _validate.reject(
-            f"title and content are {len(title) + len(content)} characters together, "
+            f"{field} are {len(title) + len(content)} characters together, "
             f"which exceeds the combined limit of {limit}"
         )
 
@@ -198,13 +209,13 @@ def search_request(
     caps = known or Known()
     if caps.limits:
         _validate.check_within(query, "query", caps.limits.max_query_characters)
-    tag_messages = _tags(tags, caps.max_tags(domain))
+    cap = caps.max_tags(domain)
     return _built(
         lambda: _pb.SearchRequest(
             query=query,
             domain=domain or "",
             session_id=session_id or "",
-            tags=tag_messages,
+            tags=_tags(tags, cap),
         )
     )
 
@@ -265,7 +276,7 @@ def create_memory_request(
     if caps.limits:
         _validate.check_within(query, "query", caps.limits.max_query_characters)
         _check_text_together(title, content, caps)
-    tag_messages = _tags(tags, caps.max_tags(domain))
+    cap = caps.max_tags(domain)
     return _built(
         lambda: _pb.CreateMemoryRequest(
             query=query,
@@ -273,7 +284,7 @@ def create_memory_request(
             content=content,
             domain=domain or "",
             session_id=session_id or "",
-            tags=tag_messages,
+            tags=_tags(tags, cap),
             source=_source(source),
         )
     )
@@ -324,14 +335,13 @@ def enrich_memory_request(
         # The service keeps the first max_sources and drops the rest, so raising
         # here would reject a call it would have accepted.
         materialised = _validate.trim(materialised, caps.limits.max_sources)
-    tag_messages = _tags(tags, caps.max_tags(None))
     return _built(
         lambda: _pb.EnrichMemoryRequest(
             memory_idx=memory_idx,
             session_id=session_id,
             title=title,
             content=content,
-            tags=tag_messages,
+            tags=_tags(tags, caps.max_tags(None)),
             sources=materialised,
             source=_source(source),
         )
@@ -366,6 +376,104 @@ def share_feedback_request(
             session_id=session_id, feedback=[rating.to_proto() for rating in feedback]
         )
     )
+
+
+def import_memories_requests(
+    memories: Sequence[ImportedMemory],
+    *,
+    domain: str | None,
+    session_id: str | None,
+    known: Known | None = None,
+) -> list[tuple[int, _pb.ImportMemoriesRequest]]:
+    """Validate a batch of memories and split it into the calls that carry it.
+
+    ``max_import_memories`` bounds one *call*, not one batch, and it refuses
+    rather than trims — so a batch above it is divided into groups of that size
+    and sent as several calls. A caller hands over whatever it has without
+    having to learn the number or chunk against it. Nothing is dropped: the
+    groups partition the batch in order. An unreported cap means the service
+    rules, as everywhere else, so the batch goes out whole.
+
+    The three per-entry caps refuse too, and are checked against what the caller
+    actually supplied. The per-domain tag cap still trims, and is applied after
+    the refusing one so that the refusal stays reachable.
+
+    Args:
+        memories: The memories to contribute.
+        domain: The memory domain, if the import is not scoped by a session.
+        session_id: The session this knowledge was contributed during, if any.
+        known: What the service has reported about its own limits, if anything.
+
+    Returns:
+        One ``(offset, request)`` per call to make, in order. The offset is the
+        position the group's first memory held in the whole batch, which is what
+        turns each response's own numbering back into the caller's.
+
+    Raises:
+        MemcoInvalidRequestError: If the batch or any entry is invalid, or if
+            neither a domain nor a session was given.
+    """
+    _validate.check_import_memories(memories)
+    _validate.check_scope(domain=domain, session_id=session_id)
+    caps = known or Known()
+    if caps.limits:
+        limits = caps.limits
+        for index, memory in enumerate(memories):
+            where = f"memories[{index}]"
+            _validate.check_count(
+                len(memory.queries), f"{where} queries", limits.max_import_queries_per_memory
+            )
+            _validate.check_count(
+                len(memory.insights), f"{where} insights", limits.max_import_insights_per_memory
+            )
+            _validate.check_count(
+                len(memory.tags or ()), f"{where} tags", limits.max_import_tags_per_memory
+            )
+            for at, insight in enumerate(memory.insights):
+                _check_text_together(
+                    insight.title,
+                    insight.content,
+                    caps,
+                    f"{where} insights[{at}] title and content",
+                )
+    cap = caps.max_tags(domain)
+
+    def one_call(taken: Sequence[ImportedMemory]) -> _pb.ImportMemoriesRequest:
+        """Build the request carrying one group.
+
+        Every message is constructed inside the guard, entries included:
+        building them into a list first would put the construction most likely
+        to hold unencodable text — a whole group of it — outside the only thing
+        that turns protobuf's refusal into a typed error.
+
+        Args:
+            taken: The group's memories.
+
+        Returns:
+            The request message.
+        """
+        return _built(
+            lambda: _pb.ImportMemoriesRequest(
+                domain=domain or "",
+                session_id=session_id or "",
+                memories=[
+                    _pb.ImportedMemory(
+                        queries=list(memory.queries),
+                        insights=[insight.to_proto() for insight in memory.insights],
+                        tags=_tags(memory.tags, cap),
+                    )
+                    for memory in taken
+                ],
+            )
+        )
+
+    # An unreported cap is one group holding everything, so the batch goes out
+    # whole rather than against a size the SDK made up.
+    group = (caps.limits.max_import_memories if caps.limits else 0) or len(memories)
+    return [
+        (offset, one_call(memories[offset : offset + group]))
+        for offset in range(0, len(memories), group)
+    ]
 
 
 def require_memory(response: _pb.GetMemoryResponse, idx: str) -> _pb.MemoryResult:
