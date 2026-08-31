@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Any, TypeVar
@@ -16,6 +17,7 @@ from memco.memory.v1 import memory_pb2_grpc as _pbg
 from ._channel import build_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
+from ._logging import elapsed_ms, rpc_name, set_level
 from ._provenance import provenance as _provenance
 from .errors import (
     MemcoAuthenticationError,
@@ -30,10 +32,10 @@ _T = TypeVar("_T")
 
 __all__ = ["Memco"]
 
-# Named for the package rather than the module, so the logger a caller
-# configures is the one the SDK writes to. No handler is attached: choosing
-# where records go is the application's call, not a library's.
-_log = logging.getLogger("memco")
+# A child of the `memco` logger, so the one name a caller configures governs
+# every record the SDK writes, while still allowing this module to be
+# quietened on its own. See memco/_logging.py for the tree and its handlers.
+_log = logging.getLogger(__name__)
 
 
 class Memco:
@@ -51,10 +53,10 @@ class Memco:
     those, and from then on refuses an oversized field locally instead of
     spending a round trip on a call the service would refuse.
 
-    A rejected credential is written to the ``memco`` logger before it is
-    raised, since a client is often built somewhere the traceback does not
-    reach. Nothing is logged on the way past otherwise, and the credential
-    itself never is.
+    Connecting and closing are reported to the ``memco`` logger at ``INFO``,
+    and a rejected credential at ``ERROR`` before it is raised, since a client
+    is often built somewhere the traceback does not reach. The credential itself
+    is never logged, at any level.
 
     Args:
         token: Credential to authenticate with, either a static Memco API key or
@@ -70,9 +72,19 @@ class Memco:
             override it.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`; supplying one is mainly useful in tests.
+        log_level: The SDK's log level, as a name — ``"debug"``, ``"info"``,
+            ``"warning"``, ``"error"``, ``"critical"``, or ``"none"`` to turn it
+            off — or a :mod:`logging` constant. Defaults to ``"info"`` and
+            overrides ``MEMCO_LOG``. Any level but ``"none"`` attaches the SDK's
+            own stderr handler and stops the ``memco`` logger propagating, so
+            records bypass the handlers the application configured; it is
+            process-wide, since a logger is. An application with its own logging
+            should pass ``"none"`` and set the level on the ``memco`` logger
+            instead.
 
     Raises:
-        MemcoConfigError: If no credential is available or the host is unusable.
+        MemcoConfigError: If no credential is available, the host is unusable,
+            or ``log_level`` is not a level this SDK accepts.
         MemcoUnavailableError: If the service cannot be reached.
         MemcoUnhealthyError: If the service reports that it is not serving.
         MemcoAuthenticationError: If the credential is rejected.
@@ -99,7 +111,10 @@ class Memco:
         tls: bool = True,
         timeout: float = DEFAULT_TIMEOUT,
         env: Mapping[str, str] | None = None,
+        log_level: str | int | None = None,
     ) -> None:
+        if log_level is not None:
+            set_level(log_level)
         self._config = resolve(token, host, tls=tls, timeout=timeout, env=env)
         self._channel = build_channel(self._config)
         self._health = health_pb2_grpc.HealthStub(self._channel)
@@ -125,6 +140,7 @@ class Memco:
         except BaseException:
             self.close()
             raise
+        _log.info("connected to %s (tls=%s)", self._config.target, self._config.tls)
 
     # -- lifecycle --------------------------------------------------------
 
@@ -143,6 +159,7 @@ class Memco:
             while self._inflight:
                 self._state.wait()
         self._channel.close()
+        _log.info("closed connection to %s", self._config.target)
 
     def __enter__(self) -> Memco:
         """Enter a context manager.
@@ -183,6 +200,7 @@ class Memco:
             MemcoUnhealthyError: If it answers but is not serving.
         """
         request = health_pb2.HealthCheckRequest(service="")
+        started = time.perf_counter()
         try:
             response = self._health.Check(request, timeout=self._config.timeout)
         except grpc.RpcError as exc:
@@ -193,6 +211,7 @@ class Memco:
                 grpc.StatusCode.UNAVAILABLE,
                 f"{self._config.target} reported health status {name}",
             )
+        _log.debug("health check on %s ok in %.0fms", self._config.target, elapsed_ms(started))
 
     def _call(self, method: Callable[..., _T], request: Any, timeout: float | None) -> _T:
         """Invoke one RPC, translating any failure into a typed exception.
@@ -214,10 +233,23 @@ class Memco:
             if self._closed:
                 raise MemcoConfigError("this client is closed; create a new one to make more calls")
             self._inflight += 1
+        started = time.perf_counter()
         try:
-            return method(request, timeout=deadline)
+            response = method(request, timeout=deadline)
         except grpc.RpcError as exc:
-            raise from_rpc_error(exc) from exc
+            # Translated once, so the record names the error the caller will
+            # see and the translation cannot fail differently the second time.
+            error = from_rpc_error(exc)
+            _log.debug(
+                "%s failed in %.0fms: %s",
+                rpc_name(request),
+                elapsed_ms(started),
+                type(error).__name__,
+            )
+            raise error from exc
+        else:
+            _log.debug("%s ok in %.0fms", rpc_name(request), elapsed_ms(started))
+            return response
         finally:
             with self._state:
                 self._inflight -= 1

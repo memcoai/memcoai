@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Mapping
 from types import TracebackType
 from typing import Any
@@ -16,6 +17,7 @@ from memco.memory.v1 import memory_pb2_grpc as _pbg
 from ._channel import build_async_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
+from ._logging import elapsed_ms, rpc_name, set_level
 from ._provenance import provenance as _provenance
 from .errors import (
     MemcoAuthenticationError,
@@ -28,8 +30,9 @@ from .types import Provenance
 
 __all__ = ["AsyncMemco"]
 
-# The same logger the synchronous client writes to; see memco/_sync.py.
-_log = logging.getLogger("memco")
+# A child of the `memco` logger, like every other module in the package;
+# see memco/_logging.py.
+_log = logging.getLogger(__name__)
 
 
 class _LazyStub:
@@ -81,9 +84,19 @@ class AsyncMemco:
         timeout: Default per-call deadline in seconds.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`.
+        log_level: The SDK's log level, as a name — ``"debug"``, ``"info"``,
+            ``"warning"``, ``"error"``, ``"critical"``, or ``"none"`` to turn it
+            off — or a :mod:`logging` constant. Defaults to ``"info"`` and
+            overrides ``MEMCO_LOG``. Any level but ``"none"`` attaches the SDK's
+            own stderr handler and stops the ``memco`` logger propagating, so
+            records bypass the handlers the application configured; it is
+            process-wide, since a logger is. An application with its own logging
+            should pass ``"none"`` and set the level on the ``memco`` logger
+            instead.
 
     Raises:
-        MemcoConfigError: If no credential is available or the host is unusable.
+        MemcoConfigError: If no credential is available, the host is unusable,
+            or ``log_level`` is not a level this SDK accepts.
 
     Attributes:
         memory: The memory operations, as
@@ -104,7 +117,10 @@ class AsyncMemco:
         tls: bool = True,
         timeout: float = DEFAULT_TIMEOUT,
         env: Mapping[str, str] | None = None,
+        log_level: str | int | None = None,
     ) -> None:
+        if log_level is not None:
+            set_level(log_level)
         self._config = resolve(token, host, tls=tls, timeout=timeout, env=env)
         self._closed = False
         # Built lazily, never here. grpc.aio captures the running event loop at
@@ -188,6 +204,7 @@ class AsyncMemco:
             # transient blip, and this method documents itself as repeatable.
             await self._reset()
             raise
+        _log.info("connected to %s (tls=%s)", self._config.target, self._config.tls)
         return self
 
     async def _drain(self) -> None:
@@ -229,6 +246,7 @@ class AsyncMemco:
             await self._channel.close(grace=None)
             self._channel = None
             self._loop = None
+        _log.info("closed connection to %s", self._config.target)
 
     async def __aenter__(self) -> AsyncMemco:
         """Enter an async context manager, connecting and verifying.
@@ -269,6 +287,7 @@ class AsyncMemco:
             MemcoUnhealthyError: If it answers but is not serving.
         """
         request = health_pb2.HealthCheckRequest(service="")
+        started = time.perf_counter()
         try:
             response = await self._health.Check(request, timeout=self._config.timeout)
         except grpc.RpcError as exc:
@@ -279,6 +298,7 @@ class AsyncMemco:
                 grpc.StatusCode.UNAVAILABLE,
                 f"{self._config.target} reported health status {name}",
             )
+        _log.debug("health check on %s ok in %.0fms", self._config.target, elapsed_ms(started))
 
     async def _call(self, method: Any, request: Any, timeout: float | None) -> Any:
         """Invoke one RPC, translating any failure into a typed exception.
@@ -299,10 +319,20 @@ class AsyncMemco:
         deadline = _deadline(timeout, self._config.timeout)
         self._inflight += 1
         self._idle.clear()
+        started = time.perf_counter()
         try:
-            return await method(request, timeout=deadline)
+            response = await method(request, timeout=deadline)
         except grpc.RpcError as exc:
-            raise from_rpc_error(exc) from exc
+            # Translated once, so the record names the error the caller will
+            # see and the translation cannot fail differently the second time.
+            error = from_rpc_error(exc)
+            _log.debug(
+                "%s failed in %.0fms: %s",
+                rpc_name(request),
+                elapsed_ms(started),
+                type(error).__name__,
+            )
+            raise error from exc
         except grpc.aio.UsageError as exc:
             # close() flips the flag and then tears the channel down, so a call
             # that passed the check above can still land on a dead channel.
@@ -310,6 +340,9 @@ class AsyncMemco:
             raise MemcoConfigError(
                 "this client is closed; create a new one to make more calls"
             ) from exc
+        else:
+            _log.debug("%s ok in %.0fms", rpc_name(request), elapsed_ms(started))
+            return response
         finally:
             self._inflight -= 1
             if not self._inflight:

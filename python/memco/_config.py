@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import os
 import pathlib
 import warnings
@@ -10,6 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .errors import MemcoConfigError
+
+_log = logging.getLogger(__name__)
 
 DEFAULT_HOST = "grpc.spark.memco.ai"
 """Endpoint used when neither an argument nor ``MEMCO_API_HOST`` supplies one."""
@@ -107,6 +110,7 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
         MemcoConfigError: If no non-blank credential is available.
     """
     if token is not None and token.strip():
+        _log.debug("credential taken from the token argument")
         return token.strip()
     if token is not None and not token.strip():
         raise MemcoConfigError(
@@ -115,6 +119,7 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
 
     from_env = env.get(TOKEN_ENV, "").strip()
     if from_env:
+        _log.debug("credential taken from %s", TOKEN_ENV)
         return from_env
 
     legacy = env.get(LEGACY_TOKEN_ENV, "").strip()
@@ -125,6 +130,7 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
             DeprecationWarning,
             stacklevel=_caller_stacklevel(),
         )
+        _log.debug("credential taken from %s", LEGACY_TOKEN_ENV)
         return legacy
 
     raise MemcoConfigError(f"no API token: pass token=... or set {TOKEN_ENV}")
@@ -257,10 +263,18 @@ def resolve(
         raise MemcoConfigError(
             f"the host passed to the client is blank: pass a real host or set {HOST_ENV}"
         )
-    resolved_host = (host or environment.get(HOST_ENV, "").strip() or DEFAULT_HOST).strip()
+    from_env = environment.get(HOST_ENV, "").strip()
+    resolved_host = (host or from_env or DEFAULT_HOST).strip()
     name, port = _split_host_port(resolved_host)
 
-    return ClientConfig(token=resolved_token, host=name, port=port, tls=tls, timeout=timeout)
+    config = ClientConfig(token=resolved_token, host=name, port=port, tls=tls, timeout=timeout)
+    _log.debug(
+        "endpoint %s tls=%s (host from %s)",
+        config.target,
+        tls,
+        "the host argument" if host else HOST_ENV if from_env else "the default",
+    )
+    return config
 
 
 def deadline(timeout: float | None, default: float) -> float:

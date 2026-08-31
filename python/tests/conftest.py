@@ -9,6 +9,12 @@ import os
 # real output. Set before the core initialises on first channel creation.
 os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 
+# A developer with MEMCO_LOG exported would otherwise have the SDK set
+# propagate = False on import, and every caplog assertion in the suite would
+# stop seeing records.
+os.environ.pop("MEMCO_LOG", None)
+
+import logging
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
@@ -18,6 +24,30 @@ from memco import AsyncMemco, Memco
 from .fake_server import Harness
 
 TOKEN = "test-token"
+
+
+@pytest.fixture(autouse=True)
+def neutral_memco_logger() -> Iterator[None]:
+    """Give each test a propagating ``memco`` logger, and put it back after.
+
+    The SDK configures itself at INFO on import, which sets ``propagate =
+    False``. caplog captures through the root logger, so leaving that in place
+    would make every assertion about a record see nothing. Undoing it here is
+    exactly what an application with its own logging is told to do, and
+    restoring afterwards keeps one test's level from leaking into the next.
+    """
+    logger = logging.getLogger("memco")
+    handlers = logger.handlers[:]
+    level, propagate, disabled = logger.level, logger.propagate, logger.disabled
+    logger.handlers[:] = [h for h in handlers if isinstance(h, logging.NullHandler)]
+    logger.setLevel(logging.NOTSET)
+    logger.propagate = True
+    logger.disabled = False
+    yield
+    logger.handlers[:] = handlers
+    logger.setLevel(level)
+    logger.propagate = propagate
+    logger.disabled = disabled
 
 
 @pytest.fixture

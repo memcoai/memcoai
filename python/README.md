@@ -156,6 +156,7 @@ Arguments win over the environment, which wins over the defaults.
 | Endpoint | `host` | `MEMCO_API_HOST` | `grpc.spark.memco.ai:443` |
 | TLS | `tls` | — | `True` |
 | Deadline | `timeout` | — | 30 seconds |
+| Log level | `log_level` | `MEMCO_LOG` | `info` |
 
 The credential is either a Memco API key or a session token issued for your
 account; both go in the same header. `MEMCO_API_KEY` is still honoured but warns.
@@ -171,12 +172,91 @@ costing a round trip.
 `AsyncMemco` cannot do any of this in `__init__` — it runs both on `connect()`,
 which `async with` calls for you.
 
-A rejected credential is written to the `memco` logger before it is raised,
-since a client is often built somewhere the traceback does not reach:
+## Logging
+
+Everything the SDK logs goes to a logger under `memco` — `memco._sync`,
+`memco._channel`, `memco._config` and so on — so configuring that one name
+governs all of it, while a single noisy area can still be quietened on its own:
 
 ```python
-logging.getLogger("memco").addHandler(logging.StreamHandler())
+logging.getLogger("memco").setLevel(logging.WARNING)
+logging.getLogger("memco._channel").setLevel(logging.ERROR)
 ```
+
+The SDK configures itself at `INFO` when you import it: a line when a client
+connects, a line when it closes, and a rejected credential reported before it is
+raised, since a client is often built somewhere the traceback does not reach.
+
+```console
+$ python app.py
+2026-08-31 10:02:11,604 memco._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
+2026-08-31 10:02:14,318 memco._sync INFO closed connection to grpc.spark.memco.ai:443
+```
+
+Set `MEMCO_LOG` to change that level — `debug`, `info`, `warning`, `error`,
+`critical`, or `none` to turn it off — or pass `log_level` to either client,
+which wins over the variable:
+
+```python
+with Memco(log_level="debug") as client:  # or log_level=logging.DEBUG
+    ...
+```
+
+`debug` adds where your credential and endpoint came from, every RPC with its
+outcome and duration, and — the one thing nothing else reveals — when a service
+cap silently trimmed a list you passed:
+
+```console
+$ MEMCO_LOG=debug python app.py
+2026-08-31 10:02:11,417 memco._config DEBUG credential taken from MEMCO_API_TOKEN
+2026-08-31 10:02:11,417 memco._config DEBUG endpoint grpc.spark.memco.ai:443 tls=True (host from the default)
+2026-08-31 10:02:11,502 memco._sync DEBUG health check on grpc.spark.memco.ai:443 ok in 84ms
+2026-08-31 10:02:11,604 memco._sync DEBUG ListDomains ok in 101ms
+2026-08-31 10:02:11,604 memco._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
+2026-08-31 10:02:11,731 memco._validate DEBUG tags trimmed from 62 to 50 by the service's cap
+2026-08-31 10:02:11,905 memco._sync DEBUG Search ok in 173ms
+```
+
+**No credential is ever written to a record**, at any level.
+
+### If your application configures its own logging
+
+The SDK owns its output by default: it attaches a stderr handler to `memco` and
+stops that logger propagating, so records go to the SDK's handler and no longer
+reach the ones you attached further up, the root logger's included. That is what
+makes it work with no setup — and it is the wrong shape for an application with
+its own logging, where a redaction filter or log shipper on the root logger would
+never see a memco record.
+
+To take the SDK's records back into your own pipeline, set `MEMCO_LOG=none` in
+the environment and configure the `memco` logger yourself:
+
+```python
+import logging
+from memco import Memco  # with MEMCO_LOG=none set
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("memco").setLevel(logging.INFO)
+
+with Memco() as client:  # records flow through your handlers
+    ...
+```
+
+```console
+$ MEMCO_LOG=none python app.py
+INFO:memco._sync:connected to grpc.spark.memco.ai:443 (tls=True)
+```
+
+Use the environment variable rather than `log_level="none"` for this: the
+variable is applied when `memco` is imported, while the argument is applied
+inside the constructor — after which the level you set is gone and the
+`connected` record has already been written.
+
+Both settings are process-wide, because a logger is: two clients asking for
+different levels means the last one constructed decides. An unrecognised
+`MEMCO_LOG` warns and falls back to the default rather than failing the program;
+an unrecognised `log_level` raises `MemcoConfigError`, because an argument is
+your own code rather than a stray variable in the environment.
 
 ## Operations
 

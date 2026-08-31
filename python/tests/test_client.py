@@ -109,14 +109,16 @@ def test_a_bad_token_surfaces_at_construction(harness: Harness):
 
 def test_a_rejected_credential_is_logged(harness: Harness, caplog):
     # A client is often built deep inside a framework, where the traceback
-    # reaches nobody. The log line is the only trace the operator is left with.
+    # reaches nobody, so the rejection is logged as well as raised. Capturing
+    # on the parent `memco` logger while the record comes from `memco._sync`
+    # is the point: configuring the one name governs the whole tree.
     harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
     with (
         caplog.at_level(logging.ERROR, logger="memco"),
         pytest.raises(errors.MemcoAuthenticationError),
     ):
         Memco(token=TOKEN, host=harness.address, tls=False)
-    assert [record.name for record in caplog.records] == ["memco"]
+    assert [record.name for record in caplog.records] == ["memco._sync"]
     # A credential must never reach a log.
     assert TOKEN not in caplog.text
 

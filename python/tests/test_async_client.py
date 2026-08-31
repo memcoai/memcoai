@@ -95,7 +95,7 @@ async def test_a_rejected_credential_is_logged(harness: Harness, caplog):
     ):
         async with AsyncMemco(token=TOKEN, host=harness.address, tls=False):
             pass
-    assert [record.name for record in caplog.records] == ["memco"]
+    assert [record.name for record in caplog.records] == ["memco._aio"]
     assert TOKEN not in caplog.text
 
 

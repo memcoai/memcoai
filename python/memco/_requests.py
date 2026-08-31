@@ -81,7 +81,7 @@ def _tags(tags: Iterable[Tag] | None, cap: int = 0) -> list[_pb.Tag]:
     Raises:
         MemcoInvalidRequestError: If a tag's type or value is blank.
     """
-    return [tag.to_proto() for tag in _validate.trim(_validate.check_tags(tags), cap)]
+    return [tag.to_proto() for tag in _validate.trim(_validate.check_tags(tags), cap, "tags")]
 
 
 def _check_handle(value: str, field: str, known: Known | None) -> None:
@@ -334,7 +334,7 @@ def enrich_memory_request(
             _check_handle(entry, "sources entry", known)
         # The service keeps the first max_sources and drops the rest, so raising
         # here would reject a call it would have accepted.
-        materialised = _validate.trim(materialised, caps.limits.max_sources)
+        materialised = _validate.trim(materialised, caps.limits.max_sources, "sources")
     return _built(
         lambda: _pb.EnrichMemoryRequest(
             memory_idx=memory_idx,

@@ -22,6 +22,7 @@ server-side one the same way.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Sequence
 from typing import TypeVar
 
@@ -29,6 +30,8 @@ import grpc
 
 from memco.errors import MemcoInvalidRequestError
 from memco.types import FeedbackRating, ImportedMemory, Tag
+
+_log = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
@@ -318,7 +321,7 @@ def check_count(count: int, field: str, cap: int) -> None:
         raise reject(f"{field} has {count} entries, which exceeds the limit of {cap}")
 
 
-def trim(values: list[_T], cap: int) -> list[_T]:
+def trim(values: list[_T], cap: int, field: str) -> list[_T]:
     """Trim a list to a cap the service applies by trimming.
 
     The service keeps the first ``cap`` entries and drops the rest, so a client
@@ -327,11 +330,17 @@ def trim(values: list[_T], cap: int) -> list[_T]:
     Args:
         values: The entries the caller supplied.
         cap: The reported cap. Zero means none was reported.
+        field: Field name, used verbatim in the log record.
 
     Returns:
         The entries, trimmed if a cap applies.
     """
-    return values[:cap] if cap and len(values) > cap else values
+    if not (cap and len(values) > cap):
+        return values
+    # Dropping the caller's data is invisible in the result, so this record is
+    # the only way to find out that it happened.
+    _log.debug("%s trimmed from %d to %d by the service's cap", field, len(values), cap)
+    return values[:cap]
 
 
 def check_feedback(feedback: Sequence[FeedbackRating]) -> None:

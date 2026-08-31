@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from datetime import date
 
@@ -400,6 +401,24 @@ def test_excess_tags_are_trimmed_per_domain(client: Memco, harness: Harness):
     tags = [types.Tag(type="language", value=v) for v in ("python", "go", "rust")]
     client.memory.search("q", domain="coding", tags=tags)
     assert len(harness.memory.requests["Search"].tags) == 2
+
+
+def test_a_trim_is_reported_on_the_logger(client: Memco, harness: Harness, caplog):
+    # Trimming drops the caller's data silently: 3 tags go in, 2 are sent, and
+    # nothing in the result says so. A debug record is the only way to find out.
+    limited(client, harness, max_tags=2)
+    tags = [types.Tag(type="language", value=v) for v in ("python", "go", "rust")]
+    with caplog.at_level(logging.DEBUG, logger="memco"):
+        client.memory.search("q", domain="coding", tags=tags)
+    assert "tags trimmed from 3 to 2" in caplog.text
+
+
+def test_nothing_is_reported_when_no_trim_happens(client: Memco, harness: Harness, caplog):
+    limited(client, harness, max_tags=2)
+    tags = [types.Tag(type="language", value="python")]
+    with caplog.at_level(logging.DEBUG, logger="memco"):
+        client.memory.search("q", domain="coding", tags=tags)
+    assert "trimmed" not in caplog.text
 
 
 def test_a_zero_tag_cap_means_no_cap(client: Memco, harness: Harness):
