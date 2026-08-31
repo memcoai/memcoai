@@ -61,8 +61,9 @@ publishes. It is generated too, so a wording fix belongs upstream, not here.
 The Python SDK does not read it at runtime. `scripts/sync_tool_docs.py` writes it
 into the docstrings in `memco/operations.py` and `memco/types.py`, which is where
 `memco.agent` picks the copy up, so the description a model reads is reviewable in
-a diff. After an export, run `make tool-docs` and commit the result;
-`make tool-docs-check` and a pre-commit hook fail if the two have drifted.
+a diff. Regenerating them is a maintainer step, but it concerns you in one way:
+`make tool-docs-check` and a pre-commit hook fail if a docstring and the manifest
+have drifted, so hand-editing that generated copy will not pass.
 
 Three parameters are deliberately left alone, listed as `SDK_SHAPED` in that
 script: the manifest describes `tags`, `feedback` and `source` as the MCP server
@@ -110,6 +111,10 @@ make -C python help
 4. **Run `make check`.** Every part must pass.
 5. **Open a pull request** describing what changed and why, and linking the
    issue.
+
+Do not bump a version or edit a changelog in a pull request. Releases are cut
+separately, from a tag on `main`, and a version bump in a change would collide
+with that.
 
 ### What review will ask for
 
@@ -237,6 +242,9 @@ parameter the manifest does not name — `timeout`, for one — are yours.
 Programs in `examples/` are imported by the test suite, so an example naming a
 symbol that no longer exists fails the build.
 
+Building it is as far as a pull request goes — `make check` does that already.
+Publishing is a release step; [docs.md](docs.md) covers it.
+
 ## Style
 
 Formatting and linting are enforced by [ruff](https://docs.astral.sh/ruff/) and
@@ -247,86 +255,6 @@ guide to read — if `make check` is green, the style is right.
 `# type: ignore[code]` and `# noqa: RULE - why` are accepted where the
 alternative would be a fiction: grpc ships no type information, so its callback
 signatures genuinely are `Any`. Say why in the comment.
-
-## Releasing
-
-Releases are cut from a tag on `main`. The tag is prefixed with the language it
-releases, so each SDK in this repository versions independently.
-
-1. Bump `version` in [`python/pyproject.toml`](python/pyproject.toml) and merge
-   that to `main`.
-2. Tag the merge commit and push the tag:
-
-   ```bash
-   git checkout main && git pull
-   git tag python-v0.1.0
-   git push origin python-v0.1.0
-   ```
-
-3. **CI runs, in full.** [`release.yml`](.github/workflows/release.yml) checks
-   that the tag names the version the package declares and that the commit is
-   contained in `main`, then re-runs every CI job — provenance, lint, strict
-   typing, the suite on 3.10 through 3.13, both runtime-compat pin sets, the
-   build, the docs, and the live smoke test.
-4. **Approve the `pypi` environment.** The wheel and sdist go to PyPI.
-5. **Publish the draft.** A draft GitHub release appears carrying three assets —
-   the wheel, the sdist, and `memco-docs-python-<version>.tar.gz` — with
-   generated notes. Edit them and publish.
-
-Step 4 is the point of no return: a version on PyPI cannot be replaced,
-re-uploaded, or meaningfully withdrawn. Everything before it is repeatable, and
-the draft in step 5 can be deleted, but the upload cannot be taken back.
-
-**That pause only exists if you configure it.** An environment with no
-protection rule does not stop for anyone, so a tag push would publish to PyPI
-unattended. Under **Settings → Environments → pypi**:
-
-- add a **required reviewer**, which is what creates the pause;
-- set **deployment branches and tags** to the tag pattern `python-v*`, so the
-  token is unreachable from any other ref;
-- keep `PYPI_API_TOKEN` as an *environment* secret rather than a repository one.
-  Only a job naming this environment can then resolve it, and no job in
-  `ci.yml` does.
-
-Rejecting the approval ends the run with nothing uploaded, which is how you
-rehearse the gate and the CI half of the pipeline. The publish and draft steps
-are only ever exercised by a real release.
-
-If the run fails *after* the upload — PyPI has the package but no draft
-appeared — do not re-tag. Re-run the failed jobs from the run page: the `dist`
-and `docs-python` artefacts are still attached to it, and re-running `uv publish`
-over files PyPI already has is a no-op rather than an error.
-
-A pre-release tag (`python-v0.1.0rc1`) is marked as a pre-release on GitHub
-automatically and is skipped by `pip install` unless asked for — but it still
-consumes that version on PyPI permanently, so it is a lower-stakes release, not
-a free one.
-
-### The documentation tarball
-
-`memco-docs-python-<version>.tar.gz` is the built Sphinx reference, packaged so
-it can be dropped into the documentation site without renaming anything:
-
-```bash
-tar xzf memco-docs-python-0.1.0.tar.gz -C <docs-site>/public/sdk/
-# -> public/sdk/python/0.1.0/index.html
-# -> https://docs.memco.ai/sdk/python/0.1.0/
-```
-
-Every link inside it is relative, so it works from any mount path. Go and Node
-will reuse the same `<language>/<version>/` shape.
-
-The site serves each version at its own permanent URL and copies the newest
-**stable** one to `/sdk/python/latest/`. A pre-release is skipped: it is a real
-release on PyPI and on GitHub, but not something to point a reader at. Because
-the two copies are byte-identical, every page declares
-`https://docs.memco.ai/sdk/python/latest/…` as its canonical URL — see
-`html_baseurl` in `python/docs/conf.py`, which a build serving the reference
-from anywhere else should override through `MEMCO_DOCS_BASEURL`.
-
-Nothing in the tarball is generated at extraction time, and nothing outside it
-is needed: `objects.inv` makes the reference an intersphinx target, and the
-built-in search works from any mount path.
 
 ---
 
