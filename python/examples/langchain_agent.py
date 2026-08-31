@@ -22,10 +22,21 @@ malformed request is something a model can fix on the next turn; a rejected
 credential is not, and letting it read that failure only invites it to keep
 trying. ``memco.agent.AGENT_RECOVERABLE`` is where that line is drawn.
 
+LangChain is not a dependency of this SDK, and neither is any provider package.
+``memco`` installs its gRPC runtime and nothing else, and ``to_langchain()``
+imports LangChain only when it is called, so both have to be installed
+explicitly before this file will run::
+
+    pip install memco langchain langchain-google-genai
+
 Run it with::
 
     export MEMCO_API_TOKEN=...
     export GOOGLE_API_KEY=...           # see gemini.md, next to this file
+
+    python examples/langchain_agent.py
+
+or in one command, with nothing installed up front::
 
     uv run --with memco --with langchain --with langchain-google-genai \
         python examples/langchain_agent.py

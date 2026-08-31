@@ -9,10 +9,16 @@ export MEMCO_API_TOKEN=...
 uv run --with memco python examples/quickstart.py
 ```
 
-`langchain_agent.py` needs two more packages and a model credential; its
-module docstring gives the command, and [`gemini.md`](gemini.md) covers getting
-a Google key. The tools it uses come from `memco.agent`, so the file itself is
-the framework wiring and nothing more.
+`langchain_agent.py` needs two packages the SDK does not install — LangChain and
+a provider package for the model you run — plus a model credential:
+
+```bash
+pip install langchain langchain-google-genai
+```
+
+Its module docstring gives the full command, and [`gemini.md`](gemini.md) covers
+getting a Google key. The tools it uses come from `memco.agent`, so the file
+itself is the framework wiring and nothing more.
 
 | Example | Shows |
 |---|---|
