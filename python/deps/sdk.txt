@@ -1,3 +1,12 @@
 # SDK-only requirements. The generated client's own floors live in
 # requirements.txt, which the export owns; the build concatenates both.
 grpcio-health-checking>=1.76.0,<2
+# Reads the google.rpc.ErrorInfo the service attaches to a FAILED_PRECONDITION,
+# which is what separates a sunset cutoff from any other unmet precondition.
+grpcio-status>=1.76.0,<2
+# errors.py imports google.rpc.error_details_pb2 directly, so this is a direct
+# dependency rather than grpcio-status's business. Its own floor is >=1.5.5,
+# which predates ErrorInfo by years and would resolve to a build that cannot
+# import. 1.60.0 is the oldest verified to carry ErrorInfo and work with the
+# protobuf range above.
+googleapis-common-protos>=1.60.0,<2

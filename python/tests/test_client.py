@@ -131,6 +131,7 @@ def test_a_rejected_credential_is_logged(harness: Harness, caplog):
         (grpc.StatusCode.PERMISSION_DENIED, errors.MemcoPermissionError),
         (grpc.StatusCode.INVALID_ARGUMENT, errors.MemcoInvalidRequestError),
         (grpc.StatusCode.NOT_FOUND, errors.MemcoNotFoundError),
+        (grpc.StatusCode.FAILED_PRECONDITION, errors.MemcoPreconditionFailedError),
         (grpc.StatusCode.RESOURCE_EXHAUSTED, errors.MemcoResourceExhaustedError),
         (grpc.StatusCode.INTERNAL, errors.MemcoInternalError),
     ],

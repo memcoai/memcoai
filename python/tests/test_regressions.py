@@ -535,6 +535,12 @@ def test_get_memory_reports_an_absent_memory_rather_than_fabricating_one(
         errors.MemcoNotFoundError(grpc.StatusCode.NOT_FOUND, "gone", "dbg"),
         errors.MemcoResourceExhaustedError(grpc.StatusCode.RESOURCE_EXHAUSTED, "daily limit"),
         errors.MemcoInternalError(grpc.StatusCode.INTERNAL, "boom"),
+        errors.MemcoSunsetError(
+            grpc.StatusCode.FAILED_PRECONDITION,
+            "upgrade",
+            "dbg",
+            errors.SunsetKind.CLIENT_VERSION,
+        ),
     ],
     ids=lambda e: type(e).__name__,
 )
@@ -549,6 +555,15 @@ def test_errors_survive_pickling_and_copying(exc):
 
 def test_resource_exhausted_keeps_its_kind_through_a_pickle():
     exc = errors.MemcoResourceExhaustedError(grpc.StatusCode.RESOURCE_EXHAUSTED, "daily limit")
+    assert pickle.loads(pickle.dumps(exc)).kind is exc.kind
+
+
+def test_a_sunset_keeps_its_kind_through_a_pickle():
+    # MemcoSunsetError overrides __reduce__ because the inherited one rebuilds
+    # with three arguments and would drop the kind entirely.
+    exc = errors.MemcoSunsetError(
+        grpc.StatusCode.FAILED_PRECONDITION, "migrate", "dbg", errors.SunsetKind.API_VERSION
+    )
     assert pickle.loads(pickle.dumps(exc)).kind is exc.kind
 
 

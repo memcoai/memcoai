@@ -14,7 +14,11 @@ exists because breaking it makes the notice useless:
   remedy is migrating to a new API version.
 * **Never fatal.** This is advice. It must not refuse to build a client, raise,
   or block a call — the service keeps serving, and the caller decides when to
-  act.
+  act. Enforcing the sunset date here would mean a skewed clock bricking a
+  working client, and this SDK refusing work the service would have accepted.
+  The cutoff is the service's to make: once it stops serving a build it refuses
+  the call outright, which reaches the caller as
+  :class:`~memco.errors.MemcoSunsetError`.
 """
 
 from __future__ import annotations

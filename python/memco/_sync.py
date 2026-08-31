@@ -76,6 +76,7 @@ class Memco:
         MemcoUnavailableError: If the service cannot be reached.
         MemcoUnhealthyError: If the service reports that it is not serving.
         MemcoAuthenticationError: If the credential is rejected.
+        MemcoSunsetError: If what this client uses is past its sunset date.
 
     Attributes:
         memory: The memory operations, as

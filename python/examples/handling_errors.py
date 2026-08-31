@@ -19,11 +19,14 @@ from memco.errors import (
     MemcoInvalidRequestError,
     MemcoNotFoundError,
     MemcoPermissionError,
+    MemcoPreconditionFailedError,
     MemcoResourceExhaustedError,
+    MemcoSunsetError,
     MemcoTimeoutError,
     MemcoUnavailableError,
     MemcoUnhealthyError,
     ResourceExhaustedKind,
+    SunsetKind,
 )
 
 
@@ -38,6 +41,21 @@ def connect() -> Memco | None:
     except MemcoConfigError as exc:
         # Nothing was sent: no token, or an unusable host or port.
         print(f"configuration problem: {exc}")
+    except MemcoSunsetError as exc:
+        # Past its sunset date and no longer served. Nothing to retry and
+        # nothing to reconfigure. Long before this, the same service sends a
+        # MemcoDeprecationWarning through the warnings module, on every version
+        # that still works, carrying the date this happens.
+        if exc.kind is SunsetKind.API_VERSION:
+            # Not "reinstall the package": the API version this build speaks is
+            # the thing that stopped being served.
+            print(f"API version no longer served: {exc.message}")
+        else:
+            print(f"upgrade required: {exc.message}")
+    except MemcoPreconditionFailedError as exc:
+        # Same status code, unrelated cause: billing, account state, terms.
+        # MemcoSunsetError subclasses this, so order matters.
+        print(f"precondition unmet: {exc.message}")
     except MemcoTimeoutError as exc:
         # Neither a MemcoUnavailableError nor a MemcoConfigError, so it needs
         # its own branch even in a connection helper.

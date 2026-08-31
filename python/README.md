@@ -196,6 +196,8 @@ MemcoError
     ├── MemcoPermissionError          credential lacks the scope or role
     ├── MemcoInvalidRequestError      malformed request
     ├── MemcoNotFoundError            handle resolved to nothing visible
+    ├── MemcoPreconditionFailedError  a precondition is unmet
+    │   └── MemcoSunsetError          past its sunset; carries .kind
     ├── MemcoResourceExhaustedError   rate limit or quota; carries .kind
     ├── MemcoUnavailableError         service unreachable
     │   └── MemcoUnhealthyError       reachable, but reporting not-serving

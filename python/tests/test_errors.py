@@ -30,6 +30,7 @@ class FakeRpcError(grpc.RpcError):  # type: ignore[misc]
         (grpc.StatusCode.PERMISSION_DENIED, errors.MemcoPermissionError),
         (grpc.StatusCode.INVALID_ARGUMENT, errors.MemcoInvalidRequestError),
         (grpc.StatusCode.NOT_FOUND, errors.MemcoNotFoundError),
+        (grpc.StatusCode.FAILED_PRECONDITION, errors.MemcoPreconditionFailedError),
         (grpc.StatusCode.RESOURCE_EXHAUSTED, errors.MemcoResourceExhaustedError),
         (grpc.StatusCode.UNAVAILABLE, errors.MemcoUnavailableError),
         (grpc.StatusCode.DEADLINE_EXCEEDED, errors.MemcoTimeoutError),
@@ -54,6 +55,22 @@ def test_every_api_error_is_a_memco_error():
 
 def test_unhealthy_is_catchable_as_unavailable():
     assert issubclass(errors.MemcoUnhealthyError, errors.MemcoUnavailableError)
+
+
+def test_an_error_carrying_no_trailer_at_all_is_never_read_as_a_sunset():
+    # FakeRpcError has no trailing_metadata(), which is the shape a failure
+    # that never reached a server arrives in. Reading the discriminator must
+    # cope with that rather than assume a well-formed gRPC call object.
+    err = errors.from_rpc_error(FakeRpcError(grpc.StatusCode.FAILED_PRECONDITION, "nope"))
+    assert not isinstance(err, errors.MemcoSunsetError)
+    assert err.message == "nope"
+
+
+def test_a_sunset_is_catchable_coarsely():
+    # An existing `except MemcoAPIError` must keep catching it, and a caller
+    # that does not care which version was blocked can catch the general one.
+    assert issubclass(errors.MemcoSunsetError, errors.MemcoPreconditionFailedError)
+    assert issubclass(errors.MemcoSunsetError, errors.MemcoAPIError)
 
 
 @pytest.mark.parametrize(

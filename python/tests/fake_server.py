@@ -33,6 +33,10 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
             one consumed per call. A method whose queue is empty responds
             normally, which is how "fails once, then succeeds" is staged for the
             retry tests.
+        rich_error: When set to a :class:`grpc.Status`, every method aborts with
+            it. Unlike ``error`` this carries structured details in the
+            ``grpc-status-details-bin`` trailer, which is what a sunset cutoff
+            is recognised by.
     """
 
     def __init__(self) -> None:
@@ -42,6 +46,7 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
         self.responses: dict[str, Any] = {}
         self.error: tuple[grpc.StatusCode, str] | None = None
         self.transient_errors: dict[str, list[tuple[grpc.StatusCode, str]]] = {}
+        self.rich_error: grpc.Status | None = None
 
     def _handle(self, name: str, context: grpc.ServicerContext, default: Any, request: Any) -> Any:
         self.calls.append(name)
@@ -52,6 +57,8 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
         queued = self.transient_errors.get(name)
         if queued:
             context.abort(*queued.pop(0))
+        if self.rich_error is not None:
+            context.abort_with_status(self.rich_error)
         if self.error is not None:
             context.abort(*self.error)
         return self.responses.get(name, default)
@@ -124,6 +131,10 @@ class FakeHealthService(health_pb2_grpc.HealthServicer):  # type: ignore[misc]
         metadata: One dict of request metadata per Check, in the same order.
         transient_errors: A queue of ``(code, details)`` pairs, one consumed per
             Check, for staging a blip during client construction.
+        rich_error: When set to a :class:`grpc.Status`, every Check aborts with
+            it. The health service is grpc's, not Memco's, so this is how a
+            test proves a status carrying structured details from a service
+            this SDK does not own is not read as a Memco condition.
     """
 
     def __init__(self) -> None:
@@ -131,12 +142,15 @@ class FakeHealthService(health_pb2_grpc.HealthServicer):  # type: ignore[misc]
         self.checked_services: list[str] = []
         self.metadata: list[dict[str, str]] = []
         self.transient_errors: list[tuple[grpc.StatusCode, str]] = []
+        self.rich_error: grpc.Status | None = None
 
     def Check(self, request, context):  # noqa: N802
         self.checked_services.append(request.service)
         self.metadata.append(dict(context.invocation_metadata()))
         if self.transient_errors:
             context.abort(*self.transient_errors.pop(0))
+        if self.rich_error is not None:
+            context.abort_with_status(self.rich_error)
         return health_pb2.HealthCheckResponse(status=self.status)
 
     def Watch(self, request, context):  # noqa: N802

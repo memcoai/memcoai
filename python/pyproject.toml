@@ -155,7 +155,7 @@ namespace_packages = true
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "grpc_health.*", "memco.memory.*"]
+module = ["grpc.*", "grpc_health.*", "grpc_status.*", "google.rpc.*", "memco.memory.*"]
 ignore_missing_imports = true
 
 # Test functions carry no annotations by convention; everything they call is
