@@ -187,6 +187,7 @@ class Tag:
             Most tag types carry no version, so this is usually ``None``.
 
     Example:
+        >>> from memco.types import Tag
         >>> Tag(type="language", value="python", version="3.12")
         Tag(type='language', value='python', version='3.12')
     """
@@ -469,6 +470,7 @@ class FeedbackRating:
         comment: An optional note about this result.
 
     Example:
+        >>> from memco.types import FeedbackRating
         >>> FeedbackRating(idx="memory-a-1-insight-1", relevant=True, correct=True)
         FeedbackRating(idx='memory-a-1-insight-1', relevant=True, correct=True, comment=None)
     """
@@ -561,6 +563,7 @@ class ImportedInsight:
             others can learn from. Supports markdown formatting.
 
     Example:
+        >>> from memco.types import ImportedInsight
         >>> ImportedInsight(title="Bearer is case-sensitive",
         ...                 content="Lowercase 'bearer' is rejected.")
         ImportedInsight(title='Bearer is case-sensitive', content="Lowercase 'bearer' is rejected.")
@@ -589,6 +592,7 @@ class ImportedMemory:
         tags: Tags describing the subject and context.
 
     Example:
+        >>> from memco.types import ImportedInsight, ImportedMemory, Tag
         >>> memory = ImportedMemory(
         ...     queries=["how do I authenticate against the memory API"],
         ...     insights=[ImportedInsight(title="Bearer is case-sensitive",

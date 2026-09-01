@@ -165,7 +165,7 @@ class AsyncTool:
         call: Runs the operation and renders the result as text, awaitably.
 
     Example:
-        >>> for tool in await session.tools():
+        >>> for tool in session.tools():
         ...     print(tool.name, tool.parameters["required"])
     """
 
@@ -565,6 +565,7 @@ def render(value: SearchResult | Memory | WriteResult | FeedbackResult | RevertR
         TypeError: If the value is not a result type this renders.
 
     Example:
+        >>> from memco import agent
         >>> print(agent.render(session.search("how does X work")))
     """
     renderer = _RENDERERS.get(type(value))
@@ -591,6 +592,7 @@ def briefing(domain: DomainEntry, instructions: Instructions) -> str:
         The guidance as text, ready to be a system prompt or part of one.
 
     Example:
+        >>> from memco import agent
         >>> entry = next(d for d in client.memory.list_domains().domains
         ...              if d.slug == "coding")
         >>> with client.memory.with_session("coding") as session:
