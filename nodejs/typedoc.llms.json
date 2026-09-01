@@ -1,0 +1,37 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "extends": ["./typedoc.json"],
+
+  // A second pass over the same entry point, emitting markdown instead of HTML
+  // for `scripts/build_llms_txt.py` to assemble into llms-full.txt. Everything
+  // that decides *what* is documented — entry point, exclusions, validation —
+  // is inherited, so the two outputs cannot describe different APIs.
+  "plugin": ["typedoc-plugin-markdown"],
+
+  // Beside the HTML rather than inside it: `docs/_build/html` is published
+  // verbatim as memco-docs-nodejs-<version>.tar.gz, and the markdown is an
+  // intermediate, not part of the site.
+  "out": "docs/_build/markdown",
+
+  // One markdown file per symbol, mirroring the HTML site's page layout, so a
+  // section of llms-full.txt and a page of the reference are the same thing.
+  "outputFileStrategy": "members",
+
+  // Page chrome that only makes sense inside a navigable site: a breadcrumb
+  // trail, the previous/next header, and the per-page index of links to
+  // headings further down the same file.
+  "hideBreadcrumbs": true,
+  "hidePageHeader": true,
+  // Signatures read as code rather than as bolded prose, and carry the types
+  // of what they take. Without expandParameters a signature reads
+  // `listDomains(options?)`, and the type is only restated in the parameter
+  // list below it — so the one line a reader skims is the one without it.
+  "useCodeBlocks": true,
+  "expandObjects": true,
+  "expandParameters": true,
+
+  // A "Defined in <file>:<line>" link to a blob URL under every symbol is a
+  // third of the file and tells a reader of the reference nothing they can act
+  // on. The HTML site keeps them; this pass does not.
+  "disableSources": true
+}

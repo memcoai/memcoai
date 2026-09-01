@@ -53,8 +53,31 @@ test-all:  ## Run the suite on every supported interpreter
 # output directory is published verbatim as `memco-docs-python-<version>.tar.gz`,
 # and Sphinx's default `<outdir>/.doctrees` would put megabytes of pickles on
 # the documentation site.
+#
+# Both output directories are emptied first. Sphinx never removes output, so a
+# renamed or deleted page lingers in docs/_build/html for as long as the tree
+# does — and the assembler below requires every page the build published to be
+# reachable from llms.txt, so it would rightly refuse a tree carrying a page
+# the sources no longer describe. This is what typedoc.json's cleanOutputDir
+# does on the Node side, and what a fresh CI checkout gets for free. The
+# doctree caches survive it, so a rebuild is still incremental.
+#
+# The markdown pass carries a doctree cache of its own: napoleon is configured
+# differently for it, and a config change invalidates the whole cache, so a
+# shared one would be thrown away and rebuilt on every alternating run. Those
+# two settings are the difference. sphinx-markdown-builder renders no
+# admonition that holds a doctest block, so with conf.py's `Example:` handling
+# left as it is, every worked example — the most useful thing in the file an
+# agent reads — is dropped with a warning. Rendering them as a plain section
+# keeps them, and costs the HTML nothing, which is built without the override.
 docs:  ## Build the reference documentation (warnings are errors)
+	rm -rf docs/_build/html docs/_build/markdown
 	$(RUN) sphinx-build -b html -W --keep-going -d docs/_build/doctrees docs docs/_build/html
+	$(RUN) sphinx-build -b markdown -W --keep-going \
+		-D napoleon_use_admonition_for_examples=0 \
+		-D napoleon_use_admonition_for_notes=0 \
+		-d docs/_build/doctrees-markdown docs docs/_build/markdown
+	python3 ../scripts/build_llms_txt.py python
 	@echo "open python/docs/_build/html/index.html"
 
 docs-serve: docs  ## Build the reference and serve it locally

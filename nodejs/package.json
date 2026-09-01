@@ -59,7 +59,8 @@
     "build:test": "rm -rf build/js && tsc -p tsconfig.test.json && cp src/internal/moduleDir.esm.js build/js/src/internal/moduleDir.js",
     "test": "npm run build:test && node --test --enable-source-maps 'build/js/tests/**/*.test.js'",
     "coverage": "npm run build:test && mkdir -p coverage && node --test --enable-source-maps --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=95 --test-coverage-branches=90 --test-coverage-exclude=build/js/client/** --test-coverage-exclude=build/js/examples/** --test-coverage-exclude=build/js/tests/** --test-coverage-exclude=build/js/src/types.js --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info 'build/js/tests/**/*.test.js'",
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "docs:markdown": "typedoc --options typedoc.llms.json"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.1",
@@ -71,6 +72,7 @@
     "langchain": "1.5.10",
     "prettier": "3.9.6",
     "typedoc": "0.28.20",
+    "typedoc-plugin-markdown": "4.13.0",
     "typescript": "5.9.3"
   }
 }

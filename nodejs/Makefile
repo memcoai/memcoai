@@ -99,8 +99,19 @@ test-all:  ## Run the suite on every supported runtime installed locally
 # first; `githubPages: false` in typedoc.json suppresses the one extra file it
 # would otherwise leave behind. Warnings and unresolved links are errors, so a
 # stale {@link} fails the build instead of shipping.
+# The markdown pass is a second run over the same entry point, into
+# docs/_build/markdown, for scripts/build_llms_txt.py to assemble into the
+# llms.txt pair. It runs after the HTML: typedoc.json sets cleanOutputDir, so
+# the HTML pass empties the directory the assembler writes into.
+#
+# The assembler is invoked from here rather than chained into the npm script
+# because it is python3, and `npm run docs` should stay runnable by someone who
+# has only Node. The interpreter is a prerequisite of the repository root
+# already — `make provenance` runs a script in it.
 docs:  ## Build the reference documentation (warnings are errors)
 	$(RUN) docs
+	$(RUN) docs:markdown
+	python3 ../scripts/build_llms_txt.py nodejs
 	@echo "open nodejs/docs/_build/html/index.html"
 
 # The interpreter this serves with is already a prerequisite of the repository

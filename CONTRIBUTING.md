@@ -267,6 +267,18 @@ parameter the manifest does not name — `timeout`, for one — are yours.
 Programs in `examples/` are imported by the test suite, so an example naming a
 symbol that no longer exists fails the build.
 
+`make docs` builds the reference twice: once as HTML for a person, and once as
+markdown for [`scripts/build_llms_txt.py`](scripts/build_llms_txt.py), which
+publishes each page's markdown beside its HTML under the same name —
+`clients.md` next to `clients.html` — and writes two files an agent starts
+from: `llms.txt`, an index naming every page, and `llms-full.txt`, all of them
+as one document. So `docs.memco.ai/sdk/python/latest/clients.html` has its text
+at `.../clients.md`, and either entry point reaches it.
+
+Nothing there is hand-maintained: the page order is the `toctree`'s, so a page
+added to it is picked up. Two things fail that step — a page nothing indexes,
+and a link that reaches nothing — and the error names them.
+
 Building it is as far as a pull request goes — `make check` does that already.
 Publishing is a release step, done from the release pipeline.
 
@@ -397,6 +409,23 @@ errors: `notDocumented` fails on an undocumented public symbol, `invalidLink` on
 an unresolved `{@link}`, and `notExported` when a public signature names a type
 that is not itself public — which is what stops a generated type leaking out of
 `src/index.ts`. That is Sphinx's `-W` plus `nitpicky`, in TypeDoc's vocabulary.
+
+`make docs` then runs TypeDoc a second time over the same entry point, emitting
+markdown for [`scripts/build_llms_txt.py`](scripts/build_llms_txt.py) — the same
+assembler the Python SDK uses, and the same output: every page published as
+markdown beside its HTML, plus `llms.txt` and `llms-full.txt` at the root. The
+second pass is configured in
+[`nodejs/typedoc.llms.json`](nodejs/typedoc.llms.json), which inherits
+everything that decides *what* is documented, so the two outputs cannot describe
+different APIs. A newly exported symbol is picked up from TypeDoc's own module
+index.
+
+One difference from Sphinx is worth knowing if you touch the assembler: TypeDoc
+emits every heading at its true depth, while sphinx-markdown-builder pins a
+rubric — what an `Example:` becomes — to a fixed level wherever it appears. The
+assembler repairs that for Python only, and `Reference.rubrics` is where a
+generator says whether it needs it. Applying the repair to TypeDoc's output
+pushes a section under the sibling before it.
 
 ## Style
 

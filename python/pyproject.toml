@@ -29,6 +29,10 @@ dev = [
 docs = [
     "sphinx>=7.3",
     "furo>=2024.1",
+    # The same sources, rendered a second time as markdown for
+    # scripts/build_llms_txt.py. In the docs extra rather than dev because CI's
+    # docs job installs only this one.
+    "sphinx-markdown-builder>=0.6.8",
 ]
 
 # One tree: the generated client lives inside the package it ships in, so there
