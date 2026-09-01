@@ -23,7 +23,7 @@ server-side one the same way.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import TypeVar
 
 import grpc
@@ -93,26 +93,6 @@ def _check_present(value: str | None, field: str) -> None:
     """
     if value is None or not value.strip():
         raise reject(f"{field} must not be empty")
-
-
-def _check_rewalkable(values: object, field: str) -> None:
-    """Require something that can be walked more than once.
-
-    A batch is validated here and then walked again to be sized and built, so a
-    one-shot iterable is empty by the second pass. Nothing raises: the call goes
-    out carrying nothing, reports success, and — since an import mints no handle
-    — an empty ``results`` is the only sign the caller ever gets. Refusing is the
-    whole remedy.
-
-    Args:
-        values: What the caller supplied.
-        field: Field name, used verbatim in the error message.
-
-    Raises:
-        MemcoInvalidRequestError: If it cannot be walked twice.
-    """
-    if not isinstance(values, Sequence):
-        raise reject(f"{field} must be a sequence; a one-shot iterable would be consumed unread")
 
 
 def check_query(query: str) -> None:
@@ -343,24 +323,43 @@ def trim(values: list[_T], cap: int, field: str) -> list[_T]:
     return values[:cap]
 
 
-def check_feedback(feedback: Sequence[FeedbackRating]) -> None:
-    """Validate a batch of ratings.
+def check_feedback(feedback: Iterable[FeedbackRating]) -> list[FeedbackRating]:
+    """Validate a batch of ratings, and return it as a list.
+
+    Materialised here and returned, as :func:`check_tags` and
+    :func:`check_sources` are, because the caller walks the result a second time
+    to build the request. Validating the caller's own object and then walking
+    that again would send nothing at all when they passed a generator, and the
+    call would report success.
 
     Args:
         feedback: The ratings to record.
+
+    Returns:
+        The ratings, as a list that can be walked again.
 
     Raises:
         MemcoInvalidRequestError: If the batch is empty or holds a rating whose
             handle is blank.
     """
-    if not feedback:
+    materialised = list(feedback or ())
+    if not materialised:
         raise reject("feedback must contain at least one rating")
-    for rating in feedback:
+    for rating in materialised:
         check_idx(rating.idx, "feedback idx")
+    return materialised
 
 
-def check_import_memories(memories: Sequence[ImportedMemory]) -> None:
-    """Validate a batch of memories to import.
+def check_import_memories(
+    memories: Iterable[ImportedMemory], offset: int = 0
+) -> list[ImportedMemory]:
+    """Validate a group of memories to import, and return it materialised.
+
+    Every collection the caller gave is copied into a list here, and it is that
+    copy the request is built from. Validating the caller's own object and then
+    walking it again to build would send nothing at all when they passed a
+    generator, a ``map`` or a ``filter`` — and the call would report success,
+    with an empty ``results`` the only sign they ever got.
 
     Every message names the position of the entry it is about. A batch gives the
     caller no handle to address one memory by, so the index is the only way to
@@ -368,33 +367,41 @@ def check_import_memories(memories: Sequence[ImportedMemory]) -> None:
 
     Args:
         memories: The memories to contribute.
+        offset: Position the first of them holds in the caller's whole batch, so
+            a group taken from the middle of one still names absolute indices.
+
+    Returns:
+        The memories, each with its queries, insights and tags materialised.
 
     Raises:
         MemcoInvalidRequestError: If the batch is empty, if an entry carries no
             query or no insight, if a bare string was passed as an entry's
             queries, or if any field of an entry is blank.
     """
-    _check_rewalkable(memories, "memories")
-    if not memories:
+    taken = list(memories)
+    if not taken:
         raise reject("memories must contain at least one memory")
-    for index, memory in enumerate(memories):
-        where = f"memories[{index}]"
+    materialised: list[ImportedMemory] = []
+    for index, memory in enumerate(taken):
+        where = f"memories[{offset + index}]"
         if isinstance(memory.queries, str):
-            # A str satisfies Sequence[str], so neither the annotation nor the
+            # A str satisfies Iterable[str], so neither the annotation nor the
             # type checker catches this; iterating it would file one query per
             # character and make the memory findable by nothing.
             raise reject(f"{where} queries must be a sequence of queries, not a single string")
-        _check_rewalkable(memory.queries, f"{where} queries")
-        if not memory.queries:
+        queries = list(memory.queries)
+        insights = list(memory.insights)
+        if not queries:
             raise reject(f"{where} must contain at least one query")
-        if not memory.insights:
+        if not insights:
             raise reject(f"{where} must contain at least one insight")
-        for at, query in enumerate(memory.queries):
+        for at, query in enumerate(queries):
             _check_present(query, f"{where} queries[{at}]")
-        for at, insight in enumerate(memory.insights):
+        for at, insight in enumerate(insights):
             _check_present(insight.title, f"{where} insights[{at}] title")
             _check_present(insight.content, f"{where} insights[{at}] content")
         # Validated here rather than left to the request builder so the message
-        # names the entry. _tags checks them again on the way to the wire; by
-        # then nothing is left for it to find, which is the intent.
-        check_tags(memory.tags, f"{where} tag")
+        # names the entry, and the checked list is what is carried forward.
+        tags = check_tags(memory.tags, f"{where} tag")
+        materialised.append(ImportedMemory(queries=queries, insights=insights, tags=tags))
+    return materialised

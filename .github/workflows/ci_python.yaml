@@ -1,4 +1,4 @@
-name: CI
+name: CI (Python)
 
 on:
   # Branches only. A tag push belongs to the release pipeline, which calls this
@@ -30,19 +30,10 @@ env:
 jobs:
   # ---- cheap, runs on every push -----------------------------------------
 
+  # Language-agnostic, so it is defined once and called by every language's CI
+  # rather than owned by this one. See the comment at the top of that file.
   provenance:
-    name: Provenance
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
-        with:
-          python-version: "3.12"
-      # Standard library only, so neither of these needs a dependency install.
-      - run: python scripts/verify_provenance.py
-      # The docstrings memco.agent reads are generated from the tool manifest.
-      # Drift here hands a model copy the service did not write.
-      - run: python scripts/sync_tool_docs.py --check
+    uses: ./.github/workflows/provenance.yaml
 
   lint:
     name: Lint
@@ -243,7 +234,7 @@ jobs:
       # ship an artefact that none of the above ever ran against.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: dist
+          name: dist-python
           path: python/dist
 
   docs:

@@ -1,0 +1,238 @@
+name: Release (Node.js)
+
+# The tag prefix scopes a release to one SDK, so each SDK in this repository
+# versions independently: `python-v*` is the Python pipeline, `go-v*` will be
+# Go's once it has build tooling of its own.
+on:
+  push:
+    tags: ["nodejs-v*"]
+
+permissions:
+  contents: read
+
+# A release must never be cancelled part-way: an npm version cannot be
+# re-published, so a half-finished run is not something to replace with a newer one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          # The ancestry check below needs the history joining the tag to main,
+          # which the default shallow fetch does not have.
+          fetch-depth: 0
+          # `persist-credentials` is deliberately left at its default here,
+          # unlike in the live-smoke job: the ancestry check below runs
+          # `git fetch origin main`, and the credential the checkout leaves in
+          # .git/config is what authenticates that fetch while the repository
+          # is not yet public. This job holds no secret of its own, so there is
+          # nothing for that credential to sit beside.
+
+      # This job installs nothing. Every hosted runner already ships Node, and
+      # the whole gate is a regex and a string comparison — pulling a toolchain
+      # in to run them would be the slowest part of the fastest job.
+      - name: The tag names a valid version, and the one the package declares
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module - <<'JS' >> "$GITHUB_OUTPUT"
+          import { readFileSync } from 'node:fs'
+
+          // The expression published at semver.org, inlined verbatim. Capture
+          // groups: major, minor, patch, prerelease, build metadata.
+          const SEMVER =
+            /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+
+          // The tag is the only thing a human types here, and everything
+          // downstream is named from it. Refusing a version npm would reject
+          // costs nothing now and saves a half-run release later.
+          const tag = process.env.TAG
+          const raw = tag.replace(/^nodejs-v/, '')
+          const match = SEMVER.exec(raw)
+          if (match === null) {
+            console.error(`tag ${tag} does not name a semantic version: ${JSON.stringify(raw)}`)
+            process.exit(1)
+          }
+
+          const declared = JSON.parse(readFileSync('nodejs/package.json', 'utf8')).version
+          // Compared as strings, and that is enough: semver admits exactly one
+          // spelling per version, so there is no pair of different-looking tags
+          // that name the same release. PEP 440 does — `0.1.0.0` and `0.1.0` —
+          // which is why the Python gate has to compare parsed version objects
+          // and then name the assets from the declared spelling rather than the
+          // tag's. Here the two cannot disagree.
+          if (raw !== declared) {
+            console.error(
+              `tag ${tag} claims version ${raw}, but nodejs/package.json declares ${declared}`
+            )
+            process.exit(1)
+          }
+
+          console.log(`version=${declared}`)
+          // A prerelease identifier is present: 0.1.0-rc.1, but not 0.1.0.
+          // Exactly the set that should not be presented as a finished release.
+          console.log(`prerelease=${match[4] !== undefined}`)
+          JS
+
+      # "On main, on tag": a tag pushed from a side branch releases code that
+      # never passed review, and nothing else in this pipeline would notice.
+      - name: The tagged commit is contained in main
+        run: |
+          # Fetched explicitly so FETCH_HEAD is well defined regardless of
+          # which refs the checkout happened to bring down.
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {
+            echo "::error::$GITHUB_REF_NAME is not an ancestor of main; release from main only"
+            exit 1
+          }
+
+  # Everything CI runs, with the jobs that are normally reserved for pull
+  # requests and main forced on. One definition, so a release cannot verify less
+  # than a pull request does.
+  ci:
+    name: Checks
+    needs: gate
+    uses: ./.github/workflows/ci_nodejs.yaml
+    with:
+      full: true
+    # Covers MEMCO_API_TOKEN for the nested live smoke test if it is a
+    # repository secret. If it is instead a secret of the `integration`
+    # environment, that job resolves it itself and this is a no-op; keep it
+    # either way, because passing the secret explicitly would need a
+    # `secrets:` declaration in ci_nodejs.yaml and would not reach an
+    # environment secret at all. A job with `uses:` cannot declare an
+    # environment, so this structurally cannot forward anything scoped to `npm`.
+    secrets: inherit
+
+  publish:
+    name: Publish to npm
+    needs: [gate, ci]
+    runs-on: ubuntu-latest
+    # NPM_TOKEN lives in this environment. Give it a required reviewer and a tag
+    # push becomes verify-everything, then wait for a human.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@memcoai/memco/v/${{ needs.gate.outputs.version }}
+    steps:
+      # Exactly the artifact the build job verified.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: dist-nodejs
+          path: dist
+      # No `node-version`, and no checkout to read .nvmrc from: the runner's own
+      # Node and npm publish a tarball perfectly well, and the only thing this
+      # step is here for is the `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
+      # line it writes into ~/.npmrc.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          registry-url: https://registry.npmjs.org
+
+      # The guard is not ceremony: with an empty token the line setup-node wrote
+      # expands to nothing, and the registry answers a missing credential with
+      # an ENEEDAUTH that reads like a permissions problem rather than the
+      # unfilled secret it is.
+      #
+      # To move to trusted publishing later: drop NODE_AUTH_TOKEN and add
+      # `id-token: write` to this job.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PRERELEASE: ${{ needs.gate.outputs.prerelease }}
+        run: |
+          [ -n "$NODE_AUTH_TOKEN" ] || {
+            echo "::error::NPM_TOKEN is not set in the 'npm' environment"
+            exit 1
+          }
+          # The -f test is not redundant: bash leaves an unmatched glob as its
+          # own literal text, so with the artefact missing `$#` is 1 and `$1` is
+          # the string `dist/*.tgz`. A count check alone would pass it straight
+          # to `npm publish`, which then fails with an ENOENT that reads like a
+          # registry problem rather than the empty download it is.
+          set -- dist/*.tgz
+          { [ "$#" -eq 1 ] && [ -f "$1" ]; } \
+            || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
+          # npm has a dist-tag that PyPI has no equivalent of, and it defaults to
+          # `latest`. A prerelease published without --tag would therefore become
+          # what a plain `npm install @memcoai/memco` resolves to, for everyone.
+          #
+          # --access public because a *scoped* package publishes restricted by
+          # default — a paid, org-only artefact nobody outside can install.
+          if [ "$PRERELEASE" = "true" ]; then dist_tag=next; else dist_tag=latest; fi
+          npm publish "$1" --access public --tag "$dist_tag"
+
+  release:
+    name: Draft the GitHub release
+    needs: [gate, publish]
+    runs-on: ubuntu-latest
+    # The only job here that writes anything back to the repository.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: dist-nodejs
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: docs-nodejs
+          path: docs
+
+      # The <language>/<version>/ prefix is the same shape the Python pipeline
+      # stages: it lets the docs site extract the tarball in place without
+      # renaming anything, and every link inside the built reference is
+      # relative, so it works from whatever path the site mounts it at.
+      - name: Package the reference
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          mkdir -p "stage/nodejs/$VERSION"
+          cp -r docs/. "stage/nodejs/$VERSION/"
+          tar czf "memco-docs-nodejs-$VERSION.tar.gz" -C stage nodejs
+
+      # A draft, not a release: the generated notes are a starting point, and
+      # nobody should read them until someone has edited them. The irreversible
+      # step already happened one job ago, on npm.
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          PRERELEASE: ${{ needs.gate.outputs.prerelease }}
+        run: |
+          # Both assets named in full, never globbed. npm's tarball ends in
+          # `.tgz` and the documentation's in `.tar.gz`, so any glob loose
+          # enough to catch both catches one of them twice, and any glob tight
+          # enough to catch one silently drops the other.
+          npm_tarball="dist/memcoai-memco-$VERSION.tgz"
+          docs_tarball="memco-docs-nodejs-$VERSION.tar.gz"
+          # Only the npm tarball is checked: it arrives from an artefact
+          # download and can plausibly be absent or differently named, whereas
+          # the docs tarball was written by the `tar czf` two steps up, which
+          # would have failed the job already.
+          [ -f "$npm_tarball" ] || {
+            echo "::error::$npm_tarball is not among the artefacts"
+            exit 1
+          }
+          # --verify-tag: hours pass between the tag push and this step, and
+          # without it a tag deleted meanwhile makes `gh` silently create a new
+          # one at the default branch head. `gh` has no --prerelease detection
+          # of its own, so an rc would otherwise draft as a finished release.
+          if [ "$PRERELEASE" = "true" ]; then set -- --prerelease; else set --; fi
+          url=$(gh release create "$TAG" \
+            --draft \
+            --verify-tag \
+            --generate-notes \
+            --title "Node.js SDK $VERSION" \
+            "$@" \
+            "$npm_tarball" "$docs_tarball")
+          echo "::notice::draft release ready to edit and publish: $url"

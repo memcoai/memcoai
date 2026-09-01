@@ -13,7 +13,7 @@ without defensive copying.
 from __future__ import annotations
 
 import enum
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
@@ -597,9 +597,9 @@ class ImportedMemory:
         ... )
     """
 
-    queries: Sequence[str]
-    insights: Sequence[ImportedInsight]
-    tags: Sequence[Tag] | None = None
+    queries: Iterable[str]
+    insights: Iterable[ImportedInsight]
+    tags: Iterable[Tag] | None = None
 
 
 @dataclass(frozen=True, slots=True)

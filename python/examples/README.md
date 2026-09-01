@@ -30,8 +30,3 @@ itself is the framework wiring and nothing more.
 | [`handling_errors.py`](handling_errors.py) | Every failure mode, and what to do about each |
 | [`concurrent_searches_async.py`](concurrent_searches_async.py) | Many searches on one connection |
 | [`langchain_agent.py`](langchain_agent.py) | Wiring `memco.agent` into a LangChain agent |
-
-Getting a model credential is covered separately in [`gemini.md`](gemini.md).
-
-Go and Node keep the same filenames under `go/examples/` and `nodejs/examples/`,
-so a reader can compare one language against another line by line.

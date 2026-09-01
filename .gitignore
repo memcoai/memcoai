@@ -50,6 +50,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+# `npm pack` writes the tarball beside package.json.
+*.tgz
+*.tar.gz
 
 # --- Go ---
 # go.work resolves nested modules locally, which hides breakage in consumers

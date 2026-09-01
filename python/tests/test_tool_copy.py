@@ -6,6 +6,12 @@ docstrings ``memco.agent`` reads. Nothing at runtime opens the manifest, so
 these tests are what holds the two ends together: they read it directly and
 assert the copy survived the round trip into a tool definition.
 
+The same script emits ``nodejs/src/gen/toolCopy.ts``, which has no docstrings to
+read back and so states its copy outright. What that target can be held to from
+here is what only Python can see — that the script and ``memco.agent`` still
+agree on the tables both steer by, and that the emitter's own rules hold.
+``nodejs/tests/toolCopy.test.ts`` checks the module against the manifest.
+
 A failure here means the docstrings have drifted from the manifest. Run
 ``python3 scripts/sync_tool_docs.py`` and commit the result.
 """
@@ -290,3 +296,173 @@ def test_the_generator_is_idempotent(manifest):
     script = sync_tool_docs()
     once = script.sync_operations(operations_source(), manifest)
     assert script.sync_operations(once, manifest) == once
+
+
+# -- the Node target ------------------------------------------------------
+#
+# `nodejs/src/gen/toolCopy.ts` is emitted, not rewritten, so drift is plain
+# string inequality and there is no AST to read the copy back out of. These
+# cover what the Node suite cannot see: that the script's copies of the tables
+# `memco.agent` steers by still match it, and that the emitter's own rules hold.
+
+
+def test_the_generator_and_the_sdk_agree_on_how_a_tool_is_named():
+    # The Node target spells the manifest's markers itself, so it carries its
+    # own copy of the three tables agent.py steers by. Two spellings of the
+    # prefix, or a list that has gained an operation on one side only, put a
+    # name in front of a model that answers to no tool.
+    script = sync_tool_docs()
+    assert script.TOOL_PREFIX == agent._PREFIX
+    assert script.OFFERED == agent._OPERATIONS
+    assert script.ANSWERED == agent._ANSWERED
+
+
+def test_the_node_target_spells_a_marker_as_a_model_would_call_it():
+    script = sync_tool_docs()
+    assert script.node_spelling("search") == "memco_search"
+    # Answered by the bound session, never offered, so a prefixed name here
+    # would point a model at a tool that does not exist.
+    assert script.node_spelling("list_domains") == "list_domains"
+    assert script.node_spelling("start_session") == "start_session"
+    # Neither offered nor answered. Nothing references it today; the rule is
+    # written down so the service starting to is not a failed build.
+    assert script.node_spelling("import_memories") == "import_memories"
+    with pytest.raises(script.Drift, match="unknown tool"):
+        script.node_spelling("teleport")
+
+
+def test_the_node_target_refuses_copy_a_template_literal_would_eat():
+    script = sync_tool_docs()
+    assert script.checked("plain text", "where", template=True) == "plain text"
+    with pytest.raises(script.Drift, match="backtick"):
+        script.checked("a `quoted` example", "where", template=True)
+    with pytest.raises(script.Drift, match="trailing whitespace"):
+        script.checked("a line \nand another", "where", template=True)
+    # A docstring carries both, and the Python targets are not made to refuse
+    # copy they could have written.
+    assert script.checked("a `quoted` example", "where") == "a `quoted` example"
+    assert script.checked("a line \nand another", "where") == "a line \nand another"
+
+
+def test_the_node_target_camelises_the_keys_it_carries():
+    # Alias first, then camelise: op_id is the request field the response calls
+    # operation_id, which the Node SDK takes as operationId. The other order
+    # would emit opId, which no method takes.
+    script = sync_tool_docs()
+    assert script.node_parameter("op_id") == "operationId"
+    assert script.node_parameter("memory_idx") == "memoryIdx"
+    assert script.node_parameter("session_id") == "sessionId"
+    assert script.node_parameter("query") == "query"
+
+
+def test_no_marker_reaches_the_copy_the_node_module_states(manifest):
+    # Doubly load-bearing here: the copy lands in a template literal, where a
+    # surviving ${ is interpolation rather than text. Measured from the copy
+    # rather than over the file, because the header comment quotes the
+    # marker syntax to say that it has been resolved — and a comment is inert.
+    # TOOL_COPY is where the copy starts; the three consts above it are names.
+    module = sync_tool_docs().tool_copy_module(manifest)
+    assert "${" not in module[module.index("export const TOOL_COPY") :]
+
+
+def test_the_node_target_leaves_out_the_parameters_this_sdk_shapes_differently(manifest):
+    # Asserted on the key and on the copy itself rather than on a phrase from
+    # it: a fragment of the service's prose is something the next export can
+    # reword, which would leave this passing while checking nothing.
+    script = sync_tool_docs()
+    module = script.tool_copy_module(manifest)
+    left_out = set()
+    for name, tool in manifest.items():
+        for key, described in tool["parameters"].items():
+            field = key.rsplit(".", 1)[-1]
+            if ALIASES.get(field, field) not in SDK_SHAPED:
+                continue
+            spelled_key = script.key_of(key if "[" in key else script.node_parameter(key))
+            assert f"{spelled_key}: `" not in module, key
+            assert script.substituted(described, script.node_spelling) not in module, key
+            left_out.add(f"{name}.{key}")
+    # Pinned, because the skip above is silent.
+    assert left_out == {
+        "create_memory.source",
+        "create_memory.tags",
+        "enrich_memory.source",
+        "enrich_memory.tags",
+        "import_memories.memories[].tags",
+        "search.tags",
+        "share_feedback.feedback",
+    }
+
+
+def test_the_node_target_carries_the_nested_copy_by_its_manifest_path(manifest):
+    script = sync_tool_docs()
+    module = script.tool_copy_module(manifest)
+    assert "export const NESTED_COPY" in module
+    carried = set()
+    for path in manifest["import_memories"]["parameters"]:
+        if "[" not in path:
+            continue
+        if path.rsplit(".", 1)[-1] in SDK_SHAPED:
+            assert f"'{path}'" not in module, path
+            continue
+        # At NESTED_COPY's own indentation, so a path landing among a tool's
+        # parameters instead — where the schema builder would read it as one —
+        # does not satisfy this.
+        assert f"\n  '{path}': `" in module, path
+        carried.add(path)
+    # Pinned, because the skip above is silent.
+    assert carried == {
+        "memories[].queries",
+        "memories[].insights",
+        "memories[].insights[].title",
+        "memories[].insights[].content",
+    }
+
+
+def test_the_node_target_refuses_a_marker_it_cannot_spell(published):
+    script = sync_tool_docs()
+    published["search"]["description"] = "Search things. See ${tool:teleport}."
+    with pytest.raises(script.Drift, match="unknown tool"):
+        script.tool_copy_module(published)
+
+
+def test_the_node_target_refuses_a_marker_it_cannot_parse(published):
+    script = sync_tool_docs()
+    published["search"]["description"] = "Search things. See ${tool:Search}."
+    with pytest.raises(script.Drift, match="not a tool reference"):
+        script.tool_copy_module(published)
+
+
+def test_the_node_target_refuses_a_field_it_neither_writes_nor_names(published):
+    # Every string the manifest publishes is either carried or excluded by
+    # name, so a field the next export adds is a decision rather than a
+    # default. Without this it would be dropped in silence.
+    script = sync_tool_docs()
+    published["search"]["outputSchema"] = "something new"
+    with pytest.raises(script.Drift, match="neither writes nor names"):
+        script.tool_copy_module(published)
+
+
+def test_the_committed_node_module_is_what_the_generator_writes(manifest):
+    # The emitter is pure, so this is both the drift check and the whole of its
+    # idempotence: a second run produces the bytes already on disk.
+    script = sync_tool_docs()
+    assert script.tool_copy_module(manifest) == script.NODE_COPY.read_text(encoding="utf-8")
+
+
+def test_the_node_target_refuses_a_name_a_key_cannot_spell():
+    # Every description goes through `checked`; a key is written straight into
+    # source, so a name carrying a quote would close the string it is spelled in.
+    script = sync_tool_docs()
+    assert script.key_of("get_memory") == "get_memory"
+    assert script.key_of("memories[].insights[].title") == "'memories[].insights[].title'"
+    with pytest.raises(script.Drift, match="a key cannot spell"):
+        script.key_of("o'brien")
+
+
+def test_the_generator_names_every_top_level_field_the_manifest_publishes():
+    # The tool-level accounting cannot see this level, so without this a whole
+    # new kind of published copy — a set of prompts, a second tool list — is
+    # dropped without a word, while the emitted module states that nothing is.
+    # A new key is a decision: carry it, or name it as left behind.
+    document = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert set(document) == sync_tool_docs().DOCUMENT

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The editor project, and what `make typecheck` runs. Emits nothing; the
+  // three configs extending it turn emit on and narrow `include`.
+  //
+  // It covers the generated client because src/ imports it, and tsc has no
+  // per-directory strictness, so the set here is the strictness the export's
+  // output has to survive. It does: every flag below, plus
+  // noUncheckedIndexedAccess, exactOptionalPropertyTypes and
+  // noPropertyAccessFromIndexSignature, was measured clean against
+  // client/src/gen/**. Those three are left off as a deliberate choice of where
+  // to draw the bar, not because the generated tree cannot take them.
+  //
+  // Turning them on is not free, though: measured, all three together produce
+  // 138 errors, none of them in the generated tree — 22 in src/agent.ts and the
+  // rest across the suite. So the work is in hand-written code, and the export
+  // is not what stands in the way.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+
+    // Explicit, never inferred. Left unset, tsc takes the longest common
+    // prefix of its inputs — today nodejs/, but it would silently collapse to
+    // src/ during any window where client/ is empty between exports, moving
+    // every output path and every target in the `exports` map with it.
+    "rootDir": ".",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+
+    // NOT set, deliberately: verbatimModuleSyntax makes ESM syntax an error
+    // under `module: commonjs`, which is exactly what tsconfig.cjs.json does.
+    // Enabling it makes the dual build impossible.
+
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "client/src/gen/**/*.ts",
+    "tests/**/*.ts",
+    "examples/**/*.ts"
+  ]
+}

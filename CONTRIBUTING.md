@@ -6,6 +6,14 @@ Memco SDKs; issues and pull requests are welcome from anyone.
 You do **not** need access to Memco's servers to contribute. Every test suite
 runs against an in-process server, so `make check` passes offline.
 
+Everything down to [Making a change](#making-a-change) applies whichever SDK you
+are touching. After that the document splits, and each language repeats the same
+seven headings — Prerequisites, Setting up, Running the checks, Layout, Tests,
+Documentation, Style — so the two can be read side by side:
+
+- [Python](#python) — published to PyPI as `memco`
+- [Node.js](#nodejs) — published to npm as `@memcoai/memco`
+
 ## Reporting a bug
 
 [Open an issue](https://github.com/memcoai/memco/issues) and include:
@@ -40,8 +48,8 @@ go/client/                generated Go client, and the tool manifest
 nodejs/client/            generated Node client, and the tool manifest
 ```
 
-Everything else is hand-written — including `python/memco/__init__.py`, which
-sits alongside the generated tree.
+Everything else is hand-written, including the files that sit alongside a
+generated tree. Each language's **Layout** section below says which is which.
 
 If you believe the generated code or the contract itself is wrong, open an issue
 describing the problem rather than editing the output. `make provenance` checks
@@ -58,24 +66,39 @@ its own.
 agent-facing description of every operation — the same copy the hosted MCP server
 publishes. It is generated too, so a wording fix belongs upstream, not here.
 
-The Python SDK does not read it at runtime. `scripts/sync_tool_docs.py` writes it
-into the docstrings in `memco/operations.py` and `memco/types.py`, which is where
-`memco.agent` picks the copy up, so the description a model reads is reviewable in
-a diff. Regenerating them is a maintainer step, but it concerns you in one way:
-`make tool-docs-check` and a pre-commit hook fail if a docstring and the manifest
-have drifted, so hand-editing that generated copy will not pass.
+No SDK reads it at run time. `scripts/sync_tool_docs.py` compiles the copy into
+each language's own source instead, so the description a model reads is
+reviewable in a diff rather than loaded from a data file:
+
+| SDK | Where the copy lands |
+|---|---|
+| Python | docstrings in `memco/operations.py` and `memco/types.py`, which `memco.agent` reads back at run time |
+| Node.js | `nodejs/src/gen/toolCopy.ts` — TypeScript keeps no doc comments at run time, so the copy is compiled in |
+| Go | not compiled in; `go/client/tools` publishes the manifest as it ships, markers and all |
+
+Regenerating is a maintainer step, but it concerns you in one way:
+`make tool-docs-check` and a pre-commit hook fail if any of those has drifted
+from the manifest, so hand-editing the generated copy will not pass.
 
 Three parameters are deliberately left alone, listed as `SDK_SHAPED` in that
 script: the manifest describes `tags`, `feedback` and `source` as the MCP server
-accepts them — XML strings and bare literals — while this SDK takes `Tag`,
-`FeedbackRating` and `DataSource` and hands a model an object schema built from
-those types. Writing the wire copy onto them would describe an encoding the
+accepts them — XML strings and bare literals — while the SDKs take their own
+`Tag`, `FeedbackRating` and `DataSource` types and hand a model an object schema
+built from those. Writing the wire copy onto them would describe an encoding the
 schema rejects.
 
 ## Development setup
 
-You need [uv](https://docs.astral.sh/uv/) and `make`. Nothing else — uv fetches
-the language runtimes for you.
+You need `make`, plus the toolchain for whichever SDK you are working on:
+
+| SDK | Prerequisite | Notes |
+|---|---|---|
+| Python | [uv](https://docs.astral.sh/uv/) | Fetches the interpreters itself; `python/.python-version` pins the supported floor |
+| Node.js | a Node runtime | Nothing fetches it for you; `nodejs/.nvmrc` pins **24**, the version to develop against |
+
+You only need both if you are changing both. The root `make` targets fan out to
+every language present and skip nothing, so a partial toolchain will fail on the
+language you have not installed.
 
 ```bash
 git clone https://github.com/memcoai/memco.git
@@ -97,6 +120,7 @@ targets. For anything language-specific, address one directly:
 
 ```bash
 make -C python help
+make -C nodejs help
 ```
 
 ## Making a change
@@ -126,8 +150,9 @@ with that.
 - **Public API changes need a strong reason**, and a note in the pull request
   saying what breaks. These packages are used by people who cannot easily change
   their code.
-- **Suppressions need a reason.** `# noqa: RULE - why` is fine where the
-  alternative would be a fiction; a bare suppression will be questioned.
+- **Suppressions need a reason.** One is fine where the alternative would be a
+  fiction; a bare suppression will be questioned. Each language's **Style**
+  section below gives the spelling its tooling expects.
 
 Optionally, install the hooks so the checks run before each commit:
 
@@ -243,7 +268,7 @@ Programs in `examples/` are imported by the test suite, so an example naming a
 symbol that no longer exists fails the build.
 
 Building it is as far as a pull request goes — `make check` does that already.
-Publishing is a release step; [docs.md](docs.md) covers it.
+Publishing is a release step, done from the release pipeline.
 
 ## Style
 
@@ -258,12 +283,141 @@ signatures genuinely are `Any`. Say why in the comment.
 
 ---
 
+# Node.js
+
+The Node.js SDK is in [`nodejs/`](nodejs/) and is published to npm as
+[`@memcoai/memco`](https://www.npmjs.com/package/@memcoai/memco).
+
+## Prerequisites
+
+Node, and `make`. There is no uv here to fetch a runtime for you, so install one
+yourself; [nvm](https://github.com/nvm-sh/nvm) is where
+`make -C nodejs test-all` looks for the other supported versions.
+
+`nodejs/.nvmrc` pins **24**, the version to develop against. `engines.node`
+declares the floor, **>= 22**, and CI sweeps 22, 24 and 26 — every line still
+supported upstream, now that 18 and 20 have reached end of life (April 2025 and
+April 2026).
+
+Developing against the pin rather than the floor is the opposite of the Python
+choice, and deliberate: a newer Node line takes nothing away, so there is no
+portability trap to catch locally the way `date.fromisoformat` was. The matrix is
+what proves the floor.
+
+## Setting up
+
+```bash
+make -C nodejs install      # or `make install` from the repository root
+```
+
+That runs `npm ci`, which installs `package-lock.json` exactly. Do not reach for
+`npm install` to set up: it is free to rewrite the lockfile, and a lockfile
+change nobody asked for will turn up in your diff.
+
+`nodejs/.npmrc` is part of the setup rather than decoration, and one line in it
+will affect anything you write: `ignore-scripts=true` is the standing
+supply-chain guard, and it means **npm never fires a lifecycle script** —
+no `prepare`, no `prebuild`, no `posttest`. Every multi-step operation in
+`package.json` chains with `&&` for that reason. A step written as a lifecycle
+hook is skipped in silence, behind a green build.
+
+## Running the checks
+
+```bash
+make -C nodejs lint         # prettier --check
+make -C nodejs format       # apply formatting
+make -C nodejs typecheck    # tsc --strict over the SDK, the client and the tests
+make -C nodejs test         # the suite, on the version .nvmrc pins
+make -C nodejs test-all     # the suite on every supported runtime installed
+make -C nodejs coverage     # the suite with coverage; fails below the floor
+make -C nodejs docs         # build the reference; warnings are errors
+make -C nodejs docs-serve   # build it and serve it on :8000
+make -C nodejs build        # build both distributables and the npm tarball
+make -C nodejs clean        # remove build and cache artefacts
+```
+
+`make check` from the root runs the same set plus the provenance check.
+
+## Layout
+
+```
+nodejs/
+  src/
+    index.ts          the public API
+    types.ts          the result types every operation returns
+    errors.ts         the exception hierarchy
+    internal/         internals: wire conversion, resources, provenance
+    gen/              GENERATED — the service's tool copy
+  client/             GENERATED — do not edit
+  tests/              the test suite
+  docs/               TypeDoc's output; nothing in it is hand-written
+```
+
+Anything under `client/` comes from the service contract, and it is
+export-owned in a way that reaches the tooling: `nodejs/.prettierignore` and
+`.pre-commit-config.yaml` both exclude it, so a formatting pass cannot produce a
+four-thousand-line diff that the next export throws away. `src/gen/` is the Node
+counterpart of the generated Python docstrings — `scripts/sync_tool_docs.py`
+writes the manifest's copy into `src/gen/toolCopy.ts`, and the same check fails
+if you hand-edit it. Everything else in `src/` is hand-written.
+
+The package publishes **both** module formats — `dist/esm/` and `dist/cjs/`,
+built from one set of sources by `tsconfig.esm.json` and `tsconfig.cjs.json` and
+selected by the `exports` map in `package.json`. A wrong condition, a wrong file
+extension or a missing `{"type":"commonjs"}` marker breaks exactly one format
+while the other keeps working, which is why CI installs the packed tarball and
+loads it both ways rather than trusting the build.
+
+## Tests
+
+The suite runs against a **real in-process gRPC server**
+([`nodejs/tests/fakeServer.ts`](nodejs/tests/fakeServer.ts)) on a loopback
+socket, exactly as the Python suite does. Nothing about gRPC is mocked, so
+interceptors, metadata, status codes and channel teardown are all exercised for
+real. It needs no network access and no API key.
+
+It runs on `node:test` and `node:assert` with **zero test dependencies** — no
+runner, no assertion library, no mocking framework. Keep it that way.
+
+The sources are compiled and the tests then run as JavaScript, rather than under
+Node's type stripping. That is not a preference: the generated client contains
+`export enum DataSource`, which is not erasable syntax, so `node --test` over the
+`.ts` sources dies before a single test runs. `--enable-source-maps` puts the
+frames back on `src/*.ts`.
+
+Conventions match the Python suite: name a test after the behaviour it pins, not
+the function it calls, and assert what is observable.
+
+## Documentation
+
+Every public symbol needs a TSDoc comment. The reference is generated from those
+by [TypeDoc](https://typedoc.org/), configured in
+[`nodejs/typedoc.json`](nodejs/typedoc.json), and the build treats warnings as
+errors: `notDocumented` fails on an undocumented public symbol, `invalidLink` on
+an unresolved `{@link}`, and `notExported` when a public signature names a type
+that is not itself public — which is what stops a generated type leaking out of
+`src/index.ts`. That is Sphinx's `-W` plus `nitpicky`, in TypeDoc's vocabulary.
+
+## Style
+
+[Prettier](https://prettier.io/) only, configured in `nodejs/.prettierrc.json`.
+There is deliberately no ESLint: `tsc` in strict mode already refuses what a
+linter would be asked to catch here, and a second tool with opinions of its own
+would mostly need silencing. There is no style guide to read — if `make check` is
+green, the style is right.
+
+`// @ts-expect-error - why` is accepted on the same terms `# type: ignore` is in
+the Python SDK, and preferred over `@ts-ignore` because it fails once the
+underlying problem is fixed. Say why in the comment.
+
+---
+
 ## Licence
 
 This repository is licensed under the [MIT licence](LICENSE), © Memco Labs, Inc.
 By contributing you agree that your contributions will be released under the
 same licence.
 
-`python/LICENSE` is a copy of that file, because a published package has to
-carry its own licence text. A test fails if the two drift apart, so update both
-together.
+`python/LICENSE` and `nodejs/LICENSE` are copies of that file, because a
+published package has to carry its own licence text. Each language's suite fails
+if its copy has drifted from the root, so update all three together.

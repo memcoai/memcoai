@@ -1,0 +1,14 @@
+# Export-owned. client/ is emptied and rewritten on every SDK export, so
+# formatting it produces a four-thousand-line diff that the next export throws
+# away. The repository's pre-commit hooks exclude the same tree, for the same
+# reason.
+client/
+
+# Build output.
+dist/
+build/
+docs/_build/
+coverage/
+
+# Written by the resolver, not by a human.
+package-lock.json

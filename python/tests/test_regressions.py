@@ -599,7 +599,10 @@ def test_unencodable_text_in_an_import_is_a_typed_error(field):
     )
     memory = ImportedMemory(queries=[bad] if field == "queries" else ["q"], insights=[insight])
     with pytest.raises(errors.MemcoInvalidRequestError):
-        requests.import_memories_requests([memory], domain="coding", session_id=None)
+        # Drained: the builder takes the batch a group at a time so that a
+        # caller may hand it a generator, which means nothing is validated
+        # until the group carrying it is reached.
+        list(requests.import_memories_requests([memory], domain="coding", session_id=None))
 
 
 def _taking_a_tag(tag: Tag) -> dict[str, object]:
@@ -626,14 +629,18 @@ def _taking_a_tag(tag: Tag) -> dict[str, object]:
             sources=None,
             source=DataSource.AGENT,
         ),
-        "import": lambda: requests.import_memories_requests(
-            [
-                ImportedMemory(
-                    queries=["q"], insights=[ImportedInsight(title="t", content="c")], tags=[tag]
-                )
-            ],
-            domain="coding",
-            session_id=None,
+        "import": lambda: list(
+            requests.import_memories_requests(
+                [
+                    ImportedMemory(
+                        queries=["q"],
+                        insights=[ImportedInsight(title="t", content="c")],
+                        tags=[tag],
+                    )
+                ],
+                domain="coding",
+                session_id=None,
+            )
         ),
     }
 

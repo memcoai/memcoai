@@ -1,0 +1,41 @@
+name: Provenance
+
+# Language-agnostic: it checks the contract, every generated client, and every
+# language's tool manifest in one pass. It lives in its own workflow rather than
+# as a job in one language's CI, and the alternatives are all worse:
+#
+#   - Leaving it in ci_python.yaml would mean a Node release publishes to npm
+#     having never run it, because release_nodejs.yaml calls ci_nodejs.yaml, not
+#     the Python one.
+#   - Giving it a `push`/`pull_request` trigger of its own would leave it absent
+#     from *both* release pipelines: a tag push fires neither trigger, which is
+#     exactly why ci_python.yaml filters `push` to branches.
+#   - Copying the job into each language's CI invites the two copies to drift,
+#     which is the failure this check exists to catch in the first place.
+#
+# So it is `workflow_call` only, and every language's CI calls it. The cost is
+# that it runs twice on a pull request; that is the price of each language's CI
+# being self-sufficient. Nesting is release_* -> ci_* -> provenance, three deep,
+# under GitHub's limit of four.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    name: Provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      # Standard library only, so neither of these needs a dependency install.
+      - run: python scripts/verify_provenance.py
+      # The tool copy an SDK hands a model is generated from the manifest: the
+      # docstrings memco.agent reads, and nodejs/src/gen/toolCopy.ts. Drift here
+      # hands a model copy the service did not write.
+      - run: python scripts/sync_tool_docs.py --check

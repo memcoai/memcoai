@@ -14,7 +14,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: &generated '^(proto/|[a-z]+/client/|python/memco/memory/)'
+        exclude: &generated '^(proto/|[a-z]+/client/|python/memco/memory/|nodejs/src/gen/)'
       - id: end-of-file-fixer
         exclude: *generated
       - id: check-yaml
@@ -37,10 +37,35 @@ repos:
         files: ^python/
         exclude: *generated
 
-  # Run from the project's own environment so it sees the installed package and
-  # the generated stubs, which an isolated hook environment would not.
+  # Run from the project's own environments so they see the installed packages
+  # and the generated stubs, which an isolated hook environment would not — and,
+  # for prettier, so the version is the one package.json pins and CI runs rather
+  # than whatever a mirror repository happens to carry.
   - repo: local
     hooks:
+      - id: prettier
+        name: prettier
+        # --ignore-unknown: `files` selects by path, so LICENSE and .nvmrc reach
+        # this hook too, and prettier exits non-zero on a file it has no parser
+        # for rather than passing over it.
+        #
+        # --ignore-path: prettier resolves .prettierignore relative to its own
+        # cwd, and pre-commit runs every hook from the repository root, so
+        # without this the hook would never read nodejs/.prettierignore and
+        # would reformat package-lock.json — which CI, running from nodejs/,
+        # does not touch. Naming the file keeps the two in agreement; its
+        # patterns stay relative to the directory holding it.
+        #
+        # No `exclude: *generated`, deliberately. That anchor covers
+        # nodejs/src/gen/, which scripts/sync_tool_docs.py writes and which CI's
+        # `prettier --check .` does check — excluding it here would leave the
+        # hook and CI disagreeing about one file. The generator is required to
+        # emit prettier-clean output for exactly this reason. The anchor's other
+        # nodejs/ path, client/, is already in nodejs/.prettierignore.
+        entry: nodejs/node_modules/.bin/prettier --write --ignore-unknown --ignore-path nodejs/.prettierignore
+        language: system
+        files: ^nodejs/
+
       - id: mypy
         name: mypy (strict)
         entry: bash -c 'cd python && uv run mypy'
@@ -57,11 +82,11 @@ repos:
         files: '^(proto/|[a-z]+/client/|python/memco/memory/|python/memco/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'
 
       # The docstrings are where the service's tool copy lands, so they are a
-      # generated artefact even though they are hand-editable. Fires on the
-      # manifest and on the two modules it writes into.
+      # generated artefact even though they are hand-editable. Fires on each
+      # language's manifest and on every module the script writes into.
       - id: tool-docs
         name: tool copy matches the manifest
         entry: python3 scripts/sync_tool_docs.py --check
         language: system
         pass_filenames: false
-        files: '^(scripts/sync_tool_docs\.py|python/memco/(memory/tools\.json|operations\.py|types\.py))$'
+        files: '^(scripts/sync_tool_docs\.py|python/memco/(memory/tools\.json|operations\.py|types\.py)|nodejs/(client/src/gen/tools\.json|src/gen/toolCopy\.ts))$'

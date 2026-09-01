@@ -7,7 +7,8 @@ how they await the response.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+import itertools
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import TypeVar, cast
 
 import grpc
@@ -18,7 +19,7 @@ from memco.memory.v1 import memory_pb2 as _pb
 from . import _validate
 from ._limits import Known
 from .errors import MemcoNotFoundError
-from .types import DataSource, FeedbackRating, ImportedMemory, Tag
+from .types import DataSource, FeedbackRating, ImportedInsight, ImportedMemory, Tag
 
 _M = TypeVar("_M", bound=Message)
 
@@ -349,7 +350,7 @@ def enrich_memory_request(
 
 
 def share_feedback_request(
-    *, session_id: str, feedback: Sequence[FeedbackRating], known: Known | None = None
+    *, session_id: str, feedback: Iterable[FeedbackRating], known: Known | None = None
 ) -> _pb.ShareFeedbackRequest:
     """Validate and build a ``ShareFeedback`` request.
 
@@ -365,34 +366,42 @@ def share_feedback_request(
         MemcoInvalidRequestError: If the session or any rating is invalid.
     """
     _validate.check_session_id(session_id)
-    _validate.check_feedback(feedback)
+    rated = _validate.check_feedback(feedback)
     caps = known or Known()
     if caps.limits:
-        _validate.check_count(len(feedback), "feedback", caps.limits.max_feedback_entries)
-        for rating in feedback:
+        _validate.check_count(len(rated), "feedback", caps.limits.max_feedback_entries)
+        for rating in rated:
             _check_handle(rating.idx, "feedback idx", known)
     return _built(
         lambda: _pb.ShareFeedbackRequest(
-            session_id=session_id, feedback=[rating.to_proto() for rating in feedback]
+            session_id=session_id, feedback=[rating.to_proto() for rating in rated]
         )
     )
 
 
 def import_memories_requests(
-    memories: Sequence[ImportedMemory],
+    memories: Iterable[ImportedMemory],
     *,
     domain: str | None,
     session_id: str | None,
     known: Known | None = None,
-) -> list[tuple[int, _pb.ImportMemoriesRequest]]:
-    """Validate a batch of memories and split it into the calls that carry it.
+) -> Iterator[tuple[int, _pb.ImportMemoriesRequest]]:
+    """Take the batch a group at a time, yielding the call that carries each.
 
     ``max_import_memories`` bounds one *call*, not one batch, and it refuses
-    rather than trims — so a batch above it is divided into groups of that size
-    and sent as several calls. A caller hands over whatever it has without
-    having to learn the number or chunk against it. Nothing is dropped: the
-    groups partition the batch in order. An unreported cap means the service
-    rules, as everywhere else, so the batch goes out whole.
+    rather than trims — so a batch above it is taken in groups of that size and
+    sent as several calls. A caller hands over whatever it has without having to
+    learn the number or chunk against it. Nothing is dropped: the groups
+    partition the batch in order. An unreported cap means the service rules, as
+    everywhere else, so the batch goes out whole.
+
+    Each group is materialised, validated and built as it is reached, and the
+    caller sends it before the next is taken. So ``memories`` may be any
+    iterable — a generator, a ``map``, a cursor — and only one group is ever
+    held. The cost is that a bad entry half way through is found half way
+    through, with the groups before it already written; resending the whole
+    batch is the remedy, and is safe, because the service answers ``DUPLICATE``
+    for what already landed.
 
     The three per-entry caps refuse too, and are checked against what the caller
     actually supplied. The per-domain tag cap still trims, and is applied after
@@ -404,7 +413,7 @@ def import_memories_requests(
         session_id: The session this knowledge was contributed during, if any.
         known: What the service has reported about its own limits, if anything.
 
-    Returns:
+    Yields:
         One ``(offset, request)`` per call to make, in order. The offset is the
         position the group's first memory held in the whole batch, which is what
         turns each response's own numbering back into the caller's.
@@ -413,29 +422,8 @@ def import_memories_requests(
         MemcoInvalidRequestError: If the batch or any entry is invalid, or if
             neither a domain nor a session was given.
     """
-    _validate.check_import_memories(memories)
     _validate.check_scope(domain=domain, session_id=session_id)
     caps = known or Known()
-    if caps.limits:
-        limits = caps.limits
-        for index, memory in enumerate(memories):
-            where = f"memories[{index}]"
-            _validate.check_count(
-                len(memory.queries), f"{where} queries", limits.max_import_queries_per_memory
-            )
-            _validate.check_count(
-                len(memory.insights), f"{where} insights", limits.max_import_insights_per_memory
-            )
-            _validate.check_count(
-                len(memory.tags or ()), f"{where} tags", limits.max_import_tags_per_memory
-            )
-            for at, insight in enumerate(memory.insights):
-                _check_text_together(
-                    insight.title,
-                    insight.content,
-                    caps,
-                    f"{where} insights[{at}] title and content",
-                )
     cap = caps.max_tags(domain)
 
     def one_call(taken: Sequence[ImportedMemory]) -> _pb.ImportMemoriesRequest:
@@ -447,7 +435,7 @@ def import_memories_requests(
         that turns protobuf's refusal into a typed error.
 
         Args:
-            taken: The group's memories.
+            taken: The group's memories, already materialised and validated.
 
         Returns:
             The request message.
@@ -469,11 +457,43 @@ def import_memories_requests(
 
     # An unreported cap is one group holding everything, so the batch goes out
     # whole rather than against a size the SDK made up.
-    group = (caps.limits.max_import_memories if caps.limits else 0) or len(memories)
-    return [
-        (offset, one_call(memories[offset : offset + group]))
-        for offset in range(0, len(memories), group)
-    ]
+    group = caps.limits.max_import_memories if caps.limits else 0
+    pending = iter(memories)
+    offset = 0
+    while True:
+        raw = list(itertools.islice(pending, group)) if group else list(pending)
+        if not raw:
+            break
+        taken = _validate.check_import_memories(raw, offset)
+        if caps.limits:
+            limits = caps.limits
+            for index, memory in enumerate(taken):
+                where = f"memories[{offset + index}]"
+                # check_import_memories materialised these. The dataclass
+                # declares Iterable because that is what a caller may hand in;
+                # only what comes back out of the check is known re-walkable.
+                queries = cast("Sequence[str]", memory.queries)
+                insights = cast("Sequence[ImportedInsight]", memory.insights)
+                tags = cast("Sequence[Tag]", memory.tags or ())
+                _validate.check_count(
+                    len(queries), f"{where} queries", limits.max_import_queries_per_memory
+                )
+                _validate.check_count(
+                    len(insights), f"{where} insights", limits.max_import_insights_per_memory
+                )
+                _validate.check_count(len(tags), f"{where} tags", limits.max_import_tags_per_memory)
+                for at, insight in enumerate(insights):
+                    _check_text_together(
+                        insight.title,
+                        insight.content,
+                        caps,
+                        f"{where} insights[{at}] title and content",
+                    )
+        yield offset, one_call(taken)
+        offset += len(taken)
+    if not offset:
+        # Only knowable once nothing came out, since the batch is taken lazily.
+        raise _validate.reject("memories must contain at least one memory")
 
 
 def require_memory(response: _pb.GetMemoryResponse, idx: str) -> _pb.MemoryResult:

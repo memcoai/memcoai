@@ -1,0 +1,427 @@
+name: CI (Node.js)
+
+on:
+  # Branches only. A tag push belongs to the release pipeline, which calls this
+  # workflow itself; an unfiltered `push` would run every check twice.
+  push:
+    branches: ["**"]
+  pull_request:
+  # The release pipeline calls this so a tag re-runs every check from one
+  # definition. Duplicating the jobs there would guarantee they drift.
+  workflow_call:
+    inputs:
+      full:
+        description: Run every job, whatever the ref.
+        type: boolean
+        default: false
+
+# Public repository: grant nothing by default, and let a fork PR run every
+# hermetic job without needing a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---- cheap, runs on every push -----------------------------------------
+
+  # The contract check is language-agnostic and belongs to no single SDK, so it
+  # is defined once and called from here as well as from ci_python.yaml. See the
+  # comment at the top of that file for why it is not a job in either.
+  provenance:
+    uses: ./.github/workflows/provenance.yaml
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # `--no` means "run what is installed, or fail". Without it npx quietly
+      # downloads whatever is missing and runs that instead, so a devDependency
+      # dropped from package.json would still produce a green Lint job — the one
+      # place that mistake ought to surface.
+      - run: npx --no -- prettier --check .
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # tsconfig.json covers src/, tests/ and the generated client, so this is
+      # also the only check that ever compiles src/gen/toolCopy.ts — a module a
+      # Python generator writes, and which that generator cannot typecheck.
+      - run: npx --no -- tsc --noEmit
+
+  test:
+    name: Test (24)
+    # Pinned from .nvmrc, the version the SDK is developed against. Leaving it
+    # to the matrix would mean whichever runtime the runner happened to ship
+    # produced the coverage numbers.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # Coverage runs on this job only: the matrix jobs prove the suite passes on
+      # every supported runtime, and measuring the same lines three times would
+      # say nothing new. `--test-coverage-lines=95` in the `coverage` script is
+      # the gate — this step fails the build below the floor, so the badge cannot
+      # go stale.
+      - run: npm run coverage
+      - name: Report coverage
+        if: always()
+        run: |
+          node --input-type=module - <<'JS' >> "$GITHUB_STEP_SUMMARY"
+          import { existsSync, readFileSync } from 'node:fs'
+
+          const report = 'coverage/lcov.info'
+          if (!existsSync(report)) {
+            console.log('### Coverage\n\nNo report produced — the suite did not finish.')
+            process.exit(0)
+          }
+
+          // Accumulated per SF...end_of_record block, never read positionally:
+          // writers disagree on the order of these four inside a record — Node's
+          // own reporter emits BRF, BRH, LH, LF, which is neither the order the
+          // format documents nor the one lcov itself writes. Keying on the tag
+          // is the only reading that cannot attribute one file's numbers to
+          // another.
+          const counters = ['LF', 'LH', 'BRF', 'BRH']
+          const records = []
+          let current = null
+          for (const line of readFileSync(report, 'utf8').split('\n')) {
+            const text = line.trim()
+            if (text === 'end_of_record') {
+              if (current !== null) records.push(current)
+              current = null
+              continue
+            }
+            const at = text.indexOf(':')
+            if (at === -1) continue
+            const tag = text.slice(0, at)
+            const value = text.slice(at + 1)
+            if (tag === 'SF') {
+              current = { file: value, LF: 0, LH: 0, BRF: 0, BRH: 0 }
+            } else if (current !== null && counters.includes(tag)) {
+              current[tag] = Number(value)
+            }
+          }
+
+          const total = (tag) => records.reduce((sum, record) => sum + record[tag], 0)
+          // A file with no branches at all is fully covered, not 0% covered.
+          const rate = (hit, found) => (found === 0 ? 100 : (hit / found) * 100)
+
+          const lines = rate(total('LH'), total('LF')).toFixed(1)
+          const branches = rate(total('BRH'), total('BRF')).toFixed(1)
+          console.log(`### Coverage\n\n**${lines}%** of lines, **${branches}%** of branches.\n`)
+          console.log('| Module | Lines |\n|---|---|')
+          records.sort((a, b) => rate(a.LH, a.LF) - rate(b.LH, b.LF))
+          for (const record of records) {
+            console.log(`| \`${record.file}\` | ${rate(record.LH, record.LF).toFixed(0)}% |`)
+          }
+          JS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: coverage-nodejs
+          # Relative to the workspace, not to defaults.run.working-directory.
+          path: nodejs/coverage/lcov.info
+          retention-days: 14
+
+  # ---- longer: pull requests, main, and releases -------------------------
+
+  test-matrix:
+    name: Test (${{ matrix.node }})
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "26"]  # 24 is covered by the `test` job, pinned from .nvmrc
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # There is deliberately no `runtime-compat` job here. The Python one exists
+  # because its generated modules assert dependency floors at import time, so a
+  # pin set is a thing that can be observed to hold or fail. The generated
+  # TypeScript asserts nothing at all, and the 22/24/26 matrix above already
+  # covers the axis that would be worth sweeping.
+
+  build:
+    name: Build and install
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+
+      # Chained with `&&` rather than written as a `prepack` script, for the
+      # same reason every target in nodejs/Makefile is: nodejs/.npmrc sets
+      # `ignore-scripts=true`, so npm never fires the pre/post lifecycle. A
+      # `prepack` would be skipped in silence and `npm pack` would ship an empty
+      # dist/ behind a green build.
+      - name: Build both formats, then pack
+        run: npm run build && npm pack
+
+      - name: Install the tarball into a clean project
+        run: |
+          # A glob rather than `ls`: it also catches a second, stale tarball,
+          # which would otherwise make the checks below test the wrong build.
+          # The -f test is not redundant: bash leaves an unmatched glob as its
+          # own literal text, so on zero tarballs `$#` is 1 and `$1` is the
+          # string `*.tgz` — a count check alone would wave that through.
+          set -- *.tgz
+          { [ "$#" -eq 1 ] && [ -f "$1" ]; } \
+            || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
+          mkdir -p /tmp/verify
+          cp "$1" /tmp/verify/package.tgz
+          npm --prefix /tmp/verify init -y > /dev/null
+          npm --prefix /tmp/verify install --no-audit --no-fund /tmp/verify/package.tgz
+
+      # Load-bearing, and the reason both formats are exercised rather than one:
+      # a wrong `exports` condition, a wrong file extension or a missing
+      # `{"type":"commonjs"}` marker in dist/cjs/ breaks exactly one of the two
+      # while the other keeps passing, so a single-format check would report the
+      # package as whole when half of its consumers cannot load it.
+      #
+      # `Memco` is not imported here: the client is still landing, and this job
+      # has to prove the packaging rather than the surface. `provenance` is the
+      # export that reads a data file out of the installed tree, so it fails if
+      # `files` ever stops shipping client/SDK_PROVENANCE.yaml.
+      - name: Both entry points load
+        working-directory: /tmp/verify
+        run: |
+          node --input-type=module - <<'JS'
+          import { provenance } from '@memcoai/memco'
+          if (!provenance().serverCommit) {
+            throw new Error('the provenance descriptor did not reach the tarball')
+          }
+          console.log('esm ok:', provenance().serverCommit)
+          JS
+          node --input-type=commonjs - <<'JS'
+          const { provenance } = require('@memcoai/memco')
+          if (!provenance().serverCommit) {
+            throw new Error('the provenance descriptor did not reach the tarball')
+          }
+          console.log('cjs ok:', provenance().serverCommit)
+          JS
+
+      # Types resolve through their own `exports` conditions, separately from the
+      # runtime entry points, and a broken condition makes every annotation
+      # silently `any` rather than failing anything. So assert that a consumer's
+      # own tsc reports a deliberate error — once per condition: under
+      # `moduleResolution: nodenext` a .mts file resolves through `import` and a
+      # .cts file through `require`, so both `types` entries are exercised.
+      - name: A consumer sees the package as typed
+        working-directory: /tmp/verify
+        run: |
+          cat > tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "module": "nodenext",
+              "moduleResolution": "nodenext",
+              "strict": true,
+              "skipLibCheck": true,
+              "noEmit": true
+            },
+            "include": ["consumer.mts", "consumer.cts"]
+          }
+          JSON
+          cat > consumer.mts <<'TS'
+          import { provenance } from '@memcoai/memco'
+          export const wrong: number = provenance().serverCommit
+          TS
+          cp consumer.mts consumer.cts
+          # The repository's own tsc, so this measures the compiler the SDK is
+          # built with rather than whatever a fresh resolve would fetch.
+          #
+          # The default shell is `bash -e` without `pipefail`, so the pipe is
+          # what keeps tsc's intended non-zero exit from failing the step; the
+          # greps below are the actual assertion.
+          "$GITHUB_WORKSPACE/nodejs/node_modules/.bin/tsc" -p tsconfig.json 2>&1 | tee out.txt
+          for file in consumer.mts consumer.cts; do
+            grep -q "^$file.*Type 'string' is not assignable to type 'number'" out.txt \
+              || { echo "::error::$file does not see the installed package as typed"; exit 1; }
+          done
+
+      # Importing one known symbol would not notice a future generated module
+      # being dropped, so compare the tarball against the source tree. Unlike
+      # Python's wheel, the generated client ships compiled, so a .ts source is
+      # accounted for by its two built outputs rather than by itself.
+      - name: Every generated file reached the tarball
+        run: |
+          set -- *.tgz
+          { [ "$#" -eq 1 ] && [ -f "$1" ]; } \
+            || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
+          tar tzf "$1" | sed 's|^package/||' > /tmp/shipped.txt
+          node --input-type=module - <<'JS'
+          import { readFileSync } from 'node:fs'
+          import { readdir } from 'node:fs/promises'
+
+          const shipped = new Set(
+            readFileSync('/tmp/shipped.txt', 'utf8').split('\n').filter(Boolean)
+          )
+
+          // Named one by one rather than globbed. A `find` that stopped matching
+          // would leave a count comparison passing while it compared nothing;
+          // these two are the files a consumer that reads the manifest or the
+          // descriptor raw goes looking for, and nothing imports either, so no
+          // load check would notice their absence.
+          for (const path of ['client/SDK_PROVENANCE.yaml', 'client/src/gen/tools.json']) {
+            if (!shipped.has(path)) throw new Error(`${path} is absent from the tarball`)
+          }
+
+          // Deliberately not shipped: an input to scripts/verify_provenance.py,
+          // of no use to a consumer. Listed so that a *new* file appearing under
+          // client/ fails this check rather than passing unnoticed.
+          const notPublished = new Set(['client/dependencies.json'])
+
+          const sources = (await readdir('client', { recursive: true, withFileTypes: true }))
+            .filter((entry) => entry.isFile())
+            .map((entry) => `${entry.parentPath}/${entry.name}`.replaceAll('\\', '/'))
+          if (sources.length === 0) throw new Error('client/ is empty; nothing was compared')
+
+          const missing = []
+          for (const source of sources) {
+            if (notPublished.has(source)) continue
+            const expected = source.endsWith('.ts')
+              ? ['esm', 'cjs'].map((f) => `dist/${f}/${source.slice(0, -3)}.js`)
+              : [source]
+            for (const path of expected) {
+              if (!shipped.has(path)) missing.push(`${source} -> ${path}`)
+            }
+          }
+          if (missing.length > 0) {
+            throw new Error(`generated files absent from the tarball: ${missing.join(', ')}`)
+          }
+          console.log(`all ${sources.length} files under client/ are accounted for`)
+          JS
+
+      # The release pipeline publishes this to npm as-is; rebuilding there would
+      # ship an artefact that none of the above ever ran against.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: dist-nodejs
+          path: nodejs/*.tgz
+
+  docs:
+    name: Docs
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # Sphinx's -W, in TypeDoc's vocabulary: an unresolved {@link} or an
+      # undocumented public symbol fails here rather than rotting in the
+      # published reference. typedoc.json sets the same flag; passing it on the
+      # command line means the build cannot be softened by editing that file
+      # without also editing this one.
+      - run: npx --no -- typedoc --treatWarningsAsErrors
+      # Named per language: artifact names are unique within a run, and the
+      # release pipeline downloads this one by name.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: docs-nodejs
+          path: nodejs/docs/_build/html
+
+  # ---- live: merge to main, and releases ---------------------------------
+
+  integration:
+    name: Live smoke
+    if: inputs.full || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    # The preview endpoint is tied to a server pull request and will change.
+    # Keep it a repository variable so moving it needs no code change.
+    environment: integration
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          # This job runs with a live API token in its environment; it has no
+          # reason to also hold a push credential in .git/config.
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Exercise the real service
+        env:
+          MEMCO_API_HOST: ${{ vars.MEMCO_API_HOST }}
+          MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+        run: |
+          node --input-type=module - <<'JS'
+          const sdk = await import('./dist/esm/src/index.js')
+          console.log('contract:', sdk.provenance().serverCommit)
+
+          // A placeholder while the client is still landing. Exiting 0 here
+          // keeps the job — and the environment, the token and the endpoint
+          // variable it proves are wired up — exercised on every merge to main,
+          // instead of red for as long as `Memco` is missing.
+          //
+          // TODO: replace this with the real smoke test once `Memco` is
+          // exported, mirroring the Python job: open a client, listDomains,
+          // assert the service returned at least one, startSession on the first,
+          // then search within it and print how many memories came back.
+          if (typeof sdk.Memco !== 'function') {
+            console.log('Memco is not exported yet; nothing live to exercise')
+            process.exit(0)
+          }
+          JS

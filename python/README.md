@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/memcoai/memco/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/memcoai/memco/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9">
+  <a href="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml"><img alt="CI (Python)" src="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml/badge.svg?branch=main"></a>
+  <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9"><br>
   <img alt="Coverage" src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
 </p>

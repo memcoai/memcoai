@@ -34,7 +34,7 @@ import json
 import re
 import types as _types
 import typing
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from typing import Any, TypeVar, get_args, get_origin, get_type_hints
 
 import grpc
@@ -120,6 +120,11 @@ _SCALARS: dict[Any, dict[str, Any]] = {
     str: {"type": "string"},
     bool: {"type": "boolean"},
 }
+# The operations declare their collections as Iterable, because the SDK
+# materialises whatever a caller hands in — a list, a generator, a map. A model
+# always sends a JSON array either way, so both origins map to the same schema.
+_COLLECTIONS = (Sequence, Iterable)
+
 
 _SCALAR_NAMES = {str: "a string", bool: "true or false"}
 """How each scalar is named to the model that got it wrong."""
@@ -1042,7 +1047,7 @@ def _schema(annotation: object, description: str) -> dict[str, Any]:
     inner, _ = _optional(annotation)
     if inner in _SCALARS:
         return {**_SCALARS[inner], "description": description}
-    if get_origin(inner) is Sequence:
+    if get_origin(inner) in _COLLECTIONS:
         (item,) = get_args(inner)
         items = dict(_SCALARS[item]) if item in _SCALARS else _object_schema(item)
         return {"type": "array", "items": items, "description": description}
@@ -1108,7 +1113,7 @@ def _coerce(annotation: object, value: object, argument: str) -> object:
         return value
     if isinstance(inner, type) and inner in _SCALARS:
         return _scalar(inner, value, argument)
-    if get_origin(inner) is Sequence:
+    if get_origin(inner) in _COLLECTIONS:
         (item,) = get_args(inner)
         if not isinstance(value, list):
             raise MemcoInvalidRequestError(

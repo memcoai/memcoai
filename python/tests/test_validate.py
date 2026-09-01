@@ -139,15 +139,37 @@ def test_import_batch_size_is_not_checked_locally():
     v.check_import_memories([imported(queries=[f"q{n}" for n in range(1000)])])
 
 
-def test_a_one_shot_iterable_is_refused_rather_than_silently_dropped():
-    # Validation walks the batch, then the request builder walks it again to
-    # size and build it. A generator is empty by the second pass, so the call
-    # would send nothing at all and report success — and an import mints no
-    # handle, so `results` coming back empty is the caller's only signal.
-    with pytest.raises(MemcoInvalidRequestError, match="memories must be a sequence"):
-        # Suppressed because mypy rejecting this is the whole reason the guard
-        # exists: annotations are not enforced at runtime, and the caller who
-        # streams a batch in is not necessarily the one running a type checker.
-        v.check_import_memories(imported() for _ in range(3))  # type: ignore[arg-type]
-    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[0\] queries must be a sequence"):
-        v.check_import_memories([imported(queries=(f"q{n}" for n in range(3)))])
+def test_a_one_shot_iterable_survives_rather_than_being_silently_dropped():
+    # Validation used to walk the caller's own object, and the request builder
+    # then walked it again to size and build. A generator was empty by the
+    # second pass, so the call sent nothing at all and reported success — and an
+    # import mints no handle, so `results` coming back empty was the caller's
+    # only signal. Materialising here, and building from what comes back, is
+    # what makes a lazy source safe rather than refused.
+    batch = v.check_import_memories(imported() for _ in range(3))
+    assert len(batch) == 3
+
+    entry = v.check_import_memories([imported(queries=(f"q{n}" for n in range(3)))])[0]
+    assert list(entry.queries) == ["q0", "q1", "q2"]
+
+    entry = v.check_import_memories(
+        [imported(insights=(ImportedInsight(title=f"t{n}", content="c") for n in range(2)))]
+    )[0]
+    assert [insight.title for insight in entry.insights] == ["t0", "t1"]
+
+    entry = v.check_import_memories(
+        [imported(tags=(Tag(type="language", value=f"v{n}") for n in range(2)))]
+    )[0]
+    assert [tag.value for tag in entry.tags or ()] == ["v0", "v1"]
+
+    rated = v.check_feedback(
+        FeedbackRating(idx=f"memory-a-{n}", relevant=True, correct=True) for n in range(3)
+    )
+    assert [rating.idx for rating in rated] == ["memory-a-0", "memory-a-1", "memory-a-2"]
+
+
+def test_an_entry_taken_from_the_middle_of_a_batch_names_its_absolute_position():
+    # A group is validated as it is reached, so without the offset every message
+    # would say memories[0] whatever the caller actually sent.
+    with pytest.raises(MemcoInvalidRequestError, match=r"memories\[7\] must contain at least one"):
+        v.check_import_memories([imported(queries=[])], offset=7)

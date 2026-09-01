@@ -12,8 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/memcoai/memco/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/memcoai/memco/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9">
+  <a href="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml"><img alt="CI (Python)" src="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml/badge.svg?branch=main"></a>
+  <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9"><br>
+  <a href="https://github.com/memcoai/memco/actions/workflows/ci_nodejs.yaml"><img alt="CI (Node.js)" src="https://github.com/memcoai/memco/actions/workflows/ci_nodejs.yaml/badge.svg?branch=main"></a>
+  <img alt="Node versions" src="https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-5fa04e"><br>
+  <!-- One coverage badge, not one per language: it is a claim about the
+       enforced floor, and both floors are 95% - `fail_under` in
+       python/pyproject.toml, `--test-coverage-lines=95` in the `coverage`
+       script in nodejs/package.json. Split it the day they diverge. -->
   <img alt="Coverage" src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
 </p>
@@ -45,18 +51,20 @@ reliability signal built from what readers reported back about it.
 | Language | Package | Install |
 |---|---|---|
 | Python | [`memco`](python/) | `pip install memco` |
+| Node.js | [`@memcoai/memco`](nodejs/) | `npm install @memcoai/memco` |
 
-The generated gRPC clients for [Go](go/) and [Node](nodejs/) are also published
-here and can be used directly against the API.
+The generated gRPC client for [Go](go/) is also published here and can be used
+directly against the API.
 
 Each language tree also carries `tools.json`, a byte-identical manifest of the
 agent-facing tool definitions — the same copy the hosted MCP server publishes, so
 an agent built on an SDK is steered by the service's words rather than each SDK's
 own. Go ships an accessor for it at `go/client/tools`; the Python SDK writes it
-into the docstrings its `session.tools()` is built from. Tool names in it are
-canonical snake_case and a tool referenced in the prose is a `${tool:...}`
-marker, because the three generators disagree on method casing — resolve the
-markers to the spelling your client exposes rather than shipping them to a model.
+into the docstrings its `session.tools()` is built from; the Node.js SDK compiles
+it into `nodejs/src/gen/toolCopy.ts`. Tool names in it are canonical snake_case
+and a tool referenced in the prose is a `${tool:...}` marker, because the three
+generators disagree on method casing — resolve the markers to the spelling your
+client exposes rather than shipping them to a model.
 
 ### Installing before the packages are published
 
@@ -101,6 +109,20 @@ uv pip install -e path/to/memco/python
 Remove these requirements once the package is published: a `memco @ git+...`
 source keeps winning over the released version.
 
+**`@memcoai/memco` has no equivalent** — npm cannot install from a subdirectory
+of a repository — so build the tarball from a clone and install that:
+
+```bash
+git clone -b dev https://github.com/memcoai/memco.git
+cd memco/nodejs && npm ci && npm run build && npm pack
+# then, from your own project:
+npm install /path/to/memco/nodejs/memcoai-memco-0.1.0.tgz
+```
+
+The tarball rather than `npm install ./memco/nodejs`: it carries exactly the
+files the published package will, while a directory install links the whole
+working tree, build output and all.
+
 ## Quick start
 
 ```python
@@ -129,7 +151,10 @@ proto/            the service contract, for reference
 python/           the Python SDK
   memco/            hand-written SDK
   memco/memory/     generated gRPC client, and the tool manifest
-go/, nodejs/      generated gRPC clients, and the tool manifest
+nodejs/           the Node.js SDK
+  src/              hand-written SDK
+  client/           generated gRPC client, and the tool manifest
+go/               generated gRPC client, and the tool manifest
 scripts/          repository checks, standard library only
 ```
 
@@ -143,7 +168,8 @@ Bug reports and pull requests are welcome, and you do not need access to Memco's
 servers to work on this — the test suites run in-process, so everything passes
 offline. [CONTRIBUTING.md](CONTRIBUTING.md) covers which files are generated and
 must not be edited, what a change needs before it can be merged, and the
-per-language setup (see the [Python](CONTRIBUTING.md#python) section).
+per-language setup (the [Python](CONTRIBUTING.md#python) and
+[Node.js](CONTRIBUTING.md#nodejs) sections).
 
 ```bash
 make install   # set up every development environment

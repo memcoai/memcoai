@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The published ESM build. `include` is restated rather than inherited so
+  // the test suite never reaches dist/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/esm",
+    "noEmit": false,
+    "declaration": true,
+    // Off in both published builds: a map would point at src/*.ts and at the
+    // generated module, neither of which is in `files`, so shipping one ships
+    // a dangling reference. tsconfig.test.json turns them on, where the
+    // sources really are present.
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "client/src/gen/**/*.ts"]
+}

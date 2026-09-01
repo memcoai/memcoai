@@ -6,7 +6,7 @@ health gate; this module owns only the calls.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator, Iterable
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -154,7 +154,7 @@ class MemoryOperations:
         *,
         domain: str | None = None,
         session_id: str | None = None,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
@@ -266,7 +266,7 @@ class MemoryOperations:
         content: str,
         domain: str | None = None,
         session_id: str | None = None,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -347,8 +347,8 @@ class MemoryOperations:
         session_id: str,
         title: str,
         content: str,
-        tags: Sequence[Tag] | None = None,
-        sources: Sequence[str] | None = None,
+        tags: Iterable[Tag] | None = None,
+        sources: Iterable[str] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -411,7 +411,7 @@ class MemoryOperations:
         self,
         *,
         session_id: str,
-        feedback: Sequence[FeedbackRating],
+        feedback: Iterable[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
@@ -487,7 +487,7 @@ class MemoryOperations:
 
     def import_memories(
         self,
-        memories: Sequence[ImportedMemory],
+        memories: Iterable[ImportedMemory],
         *,
         domain: str | None = None,
         session_id: str | None = None,
@@ -682,7 +682,7 @@ class AsyncMemoryOperations:
         *,
         domain: str | None = None,
         session_id: str | None = None,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
@@ -794,7 +794,7 @@ class AsyncMemoryOperations:
         content: str,
         domain: str | None = None,
         session_id: str | None = None,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -875,8 +875,8 @@ class AsyncMemoryOperations:
         session_id: str,
         title: str,
         content: str,
-        tags: Sequence[Tag] | None = None,
-        sources: Sequence[str] | None = None,
+        tags: Iterable[Tag] | None = None,
+        sources: Iterable[str] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -939,7 +939,7 @@ class AsyncMemoryOperations:
         self,
         *,
         session_id: str,
-        feedback: Sequence[FeedbackRating],
+        feedback: Iterable[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
@@ -1021,7 +1021,7 @@ class AsyncMemoryOperations:
 
     async def import_memories(
         self,
-        memories: Sequence[ImportedMemory],
+        memories: Iterable[ImportedMemory],
         *,
         domain: str | None = None,
         session_id: str | None = None,
@@ -1160,7 +1160,7 @@ class SessionScope:
         self,
         query: str,
         *,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
@@ -1254,7 +1254,7 @@ class SessionScope:
         query: str,
         title: str,
         content: str,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -1320,8 +1320,8 @@ class SessionScope:
         memory_idx: str,
         title: str,
         content: str,
-        tags: Sequence[Tag] | None = None,
-        sources: Sequence[str] | None = None,
+        tags: Iterable[Tag] | None = None,
+        sources: Iterable[str] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -1379,7 +1379,7 @@ class SessionScope:
     def share_feedback(
         self,
         *,
-        feedback: Sequence[FeedbackRating],
+        feedback: Iterable[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
@@ -1447,7 +1447,7 @@ class SessionScope:
         return self._operations.revert_memory(operation_id, timeout=timeout)
 
     def import_memories(
-        self, memories: Sequence[ImportedMemory], *, timeout: float | None = None
+        self, memories: Iterable[ImportedMemory], *, timeout: float | None = None
     ) -> ImportResult:
         """Fill a new or nearly empty workspace with the knowledge a team already holds, in one
         call, so memory starts out useful instead of empty.
@@ -1595,7 +1595,7 @@ class AsyncSessionScope:
         self,
         query: str,
         *,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
     ) -> SearchResult:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
@@ -1690,7 +1690,7 @@ class AsyncSessionScope:
         query: str,
         title: str,
         content: str,
-        tags: Sequence[Tag] | None = None,
+        tags: Iterable[Tag] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -1756,8 +1756,8 @@ class AsyncSessionScope:
         memory_idx: str,
         title: str,
         content: str,
-        tags: Sequence[Tag] | None = None,
-        sources: Sequence[str] | None = None,
+        tags: Iterable[Tag] | None = None,
+        sources: Iterable[str] | None = None,
         source: DataSource = DataSource.AGENT,
         timeout: float | None = None,
     ) -> WriteResult:
@@ -1815,7 +1815,7 @@ class AsyncSessionScope:
     async def share_feedback(
         self,
         *,
-        feedback: Sequence[FeedbackRating],
+        feedback: Iterable[FeedbackRating],
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
@@ -1885,7 +1885,7 @@ class AsyncSessionScope:
         return await self._operations.revert_memory(operation_id, timeout=timeout)
 
     async def import_memories(
-        self, memories: Sequence[ImportedMemory], *, timeout: float | None = None
+        self, memories: Iterable[ImportedMemory], *, timeout: float | None = None
     ) -> ImportResult:
         """Fill a new or nearly empty workspace with the knowledge a team already holds, in one
         call, so memory starts out useful instead of empty.

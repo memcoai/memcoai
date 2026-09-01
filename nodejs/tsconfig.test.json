@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The test compile. Node's type stripping refuses the generated client
+  // outright — ts-proto emits `export enum DataSource`, which is not erasable
+  // syntax — so the suite runs over JavaScript, not over .ts.
+  //
+  // outDir is `build/js` because it is two segments deep, exactly like dist/esm
+  // and dist/cjs, so the walk in src/internal/resources.ts reaches the package
+  // root identically in all three builds.
+  //
+  // The suite is invoked with an explicit glob — `node --test
+  // 'build/js/tests/**/*.test.js'` — not with a directory. On Node 24 a
+  // directory argument is loaded as a module rather than searched, and fails
+  // with MODULE_NOT_FOUND before a single test runs. The glob is quoted so the
+  // shell leaves it for Node to expand.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "build/js",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "client/src/gen/**/*.ts",
+    "tests/**/*.ts",
+    "examples/**/*.ts"
+  ]
+}
