@@ -56,15 +56,6 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 
 @pytest.fixture(scope="session")
-def primary_domain() -> str:
-    """The first domain listed, for the one test that must not run per domain."""
-    domains = _available_domains()
-    if not domains:
-        pytest.skip(NO_CREDENTIAL)
-    return domains[0]
-
-
-@pytest.fixture(scope="session")
 def client() -> Iterator[Memco]:
     """One live client for the whole session.
 

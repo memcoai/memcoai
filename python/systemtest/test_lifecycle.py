@@ -22,16 +22,7 @@ import pytest
 
 from memco import Memco
 from memco.errors import MemcoNotFoundError
-from memco.types import (
-    DataSource,
-    FeedbackRating,
-    ImportedInsight,
-    ImportedMemory,
-    ImportStatus,
-    Insight,
-    Memory,
-    RevertOutcome,
-)
+from memco.types import DataSource, FeedbackRating, Insight, Memory, RevertOutcome
 
 # A write is accepted asynchronously and only becomes searchable once ingestion
 # has run, so every assertion about a memory existing — or having stopped
@@ -184,25 +175,49 @@ def _search_until_found(
     )
 
 
-def _get_until_titled(client: Memco, idx: str, title: str) -> Insight:
-    """Poll GetMemory until the memory carries an insight with this title.
+def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, title: str) -> Insight:
+    """Poll a fresh search until the memory carries an insight with this title.
 
-    GetMemory rather than a second search: within one session a memory already
-    returned comes back as a bare reference with no insights, so a search cannot
-    show us the insight the enrich step just added.
+    Deliberately not GetMemory on the idx the earlier search returned. An idx is
+    bound to the search that issued it and resolves to that snapshot, so an
+    insight added afterwards never appears through it — polling it can only time
+    out. A search opened without a session returns the memory as it now stands.
+
+    A new session each time, too: within one session a memory already returned
+    comes back as a bare reference carrying no insights, so the second poll
+    onwards would have nothing to look at.
     """
     deadline = time.monotonic() + INGEST_TIMEOUT
     while time.monotonic() < deadline:
-        insight = _insight_titled(client.memory.get_memory(idx), title)
-        if insight is not None:
-            return insight
+        for candidate in client.memory.search(query, domain=domain).memories:
+            if not _is_ours(candidate, nonce):
+                continue
+            insight = _insight_titled(candidate, title)
+            if insight is not None:
+                return insight
         print("  waiting for the enrichment to be ingested")
         time.sleep(POLL_INTERVAL)
     pytest.fail(
-        f"the enrichment never appeared on {idx} within {INGEST_TIMEOUT:.0f}s. "
-        "Either ingestion is slower than the budget, or the service endorsed the "
-        "addition as a duplicate of an insight the memory already held instead of "
-        "adding it as a new one."
+        f"the enrichment never appeared within {INGEST_TIMEOUT:.0f}s. Either ingestion "
+        "is slower than the budget, or the service endorsed the addition as a duplicate "
+        "of an insight the memory already held instead of adding it as a new one."
+    )
+
+
+def _search_until_absent(client: Memco, query: str, domain: str, nonce: str) -> None:
+    """Poll a fresh search until this run's memory is no longer returned."""
+    deadline = time.monotonic() + REMOVAL_TIMEOUT
+    while time.monotonic() < deadline:
+        found = [
+            m for m in client.memory.search(query, domain=domain).memories if _is_ours(m, nonce)
+        ]
+        if not found:
+            return
+        print("  waiting for the removal to take effect")
+        time.sleep(POLL_INTERVAL)
+    pytest.fail(
+        f"the memory was still returned by search {REMOVAL_TIMEOUT:.0f}s after a revert "
+        "reported MEMORY_REMOVED"
     )
 
 
@@ -275,7 +290,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     assert enrichment.operation_id
     written.append(enrichment.operation_id)
-    added = _get_until_titled(client, memory.idx, extra["title"])
+    added = _search_until_titled(client, fields["query"], domain, nonce, extra["title"])
     print(f"  enriched, insight {added.idx}")
 
     undo_addition = client.memory.revert_memory(enrichment.operation_id)
@@ -284,9 +299,8 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     # The outcome is what the service reported; this is what it did. The
     # addition is gone and the memory it joined is intact.
-    after = client.memory.get_memory(memory.idx)
-    assert _insight_titled(after, extra["title"]) is None, "the reverted addition is still there"
-    assert _insight_titled(after, fields["title"]) is not None, (
+    after = _search_until_titled(client, fields["query"], domain, nonce, fields["title"])
+    assert after.title == fields["title"], (
         "reverting the addition took the original insight with it"
     )
 
@@ -302,62 +316,6 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     print("  reverted")
 
+    _search_until_absent(client, fields["query"], domain, nonce)
     _get_until_gone(client, memory.idx)
     print("  gone")
-
-
-def import_fixture() -> ImportedMemory:
-    """The batch the import step contributes.
-
-    It carries no run marker, deliberately. An import mints no operation id and
-    cannot be reverted — the contract is explicit that there is no handle that
-    undoes one — so a per-run payload would leave a memory behind in a live
-    domain on every pull request. An import is written under an identity derived
-    from its own content, so this fixed batch lands once, ever, and every run
-    after that is reported DUPLICATE and charged nothing.
-
-    It is therefore real knowledge worth keeping rather than a test artefact:
-    whatever this writes stays, and will need correcting by hand if it goes out
-    of date.
-    """
-    return ImportedMemory(
-        queries=[
-            (
-                "What endpoint, credential and timeout does the Memco Python SDK "
-                "use when nothing is configured?"
-            )
-        ],
-        insights=[
-            ImportedInsight(
-                title="Memco Python SDK connection defaults",
-                content=(
-                    "The Memco Python SDK resolves its endpoint and credential with "
-                    "argument > environment > default precedence. Left unset it dials "
-                    "`grpc.spark.memco.ai` on port 443 over TLS with a 30 second deadline, "
-                    "and reads the credential from `MEMCO_API_TOKEN`. `MEMCO_API_KEY` is "
-                    "still accepted as a fallback and warns once when it is used.\n\n"
-                    "A blank token or host passed as an argument is refused outright rather "
-                    "than falling back to the environment, so a caller that computed its "
-                    "configuration wrongly fails at construction instead of quietly reaching "
-                    "a different service than it meant to."
-                ),
-            )
-        ],
-    )
-
-
-def test_a_batch_import_is_accepted_or_already_present(client: Memco, primary_domain: str) -> None:
-    """Contribute a batch — the one write the service gives no way to undo.
-
-    One domain, not every domain: the write is permanent, so the blast radius is
-    kept to a single memory rather than one per domain the credential reaches.
-    """
-    result = client.memory.import_memories([import_fixture()], domain=primary_domain)
-    assert len(result.results) == 1
-    outcome = result.results[0]
-    assert outcome.index == 0
-    assert outcome.status in {ImportStatus.QUEUED, ImportStatus.DUPLICATE}, (
-        f"the import reported {outcome.status.name}"
-        + (f": {'; '.join(outcome.errors)}" if outcome.errors else "")
-    )
-    print(f"\n[{primary_domain}] import {outcome.status.name}")

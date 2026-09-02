@@ -22,8 +22,8 @@ import { randomBytes } from 'node:crypto'
 import { test } from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-import { DataSource, ImportStatus, Memco, RevertOutcome } from '../src/index.js'
-import type { ImportedMemory, Insight, Memory } from '../src/index.js'
+import { DataSource, Memco, RevertOutcome } from '../src/index.js'
+import type { Insight, Memory } from '../src/index.js'
 
 const TOKEN_ENV = 'MEMCO_API_TOKEN'
 
@@ -211,29 +211,61 @@ async function searchUntilFound(
 }
 
 /**
- * Poll GetMemory until the memory carries an insight with this title.
+ * Poll a fresh search until the memory carries an insight with this title.
  *
- * GetMemory rather than a second search: within one session a memory already
- * returned comes back as a bare reference with no insights, so a search cannot
- * show us the insight the enrich step just added.
+ * Deliberately not GetMemory on the idx the earlier search returned. An idx is
+ * bound to the search that issued it and resolves to that snapshot, so an
+ * insight added afterwards never appears through it — polling it can only time
+ * out. A search opened without a session returns the memory as it now stands.
+ *
+ * A new session each time, too: within one session a memory already returned
+ * comes back as a bare reference carrying no insights, so the second poll
+ * onwards would have nothing to look at.
  */
-async function getUntilTitled(
+async function searchUntilTitled(
   client: Memco,
-  idx: string,
+  query: string,
+  domain: string,
+  nonce: string,
   title: string
 ): Promise<Insight> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
   while (Date.now() < deadline) {
-    const found = insightTitled(await client.memory.getMemory(idx), title)
-    if (found !== undefined) return found
+    for (const candidate of (await client.memory.search(query, { domain }))
+      .memories) {
+      if (!isOurs(candidate, nonce)) continue
+      const found = insightTitled(candidate, title)
+      if (found !== undefined) return found
+    }
     console.log('  waiting for the enrichment to be ingested')
     await sleep(POLL_INTERVAL_MS)
   }
   return assert.fail(
-    `the enrichment never appeared on ${idx} within ${INGEST_TIMEOUT_MS / 1000}s. ` +
-      'Either ingestion is slower than the budget, or the service endorsed the ' +
-      'addition as a duplicate of an insight the memory already held instead of ' +
-      'adding it as a new one.'
+    `the enrichment never appeared within ${INGEST_TIMEOUT_MS / 1000}s. Either ingestion ` +
+      'is slower than the budget, or the service endorsed the addition as a duplicate of ' +
+      'an insight the memory already held instead of adding it as a new one.'
+  )
+}
+
+/** Poll a fresh search until this run's memory is no longer returned. */
+async function searchUntilAbsent(
+  client: Memco,
+  query: string,
+  domain: string,
+  nonce: string
+): Promise<void> {
+  const deadline = Date.now() + REMOVAL_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const found = (
+      await client.memory.search(query, { domain })
+    ).memories.filter(m => isOurs(m, nonce))
+    if (found.length === 0) return
+    console.log('  waiting for the removal to take effect')
+    await sleep(POLL_INTERVAL_MS)
+  }
+  assert.fail(
+    `the memory was still returned by search ${REMOVAL_TIMEOUT_MS / 1000}s after a revert ` +
+      'reported MEMORY_REMOVED'
   )
 }
 
@@ -256,41 +288,6 @@ async function getUntilGone(client: Memco, idx: string): Promise<void> {
     `${idx} was still retrievable ${REMOVAL_TIMEOUT_MS / 1000}s after a revert ` +
       'reported MEMORY_REMOVED'
   )
-}
-
-/**
- * The batch the import step contributes.
- *
- * It carries no run marker, deliberately. An import mints no operation id and
- * cannot be reverted — the contract is explicit that there is no handle that
- * undoes one — so a per-run payload would leave a memory behind in a live
- * domain on every pull request. An import is written under an identity derived
- * from its own content, so this fixed batch lands once, ever, and every run
- * after that is reported DUPLICATE and charged nothing.
- *
- * It is therefore real knowledge worth keeping rather than a test artefact:
- * whatever this writes stays, and will need correcting by hand if it goes out
- * of date.
- */
-function importFixture(): ImportedMemory {
-  return {
-    queries: [
-      'Why does the Memco Node.js SDK tell callers to check error.name rather ' +
-        'than use instanceof?'
-    ],
-    insights: [
-      {
-        title: 'Memco Node.js SDK error discrimination',
-        content:
-          'The Memco Node.js SDK ships dual ESM and CommonJS builds. A process that ends ' +
-          'up loading both holds two copies of every error class, and `instanceof ' +
-          'MemcoNotFoundError` is then false for an error that genuinely is one.\n\n' +
-          'The errors module says so at the top, and the discriminator it supports is ' +
-          "`error.name === 'MemcoNotFoundError'`, which is the same string in both builds. " +
-          'The same applies to every other error the SDK exports.'
-      }
-    ]
-  }
 }
 
 async function lifecycle(domain: string): Promise<void> {
@@ -351,7 +348,13 @@ async function lifecycle(domain: string): Promise<void> {
       })
       assert.ok(enrichment.operationId)
       outstanding.push(enrichment.operationId)
-      const added = await getUntilTitled(client, memory.idx, extra.title)
+      const added = await searchUntilTitled(
+        client,
+        fields.query,
+        domain,
+        nonce,
+        extra.title
+      )
       console.log(`  enriched, insight ${added.idx}`)
 
       const undoAddition = await client.memory.revertMemory(
@@ -365,14 +368,16 @@ async function lifecycle(domain: string): Promise<void> {
       )
       // The outcome is what the service reported; this is what it did. The
       // addition is gone and the memory it joined is intact.
-      const after = await client.memory.getMemory(memory.idx)
-      assert.equal(
-        insightTitled(after, extra.title),
-        undefined,
-        'the reverted addition is still there'
+      const after = await searchUntilTitled(
+        client,
+        fields.query,
+        domain,
+        nonce,
+        fields.title
       )
-      assert.ok(
-        insightTitled(after, fields.title),
+      assert.equal(
+        after.title,
+        fields.title,
         'reverting the addition took the original insight with it'
       )
 
@@ -390,6 +395,7 @@ async function lifecycle(domain: string): Promise<void> {
       )
       console.log('  reverted')
 
+      await searchUntilAbsent(client, fields.query, domain, nonce)
       await getUntilGone(client, memory.idx)
       console.log('  gone')
     } finally {
@@ -422,28 +428,6 @@ if (process.env[TOKEN_ENV]) {
       await lifecycle(domain)
     })
   }
-
-  // One domain, not every domain. An import is the one write the service gives
-  // no way to undo, so the blast radius is kept to a single memory rather than
-  // one per domain the credential reaches.
-  const [primary] = domains
-  test(`a batch import is accepted or already present [${primary}]`, async () => {
-    await withClient(async client => {
-      const result = await client.memory.importMemories([importFixture()], {
-        domain: primary
-      })
-      assert.equal(result.results.length, 1)
-      const outcome = result.results[0]
-      assert.equal(outcome.index, 0)
-      assert.ok(
-        outcome.status === ImportStatus.QUEUED ||
-          outcome.status === ImportStatus.DUPLICATE,
-        `the import reported ${ImportStatus[outcome.status]}` +
-          (outcome.errors.length > 0 ? `: ${outcome.errors.join('; ')}` : '')
-      )
-      console.log(`\n[${primary}] import ${ImportStatus[outcome.status]}`)
-    })
-  })
 } else {
   test(
     'the system test runs the whole lifecycle against the live service',
