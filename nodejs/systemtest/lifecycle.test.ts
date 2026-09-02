@@ -30,9 +30,14 @@ const TOKEN_ENV = 'MEMCO_API_TOKEN'
 // A write is accepted asynchronously and only becomes searchable once ingestion
 // has run, so every assertion about a memory existing — or having stopped
 // existing — is a poll rather than a single call.
+//
+// The interval is 15s rather than something tighter because the service rate
+// limits search, and the ingestion poll is the one that runs longest: at 5s a
+// single domain could spend 36 searches waiting. Slower polling costs only
+// resolution on when the memory appeared, which nothing here asserts on.
 const INGEST_TIMEOUT_MS = 180_000
 const REMOVAL_TIMEOUT_MS = 60_000
-const POLL_INTERVAL_MS = 5_000
+const POLL_INTERVAL_MS = 15_000
 
 /**
  * Run `body` against a live client, closing it whatever happens.
@@ -68,9 +73,15 @@ function nonceFor(domain: string): string {
  * The run marker lives in the query and nowhere else. The query becomes the
  * memory's intent, which comes back on every search result, so the test can
  * still recognise its own memory — while the insight the service evaluates is
- * pure prose. An identifier in the title or body is rejected outright: the
- * quality gate refuses content dominated by IDs, and a rejected memory never
- * becomes searchable, which surfaces here as a search that never finds it.
+ * pure prose.
+ *
+ * Two quality-gate rules have already rejected a version of this, and a
+ * rejection is invisible from here: the write is accepted, the memory never
+ * becomes searchable, and the failure surfaces as a search that never finds it.
+ * Content dominated by identifiers is refused, which is why no marker appears in
+ * the title or the body. So is a status update or hand-off note — an earlier
+ * draft closed with "if you are reading it, that run did not finish cleaning up"
+ * and was refused for it. Say what is true about the subject and stop.
  *
  * The subject is deliberately specific to the Node.js SDK, so it can never be
  * read as the same knowledge as what the Python suite writes.
@@ -94,8 +105,7 @@ function probe(nonce: string): {
       'invoked with an explicit quoted glob so the shell leaves it for Node to expand. ' +
       'A bare directory argument is not equivalent: on Node 24 it is loaded as a module ' +
       'and fails with MODULE_NOT_FOUND.\n\n' +
-      'This note is written and then removed again by the Memco Node.js SDK system ' +
-      'test. If you are reading it, that run did not finish cleaning up.'
+      'This note is written and then removed again by the Memco Node.js SDK system test.'
   }
 }
 

@@ -36,9 +36,14 @@ from memco.types import (
 # A write is accepted asynchronously and only becomes searchable once ingestion
 # has run, so every assertion about a memory existing — or having stopped
 # existing — is a poll rather than a single call.
+#
+# The interval is 15s rather than something tighter because the service rate
+# limits search, and the ingestion poll is the one that runs longest: at 5s a
+# single domain could spend 36 searches waiting. Slower polling costs only
+# resolution on when the memory appeared, which nothing here asserts on.
 INGEST_TIMEOUT = 180.0
 REMOVAL_TIMEOUT = 60.0
-POLL_INTERVAL = 5.0
+POLL_INTERVAL = 15.0
 
 
 def probe(nonce: str) -> dict[str, str]:
@@ -47,9 +52,16 @@ def probe(nonce: str) -> dict[str, str]:
     The run marker lives in the query and nowhere else. The query becomes the
     memory's intent, which comes back on every search result, so the test can
     still recognise its own memory — while the insight the service evaluates is
-    pure prose. An identifier in the title or body is rejected outright: the
-    quality gate refuses content dominated by IDs, and a rejected memory never
-    becomes searchable, which surfaces here as a search that never finds it.
+    pure prose.
+
+    Two quality-gate rules have already rejected a version of this, and a
+    rejection is invisible from here: the write is accepted, the memory never
+    becomes searchable, and the failure surfaces as a search that never finds
+    it. Content dominated by identifiers is refused, which is why no marker
+    appears in the title or the body. So is a status update or hand-off note —
+    an earlier draft closed with "if you are reading it, that run did not finish
+    cleaning up" and was refused for it. Say what is true about the subject and
+    stop.
 
     The subject is deliberately specific to the Python SDK, so it can never be
     read as the same knowledge as what the Node.js suite writes.
@@ -68,8 +80,7 @@ def probe(nonce: str) -> dict[str, str]:
             "Everything else is excluded on purpose. A retried write could be applied twice, "
             "and a retried `Search` would be recorded against the session twice, so both are "
             "left for the caller to decide about.\n\n"
-            "This note is written and then removed again by the Memco Python SDK system "
-            "test. If you are reading it, that run did not finish cleaning up."
+            "This note is written and then removed again by the Memco Python SDK system test."
         ),
     }
 

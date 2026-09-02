@@ -286,14 +286,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The floors the generated code asserts at import time.
+          # Every declared floor at once, which is not the same environment as
+          # "the two generated-code floors, everything else newest": that
+          # combination is unresolvable, since googleapis-common-protos asserts
+          # a protobuf floor of its own that has since passed ours.
           - label: oldest
-            pins: "grpcio==1.76.0 protobuf==6.31.1"
-          # protobuf's cross-version guarantee covers gencode on the next major.
-          # This is what makes the "<8" upper bound a verified fact rather than
-          # an assumption; narrow requirements.txt if it ever fails.
+            resolution: lowest-direct
+          # Resolves protobuf to the newest the requirements admit, which is a
+          # 7.x against 6.x gencode. That is what makes the "<8" upper bound a
+          # verified fact rather than an assumption: protobuf's cross-version
+          # guarantee covers gencode on the next major, and this proves it
+          # holds for ours. Narrow requirements.txt if it ever fails.
           - label: newest
-            pins: "grpcio protobuf>=7,<8"
+            resolution: highest
     defaults:
       run:
         working-directory: python
@@ -306,11 +311,15 @@ jobs:
       # The generated client lives inside the package now, so importing it
       # runs memco/__init__.py and needs the package installed, not just its
       # two generated-code dependencies.
-      - name: Import against ${{ matrix.label }} pins
+      #
+      # One resolution, so the versions under test are the ones a user would
+      # actually get. Pinning afterwards would be a second, independent
+      # resolution that does not revisit what the first installed, and can
+      # therefore assemble a combination no resolver would hand anyone.
+      - name: Import against ${{ matrix.label }} dependencies
         run: |
           uv venv --python 3.12 /tmp/compat
-          uv pip install --python /tmp/compat/bin/python .
-          uv pip install --python /tmp/compat/bin/python ${{ matrix.pins }}
+          uv pip install --python /tmp/compat/bin/python --resolution ${{ matrix.resolution }} .
           cd /tmp
           /tmp/compat/bin/python - <<'PY'
           import google.protobuf
