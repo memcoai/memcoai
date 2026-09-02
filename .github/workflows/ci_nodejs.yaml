@@ -180,9 +180,9 @@ jobs:
 
   # There is deliberately no `runtime-compat` job here. The Python one exists
   # because its generated modules assert dependency floors at import time, so a
-  # pin set is a thing that can be observed to hold or fail. The generated
-  # TypeScript asserts nothing at all, and the 22/24/26 matrix above already
-  # covers the axis that would be worth sweeping.
+  # dependency floor is a thing that can be observed to hold or fail. The
+  # generated TypeScript asserts nothing at all, and the 22/24/26 matrix above
+  # already covers the axis that would be worth sweeping.
 
   build:
     name: Build and install

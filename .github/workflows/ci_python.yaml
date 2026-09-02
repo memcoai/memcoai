@@ -286,19 +286,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Every declared floor at once, which is not the same environment as
-          # "the two generated-code floors, everything else newest": that
-          # combination is unresolvable, since googleapis-common-protos asserts
-          # a protobuf floor of its own that has since passed ours.
+          # memory_pb2.py opens with ValidateProtobufRuntimeVersion(..., 6, 31,
+          # 1, ...), so requirements.txt's floors are load-bearing: too old a
+          # protobuf fails at import. Every direct dependency is resolved down,
+          # not only those two, and a floor the rest of the graph cannot admit
+          # is backtracked past — googleapis-common-protos lands on 1.69.2, not
+          # the 1.60.0 deps/sdk.txt declares, because releases before it cap
+          # protobuf below our own floor.
           - label: oldest
             resolution: lowest-direct
-          # Resolves protobuf to the newest the requirements admit, which is a
-          # 7.x against 6.x gencode. That is what makes the "<8" upper bound a
-          # verified fact rather than an assumption: protobuf's cross-version
-          # guarantee covers gencode on the next major, and this proves it
-          # holds for ours. Narrow requirements.txt if it ever fails.
+            protobuf_major: "6"
+          # The newest protobuf the requirements admit, a major ahead of the
+          # gencode. That is what makes the "<8" upper bound a verified fact
+          # rather than an assumption: protobuf's cross-version guarantee
+          # covers gencode on the next major, and this exercises it. Narrow
+          # requirements.txt if it ever fails.
           - label: newest
             resolution: highest
+            protobuf_major: "7"
     defaults:
       run:
         working-directory: python
@@ -312,10 +317,12 @@ jobs:
       # runs memco/__init__.py and needs the package installed, not just its
       # two generated-code dependencies.
       #
-      # One resolution, so the versions under test are the ones a user would
-      # actually get. Pinning afterwards would be a second, independent
-      # resolution that does not revisit what the first installed, and can
-      # therefore assemble a combination no resolver would hand anyone.
+      # One resolution, so the versions under test are ones a resolver would
+      # actually produce. Installing pins afterwards is a second, independent
+      # resolution that does not revisit what the first one left in place, and
+      # so can assemble a combination no user could be given. Whatever the
+      # matrix carries lands in this shell verbatim: keep it to literals with
+      # no metacharacters, or quote it.
       - name: Import against ${{ matrix.label }} dependencies
         run: |
           uv venv --python 3.12 /tmp/compat
@@ -330,6 +337,13 @@ jobs:
 
           print("protobuf", google.protobuf.__version__, "grpcio", grpc.__version__)
           print("->", pb.DESCRIPTOR.name, "| client:", memco.Memco.__name__)
+
+          # The import above cannot tell the two ends apart on its own: a cap
+          # anywhere in the graph could quietly resolve both legs to the same
+          # protobuf and this job would report success having proved nothing.
+          major = google.protobuf.__version__.split(".")[0]
+          if major != "${{ matrix.protobuf_major }}":
+              raise SystemExit(f"expected protobuf ${{ matrix.protobuf_major }}.x, got {major}.x")
           PY
 
   # ---- live: every pull request, main, and releases -----------------------
