@@ -18,7 +18,7 @@ RUN := $(NPM) run --silent
 # and every line CI's matrix covers.
 NODE_VERSIONS := 22 24 26
 
-.PHONY: help install lint format typecheck test test-all coverage docs docs-serve build clean
+.PHONY: help install lint format typecheck test test-all system-test coverage docs docs-serve build clean
 
 help:  ## Show this help
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
@@ -42,6 +42,12 @@ typecheck:  ## Strict type check of the SDK, the generated client and the tests
 # single test runs. --enable-source-maps puts the frames back on src/*.ts.
 test:  ## Run the suite against a real in-process gRPC server
 	$(RUN) test
+
+# Not matched by `test`: that runs the glob build/js/tests/**, so the live suite
+# is reached solely through this target. It needs MEMCO_API_TOKEN and a
+# reachable service; without one it reports itself skipped rather than failing.
+system-test:  ## Run the live suite against the real service
+	$(RUN) system-test
 
 # 95% of lines is the floor this SDK holds. Branches sit at 90 because V8
 # counts every implicit branch — optional chaining, `??`, default parameters,

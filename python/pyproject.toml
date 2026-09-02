@@ -142,6 +142,11 @@ ignore = [
     "ANN", "ARG", "D100", "D101", "D102", "D103", "D104", "D105",
     "PLR2004", "S101", "S105", "S106", "S301", "SLF001",
 ]
+# The live suite, measured rather than copied from tests/* above: asserts are
+# the point, TOKEN_ENV reads to bandit as a hardcoded password, and the suite
+# polls a real service for minutes at a time, so what it prints is the only
+# account of where a failing run got to. Everything else it is held to.
+"systemtest/*" = ["S101", "S105", "T20"]
 # Examples are meant to be read and run: printing is their output, and the
 # error-handling example returns early from each branch on purpose.
 "examples/*" = ["T20", "INP001", "PLR0911", "TRY300"]
@@ -157,7 +162,7 @@ strict = true
 # Everything hand-written. The generated tree is excluded below; listing
 # subdirectories here would silently drop a module that later moves out of
 # one, which is how types/errors/operations escaped checking once already.
-files = ["memco", "tests", "docs/conf.py"]
+files = ["memco", "tests", "systemtest", "docs/conf.py"]
 exclude = "^memco/memory/"
 namespace_packages = true
 explicit_package_bases = true

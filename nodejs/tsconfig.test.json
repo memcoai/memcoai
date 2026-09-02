@@ -24,6 +24,7 @@
     "src/**/*.ts",
     "client/src/gen/**/*.ts",
     "tests/**/*.ts",
+    "systemtest/**/*.ts",
     "examples/**/*.ts"
   ]
 }

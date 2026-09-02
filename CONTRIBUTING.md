@@ -205,6 +205,7 @@ make -C python format       # apply formatting and safe fixes
 make -C python typecheck    # mypy, strict, over the SDK and the tests
 make -C python test         # the suite, on the floor version
 make -C python test-all     # the suite on 3.10, 3.11, 3.12 and 3.13
+make -C python system-test  # the live suite; skipped without a credential
 make -C python docs         # build the reference; warnings are errors
 make -C python docs-serve   # build it and serve it on :8000
 make -C python build        # build the sdist and the wheel
@@ -251,6 +252,39 @@ Conventions the suite already follows:
   [`tests/test_regressions.py`](python/tests/test_regressions.py)** with a
   comment naming what went wrong.
 - **Async tests need no decorator** — `asyncio_mode = "auto"` is set.
+
+### The system test
+
+[`python/systemtest/`](python/systemtest/) is the one suite that is **not**
+hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
+enrich, revert, confirm the memory is gone — against the real service, once per
+domain the credential can reach, and CI runs it on every pull request.
+
+**One step writes permanently.** `import_memories` mints no operation id, so the
+service offers no way to revert a batch. That step therefore imports a **fixed**
+payload carrying no run marker, into **one** domain rather than every domain: an
+import is written under an identity derived from its own content, so it lands
+once and every run after that is reported `DUPLICATE`. Treat that payload as
+knowledge you are publishing, because it stays, and nothing in this repository
+can correct it once it has. Everything else the suite writes it reverts before
+it finishes.
+
+It is not collected by `make test`: `testpaths` names `tests/` only, so `make -C
+python system-test` is the only way to reach it. Without `MEMCO_API_TOKEN` it
+reports itself skipped rather than failing, so you can run it, and `make check`,
+with no server access at all. In CI a missing credential is a skip only on a
+pull request; anywhere else — a push to main, or a release — it fails, because a
+publish that silently never reached the service is worse than a red build.
+
+Two more things to know before changing it. A write is accepted
+**asynchronously**, so the create returns an operation id rather than a memory
+and the memory is not addressable until ingestion has run — every existence
+assertion is a poll, not a single call. And the content it writes is real prose
+about this SDK on purpose: a write is evaluated on the way in and can be
+rejected downstream, and filler would be dropped and look exactly like a broken
+search path. Keep it distinct from what the other SDK's suite writes, too — the
+two run concurrently against the same organisation, and near-identical content
+is deduplicated.
 
 ## Documentation
 
@@ -341,6 +375,7 @@ make -C nodejs format       # apply formatting
 make -C nodejs typecheck    # tsc --strict over the SDK, the client and the tests
 make -C nodejs test         # the suite, on the version .nvmrc pins
 make -C nodejs test-all     # the suite on every supported runtime installed
+make -C nodejs system-test  # the live suite; skipped without a credential
 make -C nodejs coverage     # the suite with coverage; fails below the floor
 make -C nodejs docs         # build the reference; warnings are errors
 make -C nodejs docs-serve   # build it and serve it on :8000
@@ -399,6 +434,40 @@ frames back on `src/*.ts`.
 
 Conventions match the Python suite: name a test after the behaviour it pins, not
 the function it calls, and assert what is observable.
+
+### The system test
+
+[`nodejs/systemtest/`](nodejs/systemtest/) is the one suite that is **not**
+hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
+enrich, revert, confirm the memory is gone — against the real service, once per
+domain the credential can reach, and CI runs it on every pull request.
+
+**One step writes permanently.** `importMemories` mints no operation id, so the
+service offers no way to revert a batch. That step therefore imports a **fixed**
+payload carrying no run marker, into **one** domain rather than every domain: an
+import is written under an identity derived from its own content, so it lands
+once and every run after that is reported `DUPLICATE`. Treat that payload as
+knowledge you are publishing, because it stays, and nothing in this repository
+can correct it once it has. Everything else the suite writes it reverts before
+it finishes.
+
+`npm test` runs the glob `build/js/tests/**`, so it never matches this suite;
+`make -C nodejs system-test` is the only way to reach it. Without
+`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
+it, and `make check`, with no server access at all. In CI a missing credential
+is a skip only on a pull request; anywhere else — a push to main, or a release —
+it fails, because a publish that silently never reached the service is worse
+than a red build.
+
+Two more things to know before changing it. A write is accepted
+**asynchronously**, so the create returns an operation id rather than a memory
+and the memory is not addressable until ingestion has run — every existence
+assertion is a poll, not a single call. And the content it writes is real prose
+about this SDK on purpose: a write is evaluated on the way in and can be
+rejected downstream, and filler would be dropped and look exactly like a broken
+search path. Keep it distinct from what the other SDK's suite writes, too — the
+two run concurrently against the same organisation, and near-identical content
+is deduplicated.
 
 ## Documentation
 

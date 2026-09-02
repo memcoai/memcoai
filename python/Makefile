@@ -15,7 +15,7 @@ UV ?= uv
 EXTRAS := --extra dev --extra docs
 RUN := $(UV) run $(EXTRAS)
 
-.PHONY: help install lint format typecheck test test-all coverage docs docs-serve build clean
+.PHONY: help install lint format typecheck test test-all system-test coverage docs docs-serve build clean
 
 help:  ## Show this help
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
@@ -41,6 +41,12 @@ test:  ## Run the test suite
 coverage:  ## Run the suite and report coverage (fails below the floor)
 	$(RUN) pytest -q --cov --cov-report=term --cov-report=html --cov-report=xml
 	@echo "open python/htmlcov/index.html"
+
+# Not collected by `test`: pyproject's testpaths names tests/ only, so the live
+# suite is reached solely through this target. It needs MEMCO_API_TOKEN and a
+# reachable service; without one it reports itself skipped rather than failing.
+system-test:  ## Run the live suite against the real service
+	$(RUN) pytest -q systemtest
 
 test-all:  ## Run the suite on every supported interpreter
 	@for v in 3.10 3.11 3.12 3.13; do \
