@@ -1,0 +1,174 @@
+name: Build (Node.js)
+
+# Called by ci_nodejs.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and install
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+
+      # Chained with `&&` rather than written as a `prepack` script, for the
+      # same reason every target in nodejs/Makefile is: nodejs/.npmrc sets
+      # `ignore-scripts=true`, so npm never fires the pre/post lifecycle. A
+      # `prepack` would be skipped in silence and `npm pack` would ship an empty
+      # dist/ behind a green build.
+      - name: Build both formats, then pack
+        run: npm run build && npm pack
+
+      - name: Install the tarball into a clean project
+        run: |
+          # A glob rather than `ls`: it also catches a second, stale tarball,
+          # which would otherwise make the checks below test the wrong build.
+          # The -f test is not redundant: bash leaves an unmatched glob as its
+          # own literal text, so on zero tarballs `$#` is 1 and `$1` is the
+          # string `*.tgz` — a count check alone would wave that through.
+          set -- *.tgz
+          { [ "$#" -eq 1 ] && [ -f "$1" ]; } \
+            || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
+          mkdir -p /tmp/verify
+          cp "$1" /tmp/verify/package.tgz
+          npm --prefix /tmp/verify init -y > /dev/null
+          npm --prefix /tmp/verify install --no-audit --no-fund /tmp/verify/package.tgz
+
+      # Load-bearing, and the reason both formats are exercised rather than one:
+      # a wrong `exports` condition, a wrong file extension or a missing
+      # `{"type":"commonjs"}` marker in dist/cjs/ breaks exactly one of the two
+      # while the other keeps passing, so a single-format check would report the
+      # package as whole when half of its consumers cannot load it.
+      #
+      # `Memco` is not imported here: the client is still landing, and this job
+      # has to prove the packaging rather than the surface. `provenance` is the
+      # export that reads a data file out of the installed tree, so it fails if
+      # `files` ever stops shipping client/SDK_PROVENANCE.yaml.
+      - name: Both entry points load
+        working-directory: /tmp/verify
+        run: |
+          node --input-type=module - <<'JS'
+          import { provenance } from '@memcoai/memco'
+          if (!provenance().serverCommit) {
+            throw new Error('the provenance descriptor did not reach the tarball')
+          }
+          console.log('esm ok:', provenance().serverCommit)
+          JS
+          node --input-type=commonjs - <<'JS'
+          const { provenance } = require('@memcoai/memco')
+          if (!provenance().serverCommit) {
+            throw new Error('the provenance descriptor did not reach the tarball')
+          }
+          console.log('cjs ok:', provenance().serverCommit)
+          JS
+
+      # Types resolve through their own `exports` conditions, separately from the
+      # runtime entry points, and a broken condition makes every annotation
+      # silently `any` rather than failing anything. So assert that a consumer's
+      # own tsc reports a deliberate error — once per condition: under
+      # `moduleResolution: nodenext` a .mts file resolves through `import` and a
+      # .cts file through `require`, so both `types` entries are exercised.
+      - name: A consumer sees the package as typed
+        working-directory: /tmp/verify
+        run: |
+          cat > tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "module": "nodenext",
+              "moduleResolution": "nodenext",
+              "strict": true,
+              "skipLibCheck": true,
+              "noEmit": true
+            },
+            "include": ["consumer.mts", "consumer.cts"]
+          }
+          JSON
+          cat > consumer.mts <<'TS'
+          import { provenance } from '@memcoai/memco'
+          export const wrong: number = provenance().serverCommit
+          TS
+          cp consumer.mts consumer.cts
+          # The repository's own tsc, so this measures the compiler the SDK is
+          # built with rather than whatever a fresh resolve would fetch.
+          #
+          # The default shell is `bash -e` without `pipefail`, so the pipe is
+          # what keeps tsc's intended non-zero exit from failing the step; the
+          # greps below are the actual assertion.
+          "$GITHUB_WORKSPACE/nodejs/node_modules/.bin/tsc" -p tsconfig.json 2>&1 | tee out.txt
+          for file in consumer.mts consumer.cts; do
+            grep -q "^$file.*Type 'string' is not assignable to type 'number'" out.txt \
+              || { echo "::error::$file does not see the installed package as typed"; exit 1; }
+          done
+
+      # Importing one known symbol would not notice a future generated module
+      # being dropped, so compare the tarball against the source tree. Unlike
+      # Python's wheel, the generated client ships compiled, so a .ts source is
+      # accounted for by its two built outputs rather than by itself.
+      - name: Every generated file reached the tarball
+        run: |
+          set -- *.tgz
+          { [ "$#" -eq 1 ] && [ -f "$1" ]; } \
+            || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
+          tar tzf "$1" | sed 's|^package/||' > /tmp/shipped.txt
+          node --input-type=module - <<'JS'
+          import { readFileSync } from 'node:fs'
+          import { readdir } from 'node:fs/promises'
+
+          const shipped = new Set(
+            readFileSync('/tmp/shipped.txt', 'utf8').split('\n').filter(Boolean)
+          )
+
+          // Named one by one rather than globbed. A `find` that stopped matching
+          // would leave a count comparison passing while it compared nothing;
+          // these two are the files a consumer that reads the manifest or the
+          // descriptor raw goes looking for, and nothing imports either, so no
+          // load check would notice their absence.
+          for (const path of ['client/SDK_PROVENANCE.yaml', 'client/src/gen/tools.json']) {
+            if (!shipped.has(path)) throw new Error(`${path} is absent from the tarball`)
+          }
+
+          // Deliberately not shipped: an input to scripts/verify_provenance.py,
+          // of no use to a consumer. Listed so that a *new* file appearing under
+          // client/ fails this check rather than passing unnoticed.
+          const notPublished = new Set(['client/dependencies.json'])
+
+          const sources = (await readdir('client', { recursive: true, withFileTypes: true }))
+            .filter((entry) => entry.isFile())
+            .map((entry) => `${entry.parentPath}/${entry.name}`.replaceAll('\\', '/'))
+          if (sources.length === 0) throw new Error('client/ is empty; nothing was compared')
+
+          const missing = []
+          for (const source of sources) {
+            if (notPublished.has(source)) continue
+            const expected = source.endsWith('.ts')
+              ? ['esm', 'cjs'].map((f) => `dist/${f}/${source.slice(0, -3)}.js`)
+              : [source]
+            for (const path of expected) {
+              if (!shipped.has(path)) missing.push(`${source} -> ${path}`)
+            }
+          }
+          if (missing.length > 0) {
+            throw new Error(`generated files absent from the tarball: ${missing.join(', ')}`)
+          }
+          console.log(`all ${sources.length} files under client/ are accounted for`)
+          JS
+
+      # The release pipeline publishes this to npm as-is; rebuilding there would
+      # ship an artefact that none of the above ever ran against.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: dist-nodejs
+          path: nodejs/*.tgz

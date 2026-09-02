@@ -1,0 +1,123 @@
+name: System tests (Python)
+
+# Called by ci_python.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      uv-version:
+        description: The uv release to install. ci_python.yaml holds the pin.
+        type: string
+        required: true
+    secrets:
+      MEMCO_API_TOKEN:
+        description: The live credential. Absent on a fork's pull request.
+        # Not `required`: a fork's pull request has no secrets at all, and the
+        # guard step below is what turns that into a skip rather than a failure.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: System tests (python)
+    # The one job that proves the SDK works against the deployed service rather
+    # than against tests/fake_server.py.
+    runs-on: ubuntu-latest
+    # Ingestion is asynchronous and the suite polls for it, so the worst case is
+    # a few minutes PER DOMAIN and grows as domains are added. Being killed here
+    # is not only a red build: cleanup runs in a `finally`, which a kill does not
+    # reach, so a probe would be left behind in a live domain. Raise this before
+    # it becomes tight.
+    timeout-minutes: 45
+    # One run of THIS language at a time, across every branch — the group names
+    # neither the workflow nor the ref, so two pull requests queue behind each
+    # other rather than overlapping.
+    #
+    # The suite writes to a real domain and its insights carry no run marker, so
+    # two overlapping runs of the same SDK would write identical content and be
+    # folded together by deduplication; the revert would then report MERGED and
+    # the test would fail. Queueing removes that class of failure rather than
+    # detecting it. `cancel-in-progress: false` because a cancelled run cannot
+    # reach the cleanup in its `finally` and would strand a probe in a live
+    # domain.
+    #
+    # The other language is deliberately NOT in this group. The two suites write
+    # about different subjects — this one about the Python retry policy — so they cannot be read
+    # as the same knowledge and cannot collide, and serialising them would only
+    # double the wall clock.
+    #
+    # Note GitHub keeps only ONE job pending per group: with several pull
+    # requests in flight, an older pending run is cancelled when a newer one
+    # queues behind it. Those runs never started, so they strand nothing — but
+    # the check shows as cancelled and needs re-running.
+    concurrency:
+      group: memco-system-test-python
+      cancel-in-progress: false
+    # No `environment:`. MEMCO_API_TOKEN is a repository secret, so an
+    # environment is not what makes it reachable, and declaring one would
+    # subject this job to that environment's protection rules: required
+    # reviewers would park every pull request awaiting approval, and a
+    # deployment-branch policy would fail them outright, since a pull request's
+    # ref is refs/pull/N/merge and matches no branch policy.
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      # First, before the checkout: a run that is going to skip should not pay
+      # for a checkout and a dependency tree it will never use.
+      #
+      # A pull request that cannot see the secret — a fork's — skips green,
+      # which is what keeps CONTRIBUTING's first promise true: "you do not need
+      # access to Memco's servers to contribute". Anywhere else, a release in
+      # particular, a missing credential is a misconfiguration rather than a
+      # fact about the contributor, and skipping would let a publish report
+      # success having never reached the service. So it fails instead.
+      #
+      # The check is a step because GitHub does not allow `secrets` in a
+      # job-level `if:`.
+      - name: Check for a credential
+        id: guard
+        env:
+          EVENT: ${{ github.event_name }}
+          MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+        # Runs before the checkout, so the directory this job otherwise defaults
+        # into does not exist yet.
+        working-directory: .
+        run: |
+          if [ -n "$MEMCO_API_TOKEN" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "pull_request" ]; then
+            echo "::notice::MEMCO_API_TOKEN is unavailable to this pull request; skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::MEMCO_API_TOKEN did not resolve; it is a repository secret" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        if: steps.guard.outputs.run == 'true'
+        with:
+          # This job runs with a live API token in its environment; it has no
+          # reason to also hold a push credential in .git/config.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        if: steps.guard.outputs.run == 'true'
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: true
+      - if: steps.guard.outputs.run == 'true'
+        run: uv sync --extra dev
+      - name: Exercise the real service
+        if: steps.guard.outputs.run == 'true'
+        env:
+          MEMCO_API_HOST: ${{ vars.MEMCO_API_HOST }}
+          MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+        run: uv run pytest -q systemtest
+      - name: Say the suite was skipped
+        if: steps.guard.outputs.run != 'true'
+        working-directory: .
+        run: |
+          echo "### System tests (python)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Skipped: no \`MEMCO_API_TOKEN\` is available to this run." >> "$GITHUB_STEP_SUMMARY"

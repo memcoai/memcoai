@@ -1,0 +1,60 @@
+name: Test (Python)
+
+# Called by ci_python.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      uv-version:
+        description: The uv release to install. ci_python.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (3.12)
+    # Pinned explicitly: without --python, uv resolves the interpreter from
+    # python/.python-version (the supported floor), so this job would silently
+    # duplicate the matrix's 3.10 run and leave 3.12 untested.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: true
+      - run: uv sync --extra dev --python 3.12
+      # Coverage runs on this job only: the matrix jobs prove the suite passes on
+      # every supported interpreter, and measuring the same lines four times
+      # would say nothing new. `fail_under` in pyproject.toml is the gate — this
+      # step fails the build below the floor, so the badge cannot go stale.
+      - run: uv run --python 3.12 pytest -q --cov --cov-report=term --cov-report=xml
+      - name: Report coverage
+        if: always()
+        run: |
+          uv run --python 3.12 python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET, pathlib
+          report = pathlib.Path("coverage.xml")
+          if not report.exists():
+              print("### Coverage\n\nNo report produced — the suite did not finish.")
+              raise SystemExit
+          root = ET.parse(report).getroot()
+          rate = float(root.get("line-rate", 0)) * 100
+          branch = float(root.get("branch-rate", 0)) * 100
+          print(f"### Coverage\n\n**{rate:.1f}%** of lines, **{branch:.1f}%** of branches.\n")
+          print("| Module | Lines |\n|---|---|")
+          for cls in sorted(root.iter("class"), key=lambda c: float(c.get("line-rate", 0))):
+              print(f"| `{cls.get('filename')}` | {float(cls.get('line-rate', 0)) * 100:.0f}% |")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: coverage-python
+          path: python/coverage.xml
+          retention-days: 14

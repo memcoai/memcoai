@@ -1,0 +1,55 @@
+name: Docs (Python)
+
+# Called by ci_python.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      uv-version:
+        description: The uv release to install. ci_python.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: true
+      # -W turns warnings into errors, so a cross-reference that stops
+      # resolving fails here rather than rotting in the published reference.
+      # `-d` keeps the doctree cache out of the output directory, which is
+      # published verbatim as the release's documentation tarball.
+      - run: uv run --extra docs sphinx-build -b html -W --keep-going -d docs/_build/doctrees docs docs/_build/html
+      # The same sources rendered a second time as markdown, for the assembler
+      # below. sphinx-markdown-builder renders no admonition holding a doctest
+      # block, so with conf.py's `Example:` handling left as it is every worked
+      # example is dropped with a warning; rendering them as a plain section
+      # keeps them. Its own doctree cache, because that override is a config
+      # change and a config change invalidates the whole cache.
+      - run: >-
+          uv run --extra docs sphinx-build -b markdown -W --keep-going
+          -D napoleon_use_admonition_for_examples=0
+          -D napoleon_use_admonition_for_notes=0
+          -d docs/_build/doctrees-markdown docs docs/_build/markdown
+      # Writes llms.txt and llms-full.txt into the HTML output, so the artifact
+      # below carries them and the release tarball publishes them beside the
+      # reference. Fails if a page the build published is not reachable from
+      # llms.txt, so a new page has to be indexed before it can ship.
+      - run: uv run --extra docs python ../scripts/build_llms_txt.py python
+      # Named per language: Go and Node reuse this job's shape, and artifact
+      # names are unique within a run.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: docs-python
+          path: python/docs/_build/html

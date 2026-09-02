@@ -1,0 +1,29 @@
+name: Typecheck (Node.js)
+
+# Called by ci_nodejs.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # tsconfig.json covers src/, tests/ and the generated client, so this is
+      # also the only check that ever compiles src/gen/toolCopy.ts — a module a
+      # Python generator writes, and which that generator cannot typecheck.
+      - run: npx --no -- tsc --noEmit

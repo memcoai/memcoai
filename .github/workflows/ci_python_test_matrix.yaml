@@ -1,0 +1,34 @@
+name: Test matrix (Python)
+
+# Called by ci_python.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      uv-version:
+        description: The uv release to install. ci_python.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-matrix:
+    name: Test (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.13"]  # 3.12 is covered by ci_python_test.yaml
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: true
+      - run: uv sync --extra dev --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -q
