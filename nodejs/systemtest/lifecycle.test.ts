@@ -62,7 +62,19 @@ function nonceFor(domain: string): string {
   return `nodesys-${domain}-${tail}`
 }
 
-/** The memory this run writes: true, substantive, and uniquely marked. */
+/**
+ * The memory this run writes: true, substantive, and free of identifiers.
+ *
+ * The run marker lives in the query and nowhere else. The query becomes the
+ * memory's intent, which comes back on every search result, so the test can
+ * still recognise its own memory — while the insight the service evaluates is
+ * pure prose. An identifier in the title or body is rejected outright: the
+ * quality gate refuses content dominated by IDs, and a rejected memory never
+ * becomes searchable, which surfaces here as a search that never finds it.
+ *
+ * The subject is deliberately specific to the Node.js SDK, so it can never be
+ * read as the same knowledge as what the Python suite writes.
+ */
 function probe(nonce: string): {
   query: string
   title: string
@@ -71,8 +83,8 @@ function probe(nonce: string): {
   return {
     query:
       'Why does the Memco Node.js SDK compile its test suite to JavaScript ' +
-      `before running it? [${nonce}]`,
-    title: `Node.js SDK test build [${nonce}]`,
+      `before running it? (system test ${nonce})`,
+    title: 'Node.js SDK test build',
     content:
       "Node's type stripping cannot run the Memco Node.js SDK's suite over the " +
       'TypeScript sources. The generated gRPC client comes from ts-proto, which emits ' +
@@ -82,9 +94,8 @@ function probe(nonce: string): {
       'invoked with an explicit quoted glob so the shell leaves it for Node to expand. ' +
       'A bare directory argument is not equivalent: on Node 24 it is loaded as a module ' +
       'and fails with MODULE_NOT_FOUND.\n\n' +
-      `Written by the Memco Node.js SDK system test as probe ${nonce}. It is created and ` +
-      'reverted inside a single CI run; if you are reading this, the run that wrote it ' +
-      'did not finish cleaning up.'
+      'This note is written and then removed again by the Memco Node.js SDK system ' +
+      'test. If you are reading it, that run did not finish cleaning up.'
   }
 }
 
@@ -95,26 +106,35 @@ function probe(nonce: string): {
  * enough to the insight it joins can be endorsed as a duplicate rather than
  * added as new, and it would then never appear as a second insight to find.
  *
- * `marker` appears in both the title and the body, so the poll that waits for
- * this insight can identify it even if the service ever normalises titles.
+ * Its title is what tells it apart from the insight it joins, so neither needs
+ * a marker of its own.
  */
-function addition(marker: string): { title: string; content: string } {
+function addition(): { title: string; content: string } {
   return {
-    title: `Node.js SDK npm lifecycle hooks [${marker}]`,
+    title: 'Node.js SDK npm lifecycle hooks',
     content:
       "The SDK's .npmrc sets `ignore-scripts=true`, so npm never fires a `prebuild` or " +
       '`posttest` lifecycle hook. Any multi-step operation has to chain its steps with ' +
       '`&&` inside a single script instead; a step written as a lifecycle hook would be ' +
       'skipped in silence behind a green build.\n\n' +
-      `Added by the Memco Node.js SDK system test as ${marker}.`
+      'Added and then removed again by the Memco Node.js SDK system test.'
   }
 }
 
-function insightCarrying(memory: Memory, marker: string): Insight | undefined {
-  return memory.insights.find(
-    insight =>
-      insight.title.includes(marker) || insight.content.includes(marker)
-  )
+/** The insight of this memory with exactly this title, if any. */
+function insightTitled(memory: Memory, title: string): Insight | undefined {
+  return memory.insights.find(insight => insight.title === title)
+}
+
+/**
+ * Whether this memory was written by this run.
+ *
+ * The marker is in the intent because it cannot be in the insight: the query
+ * passed to createMemory becomes the memory's intent, and intents come back on
+ * every search result.
+ */
+function isOurs(memory: Memory, nonce: string): boolean {
+  return memory.intents.some(intent => intent.includes(nonce))
 }
 
 /**
@@ -142,7 +162,8 @@ async function searchUntilFound(
   client: Memco,
   sessionId: string,
   query: string,
-  marker: string
+  nonce: string,
+  title: string
 ): Promise<[Memory, Insight]> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
   let seen = 0
@@ -151,7 +172,8 @@ async function searchUntilFound(
     seen = result.memories.length
     for (const candidate of result.memories) {
       const memory = await resolved(client, candidate)
-      const insight = insightCarrying(memory, marker)
+      if (!isOurs(memory, nonce)) continue
+      const insight = insightTitled(memory, title)
       if (insight !== undefined) return [memory, insight]
     }
     console.log(
@@ -161,27 +183,30 @@ async function searchUntilFound(
   }
   return assert.fail(
     `the memory never became searchable within ${INGEST_TIMEOUT_MS / 1000}s ` +
-      `(last search returned ${seen} memories, none carrying ${marker}). ` +
-      'Either ingestion is slower than the budget, or the write was rejected ' +
-      "downstream by the service's quality gate."
+      `(last search returned ${seen} memories, none whose intent names ${nonce}). ` +
+      'Three things can cause this. The write may have been rejected downstream by ' +
+      'the quality gate, in which case it never becomes searchable at all. Ingestion ' +
+      'may simply be slower than the budget. Or the service may not carry a newly ' +
+      "created memory's own query in its intents, which is the assumption this suite " +
+      'rests on to recognise its own memory without an identifier in the insight.'
   )
 }
 
 /**
- * Poll GetMemory until the memory carries an insight with the given marker.
+ * Poll GetMemory until the memory carries an insight with this title.
  *
  * GetMemory rather than a second search: within one session a memory already
  * returned comes back as a bare reference with no insights, so a search cannot
  * show us the insight the enrich step just added.
  */
-async function getUntilCarries(
+async function getUntilTitled(
   client: Memco,
   idx: string,
-  marker: string
+  title: string
 ): Promise<Insight> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
   while (Date.now() < deadline) {
-    const found = insightCarrying(await client.memory.getMemory(idx), marker)
+    const found = insightTitled(await client.memory.getMemory(idx), title)
     if (found !== undefined) return found
     console.log('  waiting for the enrichment to be ingested')
     await sleep(POLL_INTERVAL_MS)
@@ -252,9 +277,8 @@ function importFixture(): ImportedMemory {
 
 async function lifecycle(domain: string): Promise<void> {
   const nonce = nonceFor(domain)
-  const marker = `${nonce}-addition`
   const fields = probe(nonce)
-  const extra = addition(marker)
+  const extra = addition()
   console.log(`\n[${domain}] probe ${nonce}`)
 
   await withClient(async client => {
@@ -284,7 +308,8 @@ async function lifecycle(domain: string): Promise<void> {
         client,
         session.sessionId,
         fields.query,
-        nonce
+        nonce,
+        fields.title
       )
       console.log(`  found as ${memory.idx}, insight ${insight.idx}`)
 
@@ -296,7 +321,7 @@ async function lifecycle(domain: string): Promise<void> {
 
       const fetched = await client.memory.getMemory(memory.idx)
       assert.equal(fetched.idx, memory.idx)
-      assert.ok(insightCarrying(fetched, nonce))
+      assert.ok(insightTitled(fetched, fields.title))
 
       // An enrichment is a second write against the same memory, with an
       // operation id of its own.
@@ -308,7 +333,7 @@ async function lifecycle(domain: string): Promise<void> {
       })
       assert.ok(enrichment.operationId)
       outstanding.push(enrichment.operationId)
-      const added = await getUntilCarries(client, memory.idx, marker)
+      const added = await getUntilTitled(client, memory.idx, extra.title)
       console.log(`  enriched, insight ${added.idx}`)
 
       const undoAddition = await client.memory.revertMemory(
@@ -324,12 +349,12 @@ async function lifecycle(domain: string): Promise<void> {
       // addition is gone and the memory it joined is intact.
       const after = await client.memory.getMemory(memory.idx)
       assert.equal(
-        insightCarrying(after, marker),
+        insightTitled(after, extra.title),
         undefined,
         'the reverted addition is still there'
       )
       assert.ok(
-        insightCarrying(after, nonce),
+        insightTitled(after, fields.title),
         'reverting the addition took the original insight with it'
       )
 
@@ -341,7 +366,9 @@ async function lifecycle(domain: string): Promise<void> {
         RevertOutcome.MEMORY_REMOVED,
         `reverting the write reported ${RevertOutcome[undoMemory.outcome]}, not ` +
           'MEMORY_REMOVED. MERGED or ADDITION_REMOVED means the probe was folded into ' +
-          'an existing memory, which is what distinct per-language content exists to prevent.'
+          'an existing memory. The insight carries no run marker, so two runs of this ' +
+          'SDK overlapping would write identical content and collide; the CI job ' +
+          'holds a per-language concurrency group to keep one in flight at a time.'
       )
       console.log('  reverted')
 

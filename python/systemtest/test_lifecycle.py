@@ -42,19 +42,24 @@ POLL_INTERVAL = 5.0
 
 
 def probe(nonce: str) -> dict[str, str]:
-    """The memory this run writes: true, substantive, and uniquely marked.
+    """The memory this run writes: true, substantive, and free of identifiers.
 
-    The subject is deliberately specific to the Python SDK. The Node.js suite
-    runs at the same time against the same organisation and writes about its own
-    build, so the two can never be read as the same knowledge and folded
-    together by the service's deduplication.
+    The run marker lives in the query and nowhere else. The query becomes the
+    memory's intent, which comes back on every search result, so the test can
+    still recognise its own memory — while the insight the service evaluates is
+    pure prose. An identifier in the title or body is rejected outright: the
+    quality gate refuses content dominated by IDs, and a rejected memory never
+    becomes searchable, which surfaces here as a search that never finds it.
+
+    The subject is deliberately specific to the Python SDK, so it can never be
+    read as the same knowledge as what the Node.js suite writes.
     """
     return {
         "query": (
             "Which gRPC calls does the Memco Python SDK retry, "
-            f"and which does it deliberately not retry? [{nonce}]"
+            f"and which does it deliberately not retry? (system test {nonce})"
         ),
-        "title": f"Python SDK retry policy [{nonce}]",
+        "title": "Python SDK retry policy",
         "content": (
             "The Memco Python SDK enables gRPC retries for a deliberately narrow set of "
             "methods. `_channel.RETRYABLE_METHODS` names `ListDomains` and `GetMemory`, "
@@ -63,25 +68,24 @@ def probe(nonce: str) -> dict[str, str]:
             "Everything else is excluded on purpose. A retried write could be applied twice, "
             "and a retried `Search` would be recorded against the session twice, so both are "
             "left for the caller to decide about.\n\n"
-            f"Written by the Memco Python SDK system test as probe {nonce}. It is created and "
-            "reverted inside a single CI run; if you are reading this, the run that wrote it "
-            "did not finish cleaning up."
+            "This note is written and then removed again by the Memco Python SDK system "
+            "test. If you are reading it, that run did not finish cleaning up."
         ),
     }
 
 
-def addition(marker: str) -> dict[str, str]:
+def addition() -> dict[str, str]:
     """The insight the enrich step adds to the memory above.
 
     A different fact about the same subject, on purpose. An enrichment close
     enough to the insight it joins can be endorsed as a duplicate rather than
     added as new, and it would then never appear as a second insight to find.
 
-    `marker` appears in both the title and the body, so the poll that waits for
-    this insight can identify it even if the service ever normalises titles.
+    Its title is what tells it apart from the insight it joins, so neither needs
+    a marker of its own.
     """
     return {
-        "title": f"Python SDK credential withholding [{marker}]",
+        "title": "Python SDK credential withholding",
         "content": (
             "The Memco Python SDK attaches its credential with a channel interceptor rather "
             "than with call credentials. gRPC refuses call credentials on an insecure "
@@ -90,17 +94,27 @@ def addition(marker: str) -> dict[str, str]:
             "The interceptor withholds the credential from any method under "
             "`/grpc.health.v1.`, so the health probe the constructor makes is unauthenticated "
             "and a bad token cannot be mistaken for an unhealthy service.\n\n"
-            f"Added by the Memco Python SDK system test as {marker}."
+            "Added and then removed again by the Memco Python SDK system test."
         ),
     }
 
 
-def _insight_carrying(memory: Memory, marker: str) -> Insight | None:
-    """The insight of this memory that carries the given marker, if any."""
+def _insight_titled(memory: Memory, title: str) -> Insight | None:
+    """The insight of this memory with exactly this title, if any."""
     for insight in memory.insights:
-        if marker in insight.title or marker in insight.content:
+        if insight.title == title:
             return insight
     return None
+
+
+def _is_ours(memory: Memory, nonce: str) -> bool:
+    """Whether this memory was written by this run.
+
+    The marker is in the intent because it cannot be in the insight: the query
+    passed to create_memory becomes the memory's intent, and intents come back
+    on every search result.
+    """
+    return any(nonce in intent for intent in memory.intents)
 
 
 def _resolved(client: Memco, memory: Memory) -> Memory:
@@ -118,9 +132,9 @@ def _resolved(client: Memco, memory: Memory) -> Memory:
 
 
 def _search_until_found(
-    client: Memco, session_id: str, query: str, marker: str
+    client: Memco, session_id: str, query: str, nonce: str, title: str
 ) -> tuple[Memory, Insight]:
-    """Poll the search until our own memory comes back, or give up loudly.
+    """Poll the search until this run's own memory comes back, or give up loudly.
 
     Every returned memory is examined rather than just the first: the probe is
     brand new and competing with whatever else the domain holds, so its rank is
@@ -133,21 +147,27 @@ def _search_until_found(
         seen = len(result.memories)
         for candidate in result.memories:
             memory = _resolved(client, candidate)
-            insight = _insight_carrying(memory, marker)
+            if not _is_ours(memory, nonce):
+                continue
+            insight = _insight_titled(memory, title)
             if insight is not None:
                 return memory, insight
         print(f"  waiting for ingestion; search returned {seen} memories, none ours")
         time.sleep(POLL_INTERVAL)
     pytest.fail(
         f"the memory never became searchable within {INGEST_TIMEOUT:.0f}s "
-        f"(last search returned {seen} memories, none carrying {marker!r}). "
-        "Either ingestion is slower than the budget, or the write was rejected "
-        "downstream by the service's quality gate."
+        f"(last search returned {seen} memories, none whose intent names {nonce!r}). "
+        "Three things can cause this. The write may have been rejected downstream "
+        "by the quality gate, in which case it never becomes searchable at all. "
+        "Ingestion may simply be slower than the budget. Or the service may not "
+        "carry a newly created memory's own query in its intents, which is the "
+        "assumption this suite rests on to recognise its own memory without "
+        "putting an identifier in the insight."
     )
 
 
-def _get_until_carries(client: Memco, idx: str, marker: str) -> Insight:
-    """Poll GetMemory until the memory carries an insight with the given marker.
+def _get_until_titled(client: Memco, idx: str, title: str) -> Insight:
+    """Poll GetMemory until the memory carries an insight with this title.
 
     GetMemory rather than a second search: within one session a memory already
     returned comes back as a bare reference with no insights, so a search cannot
@@ -155,7 +175,7 @@ def _get_until_carries(client: Memco, idx: str, marker: str) -> Insight:
     """
     deadline = time.monotonic() + INGEST_TIMEOUT
     while time.monotonic() < deadline:
-        insight = _insight_carrying(client.memory.get_memory(idx), marker)
+        insight = _insight_titled(client.memory.get_memory(idx), title)
         if insight is not None:
             return insight
         print("  waiting for the enrichment to be ingested")
@@ -192,8 +212,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     again by the client constructor, so it is not called a third time here.
     """
     fields = probe(nonce)
-    marker = f"{nonce}-addition"
-    extra = addition(marker)
+    extra = addition()
     print(f"\n[{domain}] probe {nonce}")
 
     session = client.memory.start_session(domain)
@@ -213,7 +232,9 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     written.append(write.operation_id)
     print(f"  created, operation {write.operation_id}")
 
-    memory, insight = _search_until_found(client, session.session_id, fields["query"], nonce)
+    memory, insight = _search_until_found(
+        client, session.session_id, fields["query"], nonce, fields["title"]
+    )
     print(f"  found as {memory.idx}, insight {insight.idx}")
 
     feedback = client.memory.share_feedback(
@@ -224,7 +245,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
 
     fetched = client.memory.get_memory(memory.idx)
     assert fetched.idx == memory.idx
-    assert _insight_carrying(fetched, nonce) is not None
+    assert _insight_titled(fetched, fields["title"]) is not None
 
     # An enrichment is a second write against the same memory, with an
     # operation id of its own.
@@ -236,7 +257,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     assert enrichment.operation_id
     written.append(enrichment.operation_id)
-    added = _get_until_carries(client, memory.idx, marker)
+    added = _get_until_titled(client, memory.idx, extra["title"])
     print(f"  enriched, insight {added.idx}")
 
     undo_addition = client.memory.revert_memory(enrichment.operation_id)
@@ -246,8 +267,8 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     # The outcome is what the service reported; this is what it did. The
     # addition is gone and the memory it joined is intact.
     after = client.memory.get_memory(memory.idx)
-    assert _insight_carrying(after, marker) is None, "the reverted addition is still there"
-    assert _insight_carrying(after, nonce) is not None, (
+    assert _insight_titled(after, extra["title"]) is None, "the reverted addition is still there"
+    assert _insight_titled(after, fields["title"]) is not None, (
         "reverting the addition took the original insight with it"
     )
 
@@ -256,8 +277,10 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     undo_memory = client.memory.revert_memory(write.operation_id)
     assert undo_memory.outcome is RevertOutcome.MEMORY_REMOVED, (
         f"reverting the write reported {undo_memory.outcome.name}, not MEMORY_REMOVED. "
-        "MERGED or ADDITION_REMOVED means the probe was folded into an existing memory, "
-        "which is what distinct per-language content exists to prevent."
+        "MERGED or ADDITION_REMOVED means the probe was folded into an existing memory. "
+        "The insight carries no run marker, so two runs of this SDK overlapping would "
+        "write identical content and collide; the CI job holds a per-language concurrency "
+        "group to keep one of them in flight at a time."
     )
     print("  reverted")
 

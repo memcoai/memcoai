@@ -397,7 +397,7 @@ jobs:
   # ---- live: every pull request, main, and releases -----------------------
 
   integration:
-    name: Live smoke
+    name: System tests (nodejs)
     # The one job that proves the SDK works against the deployed service rather
     # than against tests/fakeServer.ts. It runs on pull requests too, because
     # a contract change that only breaks over the wire would otherwise land
@@ -414,6 +414,30 @@ jobs:
     # reach, so a probe would be left behind in a live domain. Raise this before
     # it becomes tight.
     timeout-minutes: 45
+    # One run of THIS language at a time, across every branch — the group names
+    # neither the workflow nor the ref, so two pull requests queue behind each
+    # other rather than overlapping.
+    #
+    # The suite writes to a real domain and its insights carry no run marker, so
+    # two overlapping runs of the same SDK would write identical content and be
+    # folded together by deduplication; the revert would then report MERGED and
+    # the test would fail. Queueing removes that class of failure rather than
+    # detecting it. `cancel-in-progress: false` because a cancelled run cannot
+    # reach the cleanup in its `finally` and would strand a probe in a live
+    # domain.
+    #
+    # The other language is deliberately NOT in this group. The two suites write
+    # about different subjects — this one about the Node.js test build — so they cannot be read
+    # as the same knowledge and cannot collide, and serialising them would only
+    # double the wall clock.
+    #
+    # Note GitHub keeps only ONE job pending per group: with several pull
+    # requests in flight, an older pending run is cancelled when a newer one
+    # queues behind it. Those runs never started, so they strand nothing — but
+    # the check shows as cancelled and needs re-running.
+    concurrency:
+      group: memco-system-test-nodejs
+      cancel-in-progress: false
     # No `environment:`. MEMCO_API_TOKEN is a repository secret, so an
     # environment is not what makes it reachable, and declaring one would
     # subject this job to that environment's protection rules: required
@@ -478,6 +502,6 @@ jobs:
         if: steps.guard.outputs.run != 'true'
         working-directory: .
         run: |
-          echo "### Live smoke (Node.js)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### System tests (nodejs)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Skipped: no \`MEMCO_API_TOKEN\` is available to this run." >> "$GITHUB_STEP_SUMMARY"
