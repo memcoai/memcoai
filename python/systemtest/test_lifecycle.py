@@ -54,14 +54,23 @@ def probe(nonce: str) -> dict[str, str]:
     still recognise its own memory — while the insight the service evaluates is
     pure prose.
 
-    Two quality-gate rules have already rejected a version of this, and a
+    Two quality-gate rules have already rejected versions of this, and a
     rejection is invisible from here: the write is accepted, the memory never
     becomes searchable, and the failure surfaces as a search that never finds
     it. Content dominated by identifiers is refused, which is why no marker
-    appears in the title or the body. So is a status update or hand-off note —
-    an earlier draft closed with "if you are reading it, that run did not finish
-    cleaning up" and was refused for it. Say what is true about the subject and
-    stop.
+    appears in the title or the body. So is anything the gate reads as a report
+    of work rather than durable knowledge — three drafts were refused for it,
+    ending respectively "if you are reading it, that run did not finish cleaning
+    up", "this note is written and then removed again by the system test", and a
+    bare "added and then removed again by the system test".
+
+    So the body says nothing about itself at all. Every sentence is a fact about
+    the SDK; the fact that a test wrote it lives in the query, which the gate
+    does not evaluate.
+
+    Do not conclude from one approval that a form of words is safe. The gate is
+    an LLM sampled at a non-zero temperature, so the same shape has been both
+    approved and refused; only removing the self-reference makes it reliable.
 
     The subject is deliberately specific to the Python SDK, so it can never be
     read as the same knowledge as what the Node.js suite writes.
@@ -79,8 +88,7 @@ def probe(nonce: str) -> dict[str, str]:
             "attempts, only on `UNAVAILABLE`.\n\n"
             "Everything else is excluded on purpose. A retried write could be applied twice, "
             "and a retried `Search` would be recorded against the session twice, so both are "
-            "left for the caller to decide about.\n\n"
-            "This note is written and then removed again by the Memco Python SDK system test."
+            "left for the caller to decide about."
         ),
     }
 
@@ -104,8 +112,7 @@ def addition() -> dict[str, str]:
             "plaintext endpoint — which is how the whole offline test suite runs.\n\n"
             "The interceptor withholds the credential from any method under "
             "`/grpc.health.v1.`, so the health probe the constructor makes is unauthenticated "
-            "and a bad token cannot be mistaken for an unhealthy service.\n\n"
-            "Added and then removed again by the Memco Python SDK system test."
+            "and a bad token cannot be mistaken for an unhealthy service."
         ),
     }
 

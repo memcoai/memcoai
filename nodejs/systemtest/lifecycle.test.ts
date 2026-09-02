@@ -75,13 +75,23 @@ function nonceFor(domain: string): string {
  * still recognise its own memory — while the insight the service evaluates is
  * pure prose.
  *
- * Two quality-gate rules have already rejected a version of this, and a
+ * Two quality-gate rules have already rejected versions of this, and a
  * rejection is invisible from here: the write is accepted, the memory never
  * becomes searchable, and the failure surfaces as a search that never finds it.
  * Content dominated by identifiers is refused, which is why no marker appears in
- * the title or the body. So is a status update or hand-off note — an earlier
- * draft closed with "if you are reading it, that run did not finish cleaning up"
- * and was refused for it. Say what is true about the subject and stop.
+ * the title or the body. So is anything the gate reads as a report of work
+ * rather than durable knowledge — three drafts were refused for it, ending
+ * respectively "if you are reading it, that run did not finish cleaning up",
+ * "this note is written and then removed again by the system test", and a bare
+ * "added and then removed again by the system test".
+ *
+ * So the body says nothing about itself at all. Every sentence is a fact about
+ * the SDK; the fact that a test wrote it lives in the query, which the gate does
+ * not evaluate.
+ *
+ * Do not conclude from one approval that a form of words is safe. The gate is an
+ * LLM sampled at a non-zero temperature, so the same shape has been both
+ * approved and refused; only removing the self-reference makes it reliable.
  *
  * The subject is deliberately specific to the Node.js SDK, so it can never be
  * read as the same knowledge as what the Python suite writes.
@@ -104,8 +114,7 @@ function probe(nonce: string): {
       'tsconfig.test.json therefore compiles everything to build/js, and the suite is ' +
       'invoked with an explicit quoted glob so the shell leaves it for Node to expand. ' +
       'A bare directory argument is not equivalent: on Node 24 it is loaded as a module ' +
-      'and fails with MODULE_NOT_FOUND.\n\n' +
-      'This note is written and then removed again by the Memco Node.js SDK system test.'
+      'and fails with MODULE_NOT_FOUND.'
   }
 }
 
@@ -126,8 +135,7 @@ function addition(): { title: string; content: string } {
       "The SDK's .npmrc sets `ignore-scripts=true`, so npm never fires a `prebuild` or " +
       '`posttest` lifecycle hook. Any multi-step operation has to chain its steps with ' +
       '`&&` inside a single script instead; a step written as a lifecycle hook would be ' +
-      'skipped in silence behind a green build.\n\n' +
-      'Added and then removed again by the Memco Node.js SDK system test.'
+      'skipped in silence behind a green build.'
   }
 }
 
