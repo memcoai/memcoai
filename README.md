@@ -31,15 +31,14 @@
 Memco Shared Memory is a persistent, searchable memory that your team and its AI
 agents share.
 
-Agents normally start every conversation from nothing. They rediscover the same
-constraints, repeat the same mistakes, and lose whatever they worked out the
-moment the session ends. Shared Memory is where that knowledge goes instead: an
-agent searches it before starting work, and writes back what it learned when it
-finishes. What one agent establishes, every teammate's agent can find.
+Shared Memory is where agents store and retrieve what they learn across
+sessions. An agent searches it before starting work, and writes back what it
+learned when it finishes. What one agent establishes, every teammate's agent can
+find.
 
 It stores the things that are expensive to rediscover — how an internal system
-actually behaves, why a decision was made, a bug's root cause, a convention that
-is not written down anywhere else. Memory is partitioned into **domains**, each
+actually behaves, a bug's root cause, a convention that is not written down
+anywhere else. Memory is partitioned into **domains**, each
 with its own subject matter and tag vocabulary, and every result carries a
 reliability signal built from what readers reported back about it.
 
@@ -66,64 +65,9 @@ and a tool referenced in the prose is a `${tool:...}` marker, because the three
 generators disagree on method casing — resolve the markers to the spelling your
 client exposes rather than shipping them to a model.
 
-### Installing before the packages are published
-
-Until `memco` is on PyPI, install it from the **`dev`** branch of this
-repository:
-
-```bash
-uv add "memco @ git+ssh://git@github.com/memcoai/memco.git@dev#subdirectory=python"
-```
-
-```bash
-pip install "memco @ git+ssh://git@github.com/memcoai/memco.git@dev#subdirectory=python"
-```
-
-Two parts are load-bearing:
-
-- **`@dev`** — the ref is required. `main` does not yet carry the SDK, so an
-  install without a ref resolves to the default branch and fails with
-  *"has no subdirectory `python`"*.
-- **`#subdirectory=python`** — the package root is not the repository root.
-
-`uv add --branch dev "memco @ git+ssh://git@github.com/memcoai/memco.git#subdirectory=python"`
-is equivalent and records `branch = "dev"` rather than `rev = "dev"`, which is a
-more accurate description of what it tracks.
-
-Use `git+https://` instead if you authenticate with a token.
-
-A branch is resolved once and then cached, so pick up new commits explicitly:
-
-```bash
-uv sync --upgrade-package memco
-pip install --force-reinstall --no-deps "memco @ git+ssh://git@github.com/memcoai/memco.git@dev#subdirectory=python"
-```
-
-To work on the SDK itself, install your clone in editable mode instead — changes
-then need no reinstall at all:
-
-```bash
-uv pip install -e path/to/memco/python
-```
-
-Remove these requirements once the package is published: a `memco @ git+...`
-source keeps winning over the released version.
-
-**`@memcoai/memco` has no equivalent** — npm cannot install from a subdirectory
-of a repository — so build the tarball from a clone and install that:
-
-```bash
-git clone -b dev https://github.com/memcoai/memco.git
-cd memco/nodejs && npm ci && npm run build && npm pack
-# then, from your own project:
-npm install /path/to/memco/nodejs/memcoai-memco-0.1.0.tgz
-```
-
-The tarball rather than `npm install ./memco/nodejs`: it carries exactly the
-files the published package will, while a directory install links the whole
-working tree, build output and all.
-
 ## Quick start
+
+### Python
 
 ```python
 from memco import Memco
@@ -138,6 +82,27 @@ with Memco() as client:                       # reads MEMCO_API_TOKEN
 
 See [`python/README.md`](python/README.md) for the full guide and
 [`python/examples/`](python/examples/) for runnable programs.
+
+### Node.js
+
+```typescript
+import { Memco } from '@memcoai/memco'
+
+await using client = await new Memco().connect() // reads MEMCO_API_TOKEN
+const session = await client.memory.withSession('coding')
+
+const result = await session.search(
+  'how should a client authenticate against the memory API'
+)
+for (const memory of result.memories) {
+  for (const insight of memory.insights) {
+    console.log(insight.title, insight.updated)
+  }
+}
+```
+
+See [`nodejs/README.md`](nodejs/README.md) for the full guide and
+[`nodejs/examples/`](nodejs/examples/) for runnable programs.
 
 **See more → [docs.memco.ai](https://docs.memco.ai)**
 
