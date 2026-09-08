@@ -28,7 +28,7 @@ def main() -> None:
                 "record it twice. Retry the read operations instead, and use the "
                 "returned operation id to undo a write you did not mean to make."
             ),
-            session_id=session.session_id,
+            session_id=session.id,
             tags=[Tag(type="language", value="python"), Tag(type="task", value="implementation")],
         )
         print(f"created: {created.operation_id}")
@@ -43,7 +43,7 @@ def main() -> None:
         # Pass the literal "new" to open one instead — it is case-sensitive.
         enriched = client.memory.enrich_memory(
             memory_idx="new",
-            session_id=session.session_id,
+            session_id=session.id,
             title="Building a client is what teaches it the service's limits",
             content=(
                 "Constructing a client probes health and then calls list_domains. "

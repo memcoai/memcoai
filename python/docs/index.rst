@@ -20,10 +20,7 @@ You need an account and an API key to use this SDK. Create one at
    from memco import Memco
    with Memco() as client:                 # reads MEMCO_API_TOKEN
        session = client.memory.start_session("coding")
-       result = client.memory.search(
-           "how should a client authenticate against the memory API",
-           session_id=session.session_id,
-       )
+       result = session.search("how should a client authenticate against the memory API")
        for memory in result.memories:
            for insight in memory.insights:
                print(insight.title, insight.updated)

@@ -249,13 +249,13 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     print(f"\n[{domain}] probe {nonce}")
 
     session = client.memory.start_session(domain)
-    assert session.session_id
+    assert session.id
 
     write = client.memory.create_memory(
         query=fields["query"],
         title=fields["title"],
         content=fields["content"],
-        session_id=session.session_id,
+        session_id=session.id,
         source=DataSource.AGENT,
     )
     assert write.operation_id, (
@@ -266,12 +266,12 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     print(f"  created, operation {write.operation_id}")
 
     memory, insight = _search_until_found(
-        client, session.session_id, fields["query"], nonce, fields["title"]
+        client, session.id, fields["query"], nonce, fields["title"]
     )
     print(f"  found as {memory.idx}, insight {insight.idx}")
 
     feedback = client.memory.share_feedback(
-        session_id=session.session_id,
+        session_id=session.id,
         feedback=[FeedbackRating(idx=insight.idx, relevant=True, correct=True)],
     )
     assert insight.idx in [entry.idx for entry in feedback.entries]
@@ -284,7 +284,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     # operation id of its own.
     enrichment = client.memory.enrich_memory(
         memory_idx=memory.idx,
-        session_id=session.session_id,
+        session_id=session.id,
         title=extra["title"],
         content=extra["content"],
     )

@@ -22,11 +22,11 @@ def main() -> None:
         # A session ties related searches together. Reuse its id for every
         # search made for the same task, and for the ratings afterwards.
         session = client.memory.start_session(DOMAIN)
-        print(f"session {session.session_id}")
+        print(f"session {session.id}")
 
         result = client.memory.search(
             "how does gRPC health checking interact with an auth interceptor",
-            session_id=session.session_id,
+            session_id=session.id,
             # Which tag types narrow results and which merely boost them is
             # per-domain; list_domains() describes them. A wrong filtering tag
             # returns nothing at all, so start without tags if unsure.
@@ -57,7 +57,7 @@ def main() -> None:
                     )
                 )
 
-        recorded = client.memory.share_feedback(session_id=session.session_id, feedback=ratings)
+        recorded = client.memory.share_feedback(session_id=session.id, feedback=ratings)
         print(f"\nrecorded {len(recorded.entries)} rating(s)")
         for entry in recorded.entries:
             if entry.advice:

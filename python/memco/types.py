@@ -14,12 +14,20 @@ from __future__ import annotations
 
 import enum
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from typing import TYPE_CHECKING, Generic, TypeVar
 
+import grpc
+
+from memco.errors import MemcoInternalError, MemcoInvalidRequestError
 from memco.memory.v1 import memory_pb2 as _pb
 
+if TYPE_CHECKING:  # pragma: no cover - avoids a cycle with operations.py
+    from memco.operations import AsyncMemoryOperations, MemoryOperations
+
 __all__ = [
+    "AsyncMemory",
     "DataSource",
     "DomainEntry",
     "DomainList",
@@ -35,12 +43,12 @@ __all__ = [
     "Instructions",
     "Limits",
     "Memory",
+    "MemoryT",
     "ProtoRecord",
     "Provenance",
     "RevertOutcome",
     "RevertResult",
     "SearchResult",
-    "Session",
     "Tag",
     "WriteResult",
 ]
@@ -346,20 +354,6 @@ class DomainList:
 
 
 @dataclass(frozen=True, slots=True)
-class Session:
-    """An open session.
-
-    Attributes:
-        session_id: Handle identifying the session. Pass it to subsequent
-            searches and writes so they are recorded as one series.
-        instructions: Guidance accompanying the result.
-    """
-
-    session_id: str
-    instructions: Instructions
-
-
-@dataclass(frozen=True, slots=True)
 class Insight:
     """One insight held under a memory.
 
@@ -392,6 +386,16 @@ class Insight:
 class Memory:
     """One memory, with the insights sampled from it.
 
+    A memory returned by the SDK -- by a search, or by
+    :meth:`~memco.operations.MemoryOperations.get_memory` -- keeps a reference
+    to the namespace that produced it, which is what lets :meth:`feedback` rate
+    it without the caller naming a session again, and keeps the client that
+    produced it alive for as long as this memory is referenced. That live
+    reference also means such a memory cannot be deep-copied, pickled, or
+    passed through :func:`dataclasses.asdict`: all three raise, since there is
+    a live gRPC channel underneath. Only a :class:`Memory` built by hand,
+    naming no operations at all, carries none of these restrictions.
+
     Attributes:
         idx: Handle addressing this memory.
         kind: The memory's kind, as reported by the service.
@@ -415,10 +419,147 @@ class Memory:
     intents: tuple[str, ...]
     insights: tuple[Insight, ...]
     reference: str | None
+    _operations: MemoryOperations | None = field(default=None, repr=False, compare=False)
+    _session_id: str = field(default="", repr=False, compare=False)
+
+    def feedback(
+        self, *, relevant: bool, correct: bool, comment: str | None = None
+    ) -> FeedbackEntry:
+        """Rate this memory: whether it was relevant, and whether it was correct.
+
+        A shortcut for calling :meth:`~memco.operations.MemoryOperations.share_feedback`
+        with a single :class:`FeedbackRating` built from this memory's own idx.
+
+        Args:
+            relevant: Whether the result was a good match for the query.
+            correct: Whether its content was accurate.
+            comment: An optional note about this result.
+
+        Returns:
+            The rating that was recorded.
+
+        Raises:
+            MemcoInvalidRequestError: If this memory carries no session -- which
+                happens for one fetched by
+                :meth:`~memco.operations.MemoryOperations.get_memory` directly
+                (rather than :meth:`~memco.operations.Session.get_memory`), or
+                built by hand rather than returned by the SDK.
+            MemcoInternalError: If the service records the rating but reports no
+                entry for it.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> entry = result.memories[0].feedback(relevant=True, correct=True)
+        """
+        if self._operations is None:
+            raise MemcoInvalidRequestError(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "this memory has no session to record feedback against",
+            )
+        result = self._operations.share_feedback(
+            session_id=self._session_id,
+            feedback=[
+                FeedbackRating(idx=self.idx, relevant=relevant, correct=correct, comment=comment)
+            ],
+        )
+        # One rating in, one entry out -- but that's the service's contract to
+        # keep, not this SDK's, so it is checked rather than assumed.
+        if not result.entries:
+            raise MemcoInternalError(
+                grpc.StatusCode.INTERNAL, "the service returned no entries for a submitted rating"
+            )
+        return result.entries[0]
 
 
 @dataclass(frozen=True, slots=True)
-class SearchResult:
+class AsyncMemory:
+    """One memory, with the insights sampled from it, on an asyncio client.
+
+    Mirrors :class:`Memory`; see it for what each attribute means, including
+    the live reference this carries and why that keeps it from being
+    deep-copied, pickled, or passed through :func:`dataclasses.asdict`.
+
+    Attributes:
+        idx: Handle addressing this memory.
+        kind: The memory's kind, as reported by the service.
+        times_served: How often this memory has been delivered, this delivery
+            included.
+        intents: The questions this memory has been retrieved by, oldest first.
+        insights: The insights sampled from this memory. Empty when
+            :attr:`reference` is set.
+        reference: The handle an earlier search in the same session returned this
+            memory under.
+    """
+
+    idx: str
+    kind: str
+    times_served: int
+    intents: tuple[str, ...]
+    insights: tuple[Insight, ...]
+    reference: str | None
+    _operations: AsyncMemoryOperations | None = field(default=None, repr=False, compare=False)
+    _session_id: str = field(default="", repr=False, compare=False)
+
+    async def feedback(
+        self, *, relevant: bool, correct: bool, comment: str | None = None
+    ) -> FeedbackEntry:
+        """Rate this memory: whether it was relevant, and whether it was correct.
+
+        A shortcut for calling
+        :meth:`~memco.operations.AsyncMemoryOperations.share_feedback` with a
+        single :class:`FeedbackRating` built from this memory's own idx.
+
+        Args:
+            relevant: Whether the result was a good match for the query.
+            correct: Whether its content was accurate.
+            comment: An optional note about this result.
+
+        Returns:
+            The rating that was recorded.
+
+        Raises:
+            MemcoInvalidRequestError: If this memory carries no session -- which
+                happens for one fetched by
+                :meth:`~memco.operations.AsyncMemoryOperations.get_memory`
+                directly (rather than
+                :meth:`~memco.operations.AsyncSession.get_memory`), or built by
+                hand rather than returned by the SDK.
+            MemcoInternalError: If the service records the rating but reports no
+                entry for it.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> entry = await memory.feedback(relevant=True, correct=True)
+        """
+        if self._operations is None:
+            raise MemcoInvalidRequestError(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "this memory has no session to record feedback against",
+            )
+        result = await self._operations.share_feedback(
+            session_id=self._session_id,
+            feedback=[
+                FeedbackRating(idx=self.idx, relevant=relevant, correct=correct, comment=comment)
+            ],
+        )
+        # One rating in, one entry out -- but that's the service's contract to
+        # keep, not this SDK's, so it is checked rather than assumed.
+        if not result.entries:
+            raise MemcoInternalError(
+                grpc.StatusCode.INTERNAL, "the service returned no entries for a submitted rating"
+            )
+        return result.entries[0]
+
+
+MemoryT = TypeVar("MemoryT", Memory, AsyncMemory)
+"""Which memory type a :class:`SearchResult` holds -- :class:`Memory` for the
+synchronous client, :class:`AsyncMemory` for the asyncio one. Kept as a
+constrained type variable rather than a plain union so that a memory's own
+``feedback()`` is typed as sync or async, never as both at once."""
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult(Generic[MemoryT]):
     """What a search selected.
 
     Attributes:
@@ -432,7 +573,7 @@ class SearchResult:
     """
 
     session_id: str
-    memories: tuple[Memory, ...]
+    memories: tuple[MemoryT, ...]
     notice: str | None
     instructions: Instructions
 

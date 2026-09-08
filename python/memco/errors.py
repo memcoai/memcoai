@@ -119,24 +119,30 @@ class MemcoAPIError(MemcoError):
 class MemcoAuthenticationError(MemcoAPIError):
     """The credential was missing, malformed, expired or revoked.
 
-    The service deliberately returns one indistinguishable message for every
-    such case, so this exception cannot tell you which of them applied. Check
-    that the token is current and that it is being sent as
+    Never worth retrying: the same credential will be refused again. The
+    service deliberately returns one indistinguishable message for every such
+    case, so this exception cannot tell you which of them applied. Check that
+    the token is current and that it is being sent as
     ``authorization: Bearer <token>``.
     """
 
 
 class MemcoPermissionError(MemcoAPIError):
-    """The credential is valid but lacks the scope or role for this operation."""
+    """The credential is valid but lacks the scope or role for this operation.
+
+    Never worth retrying: neither a retry nor a different argument changes the
+    answer. The credential itself has to be granted what it was refused.
+    """
 
 
 class MemcoInvalidRequestError(MemcoAPIError):
     """The request was rejected as malformed.
 
-    Also raised by this SDK *before* a request is sent, when a field exceeds a
-    documented limit or a required combination of arguments is missing. In that
-    case :attr:`~MemcoAPIError.code` is ``INVALID_ARGUMENT`` and the message
-    names the offending field.
+    Never worth retrying: the same request will be refused again. Also raised
+    by this SDK *before* a request is sent, when a field exceeds a documented
+    limit or a required combination of arguments is missing. In that case
+    :attr:`~MemcoAPIError.code` is ``INVALID_ARGUMENT`` and the message names
+    the offending field.
     """
 
 
@@ -154,7 +160,9 @@ class MemcoNotFoundError(MemcoAPIError):
 class MemcoPreconditionFailedError(MemcoAPIError):
     """The service refused the call because some precondition is unmet.
 
-    A general-purpose condition: a version past its sunset, but equally a
+    Never worth retrying as-is: something outside the request has to change
+    first, so neither a retry nor a different argument gets past it. A
+    general-purpose condition: a version past its sunset, but equally a
     disabled billing account, an unaccepted set of terms, or a resource in the
     wrong state. :attr:`~MemcoAPIError.message` names which, because only the
     service knows.
@@ -259,6 +267,12 @@ class ResourceExhaustedKind(enum.Enum):
 class MemcoResourceExhaustedError(MemcoAPIError):
     """A rate limit or a usage quota was exceeded.
 
+    Read :attr:`~MemcoResourceExhaustedError.kind` before retrying: a rate
+    limit clears on a backoff, a quota will not refill on one. The transport
+    does not retry this on the caller's behalf, precisely because which of the
+    two it is decides whether retrying is worth anything, and only the caller
+    can act on that.
+
     Attributes:
         kind: Which limit was hit, inferred from the message. See
             :class:`ResourceExhaustedKind` for why this is a heuristic and how
@@ -298,6 +312,14 @@ class MemcoUnavailableError(MemcoAPIError):
     Covers transport failures such as a refused connection or a DNS failure, and
     is the base class of :class:`MemcoUnhealthyError`, so catching it also
     catches a server that answered but declared itself unhealthy.
+
+    The one failure here a backoff is the right answer to: nothing about the
+    request is wrong. The transport already replays it — three attempts in all
+    — on :meth:`~memco.operations.MemoryOperations.list_domains`,
+    :meth:`~memco.operations.MemoryOperations.get_memory` and the health probe,
+    so seeing it from one of those means all three failed. Every other method is
+    left alone, because replaying a write can record it twice, so retrying one
+    of those is the caller's decision and carries that risk.
     """
 
 
@@ -306,15 +328,22 @@ class MemcoUnhealthyError(MemcoUnavailableError):
 
     Distinct from a transport failure: the connection worked and the service
     replied, so the credential, host and TLS settings are all sound. The backend
-    is simply not ready to take traffic.
+    is simply not ready to take traffic. Nothing to reconfigure: wait, then
+    construct the client again.
     """
 
 
 class MemcoTimeoutError(MemcoAPIError):
     """The call did not complete before its deadline.
 
+    The deadline is the caller's own — the ``timeout`` on the call, else the one
+    the client was built with — which is why the transport does not retry this:
+    a second attempt against the same deadline has no more time than the first.
     Pass a larger ``timeout`` to the individual method, or to the client to
     raise the default for every call.
+
+    It says nothing about whether the service acted. A write that timed out may
+    still have been recorded, so sending it again can write it twice.
     """
 
 
@@ -323,6 +352,8 @@ class MemcoInternalError(MemcoAPIError):
 
     Also used for any status code this SDK does not model separately, so that a
     new server-side status can never escape as a bare :class:`grpc.RpcError`.
+    Nothing here says the call would have succeeded a moment later, so this is
+    not the one to put a backoff loop around.
     """
 
 

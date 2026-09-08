@@ -72,6 +72,7 @@ nitpick_ignore = [
     # instance-variable fields, which are not cross-reference targets.
     ("py:attr", "MemcoAPIError.code"),
     ("py:attr", "MemcoAPIError.message"),
+    ("py:attr", "MemcoResourceExhaustedError.kind"),
 ]
 
 exclude_patterns = ["_build"]

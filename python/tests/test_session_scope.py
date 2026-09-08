@@ -16,7 +16,16 @@ from .fake_server import Harness
 
 
 def test_the_scope_carries_the_session_the_service_opened(client: Memco):
-    assert client.memory.with_session("coding").session_id == "session-a"
+    assert client.memory.with_session("coding").id == "session-a"
+
+
+def test_start_session_already_carries_every_bound_operation(client: Memco, harness: Harness):
+    # The merge point: start_session's own result must work exactly like
+    # with_session's, with no separate scope required.
+    session = client.memory.start_session("coding")
+    assert session.id == "session-a"
+    session.search("how does X work")
+    assert harness.memory.requests["Search"].session_id == "session-a"
 
 
 def test_the_scope_exposes_the_instructions_the_open_returned(client: Memco):
@@ -84,7 +93,7 @@ def test_the_scope_can_be_used_as_a_context_manager(client: Memco, harness: Harn
 async def test_the_async_scope_is_awaited(async_client: AsyncMemco, harness: Harness):
     scope = await async_client.memory.with_session("coding")
     await scope.search("how does X work")
-    assert scope.session_id == "session-a"
+    assert scope.id == "session-a"
     assert harness.memory.requests["Search"].session_id == "session-a"
 
 

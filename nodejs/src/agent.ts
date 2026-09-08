@@ -74,7 +74,7 @@ import {
   type ToolCopy
 } from './gen/toolCopy.js'
 import { NEW_MEMORY, reject } from './internal/validate.js'
-import type { SessionScope } from './operations.js'
+import type { Session } from './operations.js'
 import {
   RevertOutcome,
   type DomainEntry,
@@ -132,7 +132,7 @@ export type JsonSchema = Record<string, unknown>
  * `function.parameters`, and {@link Toolset.toLangChain} passes it as `schema`.
  * Reach for it directly only when driving an API none of those cover.
  *
- * A fresh object per {@link SessionScope.tools} call, so a framework that
+ * A fresh object per {@link Session.tools} call, so a framework that
  * normalises one in place is rewriting a copy and not the next caller's.
  */
 export interface ToolParameters {
@@ -177,7 +177,7 @@ export interface Tool {
   /**
    * A JSON Schema object describing the arguments, with a description on each.
    *
-   * Built fresh per {@link SessionScope.tools} call, so a framework that
+   * Built fresh per {@link Session.tools} call, so a framework that
    * normalises schemas in place cannot reach through and corrupt another
    * tool's.
    */
@@ -439,7 +439,7 @@ interface Operation {
    * is what makes the casts here safe.
    */
   readonly invoke: (
-    session: SessionScope,
+    session: Session,
     args: Record<string, unknown>
   ) => Promise<Rendered>
 }
@@ -846,7 +846,7 @@ export class Toolset {
   /**
    * @param tools The tools this set holds.
    *
-   * @internal Built by {@link SessionScope.tools}, never by a caller.
+   * @internal Built by {@link Session.tools}, never by a caller.
    */
   constructor(tools: readonly Tool[]) {
     this.tools = tools
@@ -979,9 +979,9 @@ export class Toolset {
  *   under.
  * @returns One tool per offered operation.
  *
- * @internal Reached as {@link SessionScope.tools}.
+ * @internal Reached as {@link Session.tools}.
  */
-export function toolset(session: SessionScope): Toolset {
+export function toolset(session: Session): Toolset {
   return new Toolset(
     OPERATIONS.map(operation => ({
       name: TOOL_PREFIX + operation.name,

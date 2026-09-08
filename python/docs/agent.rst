@@ -6,5 +6,5 @@ Agent tools
    :member-order: bysource
 
 The tools themselves are built from the session they are bound to:
-:meth:`memco.operations.SessionScope.tools` and
-:meth:`memco.operations.AsyncSessionScope.tools`.
+:meth:`memco.operations.Session.tools` and
+:meth:`memco.operations.AsyncSession.tools`.

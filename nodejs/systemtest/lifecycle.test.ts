@@ -302,13 +302,13 @@ async function lifecycle(domain: string): Promise<void> {
       // ListDomains is exercised by the module-level listing that produced
       // `domain` and again by connect(), so it is not called a third time here.
       const session = await client.memory.startSession(domain)
-      assert.ok(session.sessionId)
+      assert.ok(session.id)
 
       const write = await client.memory.createMemory({
         query: fields.query,
         title: fields.title,
         content: fields.content,
-        sessionId: session.sessionId,
+        sessionId: session.id,
         source: DataSource.AGENT
       })
       assert.ok(
@@ -321,7 +321,7 @@ async function lifecycle(domain: string): Promise<void> {
 
       const [memory, insight] = await searchUntilFound(
         client,
-        session.sessionId,
+        session.id,
         fields.query,
         nonce,
         fields.title
@@ -329,7 +329,7 @@ async function lifecycle(domain: string): Promise<void> {
       console.log(`  found as ${memory.idx}, insight ${insight.idx}`)
 
       const feedback = await client.memory.shareFeedback({
-        sessionId: session.sessionId,
+        sessionId: session.id,
         feedback: [{ idx: insight.idx, relevant: true, correct: true }]
       })
       assert.ok(feedback.entries.some(entry => entry.idx === insight.idx))
@@ -342,7 +342,7 @@ async function lifecycle(domain: string): Promise<void> {
       // operation id of its own.
       const enrichment = await client.memory.enrichMemory({
         memoryIdx: memory.idx,
-        sessionId: session.sessionId,
+        sessionId: session.id,
         title: extra.title,
         content: extra.content
       })

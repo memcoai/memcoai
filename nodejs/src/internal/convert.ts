@@ -16,12 +16,16 @@
  *   exception is `limits`, where absent and all-zero mean opposite things.
  */
 
+import { status } from '@grpc/grpc-js'
+
+import { MemcoInternalError } from '../errors.js'
 import {
   importStatusFromWire,
   revertOutcomeFromWire,
   type DomainEntry,
   type DomainList,
   type FeedbackEntry,
+  type FeedbackRating,
   type FeedbackResult,
   type ImportOutcome,
   type ImportResult,
@@ -29,9 +33,9 @@ import {
   type Instructions,
   type Limits,
   type Memory,
+  type MemoryFeedback,
   type RevertResult,
   type SearchResult,
-  type Session,
   type WriteResult
 } from '../types.js'
 import * as pb from './gen.js'
@@ -134,20 +138,85 @@ function toInsight(message: pb.InsightResult): Insight {
 }
 
 /**
+ * What {@link feedbackSubmitter} needs to actually submit a rating —
+ * {@link MemoryOperations.shareFeedback}, shaped without importing it: this
+ * module must stay a pure function of the wire message, and `operations.ts`
+ * is where a live namespace to call is built.
+ */
+export type FeedbackCaller = (options: {
+  sessionId: string
+  feedback: Iterable<FeedbackRating>
+}) => Promise<FeedbackResult>
+
+/** What a {@link Memory.feedback} closure is, once built. */
+export type FeedbackSubmitter = (
+  idx: string,
+  rating: MemoryFeedback
+) => Promise<FeedbackEntry>
+
+/**
+ * Build the closure {@link Memory.feedback} calls, bound to one session.
+ *
+ * @param sessionId The session to record a rating under. An empty string is
+ *   what a memory fetched by `getMemory` carries — nothing recorded it under a
+ *   session, so a rating made through it has nowhere to attach, and the empty
+ *   id fails through the SDK's own `checkSessionId` exactly as it would for
+ *   any other call.
+ * @param call How to actually make the `shareFeedback` request.
+ * @returns A function taking one memory's idx and rating, returning the single
+ *   entry the service recorded for it.
+ */
+export function feedbackSubmitter(
+  sessionId: string,
+  call: FeedbackCaller
+): FeedbackSubmitter {
+  return async (idx, rating) => {
+    const result = await call({
+      sessionId,
+      feedback: [
+        {
+          idx,
+          relevant: rating.relevant,
+          correct: rating.correct,
+          comment: rating.comment
+        }
+      ]
+    })
+    // Unlike toImportResult's answered[0] (an array the SDK itself built and
+    // knows is non-empty), entries comes from the service, and the contract
+    // documents no guarantee it holds one entry per rating submitted. Refuse
+    // to hand back undefined from a Promise<FeedbackEntry>.
+    const entry = result.entries[0]
+    if (entry === undefined) {
+      throw new MemcoInternalError(
+        status.INTERNAL,
+        `the service recorded no feedback entry for ${JSON.stringify(idx)}`
+      )
+    }
+    return entry
+  }
+}
+
+/**
  * Convert a `MemoryResult` message.
  *
  * @param message The generated message.
+ * @param submit The closure this memory's `feedback()` calls.
  * @returns The public equivalent, with nested insights converted and an empty
  *   reference mapped to `null`.
  */
-export function toMemory(message: pb.MemoryResult): Memory {
+export function toMemory(
+  message: pb.MemoryResult,
+  submit: FeedbackSubmitter
+): Memory {
   return {
     idx: message.idx,
     kind: message.kind,
     timesServed: message.timesServed,
     intents: [...message.intents],
     insights: message.insights.map(toInsight),
-    reference: optional(message.reference)
+    reference: optional(message.reference),
+    feedback: rating => submit(message.idx, rating)
   }
 }
 
@@ -217,15 +286,28 @@ export function toDomainList(message: pb.ListDomainsResponse): DomainList {
   }
 }
 
+/** The fields decoded off a `StartSessionResponse`, before `operations.ts` wraps them in a `Session`. */
+export interface SessionFields {
+  readonly id: string
+  readonly instructions: Instructions
+}
+
 /**
  * Convert a `StartSessionResponse`.
  *
+ * Returns the fields rather than a {@link Session}: that class holds a live
+ * reference to the namespace that opened it, and this module must stay a pure
+ * function of the wire message — `operations.ts` is where the rich object is
+ * assembled.
+ *
  * @param message The generated response.
- * @returns The public equivalent.
+ * @returns The session id, and the guidance that came with opening it.
  */
-export function toSession(message: pb.StartSessionResponse): Session {
+export function toSessionFields(
+  message: pb.StartSessionResponse
+): SessionFields {
   return {
-    sessionId: message.sessionId,
+    id: message.sessionId,
     instructions: toInstructions(message.instructions)
   }
 }
@@ -234,12 +316,19 @@ export function toSession(message: pb.StartSessionResponse): Session {
  * Convert a `SearchResponse`.
  *
  * @param message The generated response.
+ * @param shareFeedback How to submit a rating for one of this result's
+ *   memories, bound to this response's own session id and shared by every
+ *   memory in it.
  * @returns The public equivalent, with an empty notice mapped to `null`.
  */
-export function toSearchResult(message: pb.SearchResponse): SearchResult {
+export function toSearchResult(
+  message: pb.SearchResponse,
+  shareFeedback: FeedbackCaller
+): SearchResult {
+  const submit = feedbackSubmitter(message.sessionId, shareFeedback)
   return {
     sessionId: message.sessionId,
-    memories: message.memories.map(toMemory),
+    memories: message.memories.map(memory => toMemory(memory, submit)),
     notice: optional(message.notice),
     instructions: toInstructions(message.instructions)
   }

@@ -13,10 +13,11 @@ import memco as package
 from memco import AsyncMemco, Memco, errors, operations, types
 from memco.operations import (
     AsyncMemoryOperations,
-    AsyncSessionScope,
+    AsyncSession,
     MemoryOperations,
-    SessionScope,
+    Session,
 )
+from memco.types import AsyncMemory, Memory
 
 from .fake_server import Harness
 
@@ -24,12 +25,16 @@ from .fake_server import Harness
 # here is automatically held to the same parity rules.
 NAMESPACES = [(MemoryOperations, AsyncMemoryOperations)]
 
-# Scopes are not reached as a client attribute, so the tests that derive one
+# Sessions are not reached as a client attribute, so the tests that derive one
 # from the class name run over NAMESPACES alone. Every other parity rule
 # applies to both.
-SCOPES = [(SessionScope, AsyncSessionScope)]
+SESSIONS = [(Session, AsyncSession)]
 
-PAIRS = NAMESPACES + SCOPES
+# Neither a client attribute nor named after a namespace, for the same reason
+# sessions are held apart -- but feedback() still has to stay in step.
+MEMORIES = [(Memory, AsyncMemory)]
+
+PAIRS = NAMESPACES + SESSIONS + MEMORIES
 
 CLIENT_SKIP = {"connect"}  # async-only: the sync client verifies in its constructor
 
@@ -163,8 +168,8 @@ def test_the_scope_covers_every_operation_that_takes_a_session():
     # the namespace with a session_id and not to the scope reopens that hole
     # silently, so the coverage is asserted rather than remembered.
     pairs = (
-        (MemoryOperations, SessionScope),
-        (AsyncMemoryOperations, AsyncSessionScope),
+        (MemoryOperations, Session),
+        (AsyncMemoryOperations, AsyncSession),
     )
     for namespace, scope in pairs:
         for name in sorted(public_methods(namespace)):
@@ -180,7 +185,7 @@ def test_the_scope_covers_every_operation_that_takes_a_session():
 def test_the_scope_never_asks_for_a_domain():
     # A session supplies the domain. Accepting one anyway would let a caller
     # name a domain the session does not belong to.
-    for scope in (SessionScope, AsyncSessionScope):
+    for scope in (Session, AsyncSession):
         for name in sorted(public_methods(scope)):
             assert "domain" not in inspect.signature(getattr(scope, name)).parameters, (
                 f"{scope.__name__}.{name} takes a domain"

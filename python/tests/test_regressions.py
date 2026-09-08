@@ -255,7 +255,7 @@ client = AsyncMemco(token="t", host=sys.argv[1], tls=False)
 
 async def main() -> str:
     async with client:
-        return (await client.memory.start_session("coding")).session_id
+        return (await client.memory.start_session("coding")).id
 
 
 print("session:", asyncio.run(main()))

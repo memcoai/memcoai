@@ -137,11 +137,9 @@ async def test_every_operation_round_trips(async_client: AsyncMemco, harness: Ha
     assert [d.slug for d in (await async_client.memory.list_domains()).domains] == ["coding"]
 
     session = await async_client.memory.start_session("coding")
-    assert session.session_id == "session-a"
+    assert session.id == "session-a"
 
-    assert (
-        await async_client.memory.search("q", session_id=session.session_id)
-    ).session_id == "session-a"
+    assert (await async_client.memory.search("q", session_id=session.id)).session_id == "session-a"
     assert (await async_client.memory.get_memory("memory-a-1")).idx == "memory-a-1"
 
     created = await async_client.memory.create_memory(
@@ -150,12 +148,12 @@ async def test_every_operation_round_trips(async_client: AsyncMemco, harness: Ha
     assert created.operation_id == "create-a"
 
     enriched = await async_client.memory.enrich_memory(
-        memory_idx="new", session_id=session.session_id, title="t", content="c"
+        memory_idx="new", session_id=session.id, title="t", content="c"
     )
     assert enriched.operation_id == "enrich-a"
 
     rated = await async_client.memory.share_feedback(
-        session_id=session.session_id,
+        session_id=session.id,
         feedback=[types.FeedbackRating(idx="memory-a-1", relevant=True, correct=True)],
     )
     assert rated.session_id == "session-a"
@@ -170,7 +168,7 @@ async def test_every_operation_round_trips(async_client: AsyncMemco, harness: Ha
                 insights=[types.ImportedInsight(title="t", content="c")],
             )
         ],
-        session_id=session.session_id,
+        session_id=session.id,
     )
     assert [o.status for o in imported.results] == [types.ImportStatus.QUEUED]
 

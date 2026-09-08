@@ -33,7 +33,7 @@ import {
 } from '../src/gen/toolCopy.js'
 import * as pb from '../src/internal/gen.js'
 import { NEW_MEMORY } from '../src/internal/validate.js'
-import { SessionScope } from '../src/operations.js'
+import { Session } from '../src/operations.js'
 import {
   DataSource,
   RevertOutcome,
@@ -136,20 +136,17 @@ test('every offered operation becomes exactly one tool', async () => {
  * batch mints no operation id, so nothing a model imports can be undone, and
  * bulk upload is a standalone job rather than an in-loop step.
  */
-const NOT_AN_OPERATION = new Set([
-  'constructor',
-  'tools',
-  'importMemories',
-  'sessionId',
-  'instructions'
-])
+const NOT_AN_OPERATION = new Set(['constructor', 'tools', 'importMemories'])
 
 test('the offered operations are exactly what the scope carries', async () => {
   // The list is written out rather than read off the scope: a tool is reachable
   // by an untrusted model, so a helper added to the scope must not become one
   // by accident. This keeps the written list honest in the other direction — an
-  // operation added to SessionScope and not offered fails here.
-  const carried = Object.getOwnPropertyNames(SessionScope.prototype).filter(
+  // operation added to Session and not offered fails here. `id` and
+  // `instructions` are constructor-parameter instance fields, not prototype
+  // accessors, so they never appear here at all — they don't need naming in
+  // NOT_AN_OPERATION the way SessionScope's old getters once did.
+  const carried = Object.getOwnPropertyNames(Session.prototype).filter(
     name => !name.startsWith('_') && !NOT_AN_OPERATION.has(name)
   )
   await withToolset(async toolset => {
@@ -871,6 +868,9 @@ function memory(over: Partial<Memory> = {}): Memory {
     intents: [],
     insights: [],
     reference: null,
+    feedback: () => {
+      throw new Error('feedback() was not expected to be called by render()')
+    },
     ...over
   }
 }

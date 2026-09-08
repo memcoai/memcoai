@@ -190,7 +190,7 @@ def test_list_domains(client: Memco, harness: Harness):
 
 
 def test_start_session(client: Memco):
-    assert client.memory.start_session("coding").session_id == "session-a"
+    assert client.memory.start_session("coding").id == "session-a"
 
 
 def test_search_sends_query_domain_and_tags(client: Memco, harness: Harness):

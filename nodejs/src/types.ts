@@ -303,31 +303,6 @@ export interface DomainList {
 }
 
 /**
- * An opened session.
- *
- * A session relates the searches made for one task, which is what makes them
- * rateable afterwards: {@link MemoryOperations.shareFeedback} names a session
- * rather than a search. It also supplies the domain, so any call carrying
- * `sessionId` needs no `domain` of its own.
- *
- * Nothing closes one: the contract has no operation that ends a session, so
- * this is a handle to carry rather than a resource to release.
- *
- * Losing the handle fails quietly. A search that omits the id is still a valid
- * search — it opens a session of its own and reports that one back — so
- * the results you meant to rate as a series end up scattered across sessions
- * nobody is holding. Prefer {@link MemoryOperations.withSession}, which binds
- * the id into every call made through the scope; keep this plain handle for
- * when the id has to travel further than one scope reaches.
- */
-export interface Session {
-  /** The handle to pass as `sessionId`. */
-  readonly sessionId: string
-  /** What the service asks the caller to do within it. */
-  readonly instructions: Instructions
-}
-
-/**
  * One finding inside a memory.
  *
  * This is the knowledge itself: what you read, and what a rating moves. A
@@ -414,6 +389,31 @@ export interface Memory {
    * by this one, so a later rating stays with the search being worked in.
    */
   readonly reference: string | null
+  /**
+   * Rate this memory, using the session it was found in.
+   *
+   * A shortcut for {@link MemoryOperations.shareFeedback} with a single
+   * {@link FeedbackRating} built from this memory's own idx.
+   *
+   * Bound to this memory at conversion time, which means a `Memory` is no
+   * longer a plain data record: `structuredClone(memory)` throws, so a
+   * {@link SearchResult} carrying one cannot be posted to a worker or
+   * structurally cloned. `JSON.stringify` drops the function silently and
+   * works as before.
+   *
+   * @throws MemcoInvalidRequestError If this memory was fetched by the
+   *   top-level {@link MemoryOperations.getMemory} (not through a
+   *   {@link MemoryOperations.withSession}/{@link MemoryOperations.startSession}
+   *   session, and not found by a search): there is no session to record the
+   *   rating against, and this fails exactly as calling `shareFeedback` with a
+   *   blank `sessionId` would.
+   *
+   * @example
+   * ```ts
+   * await result.memories[0].feedback({ relevant: true, correct: true })
+   * ```
+   */
+  readonly feedback: (rating: MemoryFeedback) => Promise<FeedbackEntry>
 }
 
 /**
@@ -534,6 +534,19 @@ export interface FeedbackRating {
   correct: boolean
   /** An optional note on why. */
   comment?: string
+}
+
+/**
+ * What {@link Memory.feedback} takes.
+ *
+ * {@link FeedbackRating} with the idx removed — the memory supplies its own.
+ * `idx` is typed `never` rather than merely omitted, so passing a
+ * `FeedbackRating`-typed variable (as opposed to an object literal) is also
+ * rejected, instead of silently discarding its idx for the memory's own.
+ */
+export type MemoryFeedback = Omit<FeedbackRating, 'idx'> & {
+  /** Never present — a memory's own idx cannot be overridden by the caller. */
+  idx?: never
 }
 
 /**

@@ -79,7 +79,7 @@ def main() -> None:
         # Opened here, outside the agent loop, and bound to every call the tools
         # make. Nothing the model sends can change or drop it.
         with client.memory.with_session(DOMAIN) as session:
-            print(f"session {session.session_id} in {entry.slug}\n")
+            print(f"session {session.id} in {entry.slug}\n")
 
             runnable = create_agent(
                 model=MODEL,

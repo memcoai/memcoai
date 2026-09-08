@@ -84,8 +84,13 @@ await session.shareFeedback({
 })
 ```
 
+Rating a single memory rather than a whole batch is shorter directly on the
+result: `await result.memories[0].feedback({ relevant: true, correct: true })`
+submits one rating for that memory's own idx, bound to the session it was
+found in — no `FeedbackRating` array to build by hand.
+
 `withSession` sends nothing until it is awaited, and awaiting it twice returns
-the same scope rather than opening a second session.
+the same session rather than opening a second one.
 
 If you would rather not use `await using`, call `close()` yourself:
 
@@ -144,7 +149,7 @@ the session has already answered both, and `briefing()` says so, so a model is
 never handed a tool whose answer it already has.
 
 `source` is bound rather than exposed, so a model cannot claim a human wrote its
-content; `sessionId` and `domain` are bound because the scope supplies them.
+content; `sessionId` and `domain` are bound because the session supplies them.
 
 The descriptions and parameter copy come from `tools.json`, the same manifest
 the hosted MCP server publishes, compiled into the package at build time by
@@ -212,20 +217,20 @@ process-wide state on the application's behalf.
 
 ## Operations
 
-Reached as `client.memory`, or on a bound session without the scope arguments.
+Reached as `client.memory`, or on a session without the session/domain arguments.
 
-| Operation                           | What it does                                                  |
-| ----------------------------------- | ------------------------------------------------------------- |
-| `listDomains()`                     | The domains this credential may name, and the limits in force |
-| `startSession(domain)`              | Open a session                                                |
-| `withSession(domain)`               | Open one and bind it — await it for a disposable scope        |
-| `search(query, options)`            | Find existing knowledge                                       |
-| `getMemory(idx, options)`           | Fetch one memory in full                                      |
-| `createMemory(options)`             | Save new knowledge                                            |
-| `enrichMemory(options)`             | Add to a memory a search returned, or open a new one          |
-| `shareFeedback(options)`            | Rate what a search returned                                   |
-| `revertMemory(operationId)`         | Undo one of your own writes                                   |
-| `importMemories(memories, options)` | Contribute many at once                                       |
+| Operation                           | What it does                                                                                        |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `listDomains()`                     | The domains this credential may name, and the limits in force                                       |
+| `startSession(domain)`              | Open a session and return it right away — the same bound operations `withSession` yields            |
+| `withSession(domain)`               | Open one lazily — await it once for the same disposable session, however many times it's referenced |
+| `search(query, options)`            | Find existing knowledge                                                                             |
+| `getMemory(idx, options)`           | Fetch one memory in full                                                                            |
+| `createMemory(options)`             | Save new knowledge                                                                                  |
+| `enrichMemory(options)`             | Add to a memory a search returned, or open a new one                                                |
+| `shareFeedback(options)`            | Rate what a search returned                                                                         |
+| `revertMemory(operationId)`         | Undo one of your own writes                                                                         |
+| `importMemories(memories, options)` | Contribute many at once                                                                             |
 
 `importMemories` splits a batch longer than the service accepts across several
 calls and renumbers every outcome back into the array you passed, so

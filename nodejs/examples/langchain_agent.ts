@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   // Opened here, outside the agent loop, and bound to every call the tools
   // make. Nothing the model sends can change or drop it.
   await using session = await client.memory.withSession(DOMAIN)
-  console.log(`session ${session.sessionId} in ${entry.slug}\n`)
+  console.log(`session ${session.id} in ${entry.slug}\n`)
 
   const runnable = createAgent({
     model: MODEL,

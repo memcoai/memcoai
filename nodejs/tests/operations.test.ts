@@ -6,7 +6,12 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { Memco } from '../src/client.js'
-import { MemcoNotFoundError, MemcoTimeoutError } from '../src/errors.js'
+import {
+  MemcoInternalError,
+  MemcoInvalidRequestError,
+  MemcoNotFoundError,
+  MemcoTimeoutError
+} from '../src/errors.js'
 import * as pb from '../src/internal/gen.js'
 import { NEW_MEMORY } from '../src/internal/validate.js'
 import { RevertOutcome } from '../src/types.js'
@@ -173,6 +178,155 @@ test('a per-call timeout is honoured over the client default', async () => {
       await assert.rejects(
         memco.memory.listDomains({ timeout: 0.05 }),
         MemcoTimeoutError
+      )
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+// -- Memory.feedback() -------------------------------------------------------
+
+/** A search response carrying one memory, for feedback tests. */
+function searchResponse(): pb.SearchResponse {
+  return pb.SearchResponse.fromPartial({
+    sessionId: 'session-a',
+    memories: [{ idx: 'memory-a-1' }]
+  })
+}
+
+/** A shareFeedback response recording one entry, for feedback tests. */
+function feedbackResponse(): pb.ShareFeedbackResponse {
+  return pb.ShareFeedbackResponse.fromPartial({
+    sessionId: 'session-a',
+    entries: [{ idx: 'memory-a-1', relevant: true, correct: true }]
+  })
+}
+
+test('feedback() on a memory from a plain search sends the right session and idx', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set('search', searchResponse())
+    harness.memory.responses.set('shareFeedback', feedbackResponse())
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const result = await memco.memory.search('q', { domain: 'coding' })
+      const entry = await result.memories[0]!.feedback({
+        relevant: true,
+        correct: true
+      })
+      const request = harness.memory.requests.get(
+        'shareFeedback'
+      ) as pb.ShareFeedbackRequest
+      assert.equal(request.sessionId, 'session-a')
+      assert.deepEqual(
+        request.feedback.map(one => one.idx),
+        ['memory-a-1']
+      )
+      assert.equal(entry.idx, 'memory-a-1')
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+test('feedback() on a memory from a session-bound search also works', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set(
+      'startSession',
+      pb.StartSessionResponse.fromPartial({ sessionId: 'session-a' })
+    )
+    harness.memory.responses.set('search', searchResponse())
+    harness.memory.responses.set('shareFeedback', feedbackResponse())
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const session = await memco.memory.startSession('coding')
+      const result = await session.search('q')
+      await result.memories[0]!.feedback({ relevant: true, correct: true })
+      assert.equal(
+        (
+          harness.memory.requests.get(
+            'shareFeedback'
+          ) as pb.ShareFeedbackRequest
+        ).sessionId,
+        'session-a'
+      )
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+test('feedback() on a memory from getMemory is refused locally', async () => {
+  await withHarness(async harness => {
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const memory = await memco.memory.getMemory('memory-a-1')
+      harness.forget()
+      await assert.rejects(
+        memory.feedback({ relevant: true, correct: true }),
+        (error: unknown) => {
+          assert.ok(error instanceof MemcoInvalidRequestError)
+          assert.match(error.detail, /session_id/)
+          return true
+        }
+      )
+      // Refused before anything was sent, exactly as an explicit blank
+      // sessionId passed to shareFeedback would be.
+      assert.deepEqual(harness.memory.calls, [])
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+test('feedback() on a memory fetched through a session sends that session id', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set(
+      'startSession',
+      pb.StartSessionResponse.fromPartial({ sessionId: 'session-a' })
+    )
+    harness.memory.responses.set('shareFeedback', feedbackResponse())
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const session = await memco.memory.startSession('coding')
+      const memory = await session.getMemory('memory-a-1')
+      await memory.feedback({ relevant: true, correct: true })
+      assert.equal(
+        (
+          harness.memory.requests.get(
+            'shareFeedback'
+          ) as pb.ShareFeedbackRequest
+        ).sessionId,
+        'session-a'
+      )
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+test('feedback() throws a typed error when the service records no entry for the rating', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set('search', searchResponse())
+    harness.memory.responses.set(
+      'shareFeedback',
+      pb.ShareFeedbackResponse.fromPartial({ sessionId: 'session-a' })
+    )
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const result = await memco.memory.search('q', { domain: 'coding' })
+      await assert.rejects(
+        result.memories[0]!.feedback({ relevant: true, correct: true }),
+        (error: unknown) => {
+          assert.ok(error instanceof MemcoInternalError)
+          assert.match(error.detail, /no feedback entry.*"memory-a-1"/)
+          return true
+        }
       )
     } finally {
       await memco.close()

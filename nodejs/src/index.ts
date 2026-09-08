@@ -30,8 +30,8 @@ export { Memco, type MemcoOptions } from './client.js'
 
 export {
   MemoryOperations,
+  Session,
   SessionOpener,
-  SessionScope,
   type CreateMemoryOptions,
   type EnrichMemoryOptions,
   type ImportMemoriesOptions,
@@ -107,11 +107,11 @@ export type {
   Instructions,
   Limits,
   Memory,
+  MemoryFeedback,
   ProtoRecord,
   Provenance,
   RevertResult,
   SearchResult,
-  Session,
   Tag,
   WriteResult
 } from './types.js'

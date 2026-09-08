@@ -9,13 +9,36 @@ import { status } from '@grpc/grpc-js'
 
 import { Memco } from '../src/client.js'
 import { MemcoUnavailableError } from '../src/errors.js'
-import { SessionScope } from '../src/operations.js'
+import { Session } from '../src/operations.js'
 import * as pb from '../src/internal/gen.js'
 import { withHarness, type Harness } from './fakeServer.js'
 
 function client(harness: Harness): Memco {
   return new Memco({ token: 'test-token', host: harness.address, tls: false })
 }
+
+test('startSession returns a session with every bound method already on it', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set(
+      'startSession',
+      pb.StartSessionResponse.fromPartial({ sessionId: 'session-direct' })
+    )
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const session = await memco.memory.startSession('coding')
+      assert.equal(session.id, 'session-direct')
+
+      await session.search('anything')
+      assert.equal(
+        (harness.memory.requests.get('search') as pb.SearchRequest).sessionId,
+        'session-direct'
+      )
+    } finally {
+      await memco.close()
+    }
+  })
+})
 
 test('withSession opens nothing until it is awaited', async () => {
   await withHarness(async harness => {
@@ -60,7 +83,7 @@ test('a scope binds its session onto every call that takes one', async () => {
     try {
       await memco.connect()
       const session = await memco.memory.withSession('coding')
-      assert.equal(session.sessionId, 'session-bound')
+      assert.equal(session.id, 'session-bound')
 
       await session.search('anything')
       assert.equal(
@@ -116,7 +139,7 @@ test('disposing a scope releases nothing and sends nothing', async () => {
     const memco = client(harness)
     try {
       await memco.connect()
-      let held: SessionScope
+      let held: Session
       {
         await using session = await memco.memory.withSession('coding')
         held = session
@@ -206,7 +229,7 @@ test('an opener that failed to open can be awaited again', async () => {
         await opener
       }, MemcoUnavailableError)
       const session = await opener
-      assert.equal(session.sessionId, 'session-a')
+      assert.equal(session.id, 'session-a')
       assert.equal(
         harness.memory.calls.filter(name => name === 'startSession').length,
         2

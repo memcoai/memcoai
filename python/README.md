@@ -48,30 +48,38 @@ with Memco() as client:  # reads MEMCO_API_TOKEN
 
     session = client.memory.start_session("coding")
 
-    result = client.memory.search(
-        "how should a client authenticate against the memory API",
-        session_id=session.session_id,
-    )
+    result = session.search("how should a client authenticate against the memory API")
     for memory in result.memories:
         for insight in memory.insights:
             print(insight.title, insight.updated)
 ```
 
-Wherever a session outlives a line or two, bind it once with `with_session`
-instead of threading the id through every call. A call that silently drops the
-id is still a valid call — it just stops being part of the series that relates
-one task's work, which is the kind of mistake an agent makes and nobody notices:
+`start_session` returns a session with every session-bound operation already
+applied — `search`, `share_feedback`, and the rest — so nothing above threads
+an id through a call by hand. That matters because a call that silently drops
+the id is still a valid call — it just stops being part of the series that
+relates one task's work, which is the kind of mistake an agent makes and
+nobody notices. `with_session` opens the same kind of session as a context
+manager, for wherever that scoping reads better, and a single result rates
+itself directly with `feedback`:
+
+```python
+with client.memory.with_session("coding") as session:
+    result = session.search("how should a client authenticate")
+    result.memories[0].feedback(relevant=True, correct=True)
+```
+
+Rating more than one result at once still goes through `share_feedback`
+directly, with a `FeedbackRating` per result:
 
 ```python
 from memco.types import FeedbackRating
 
-with client.memory.with_session("coding") as session:
-    result = session.search("how should a client authenticate")
-    session.share_feedback(
-        feedback=[
-            FeedbackRating(idx=result.memories[0].idx, relevant=True, correct=True),
-        ]
-    )
+session.share_feedback(
+    feedback=[
+        FeedbackRating(idx=memory.idx, relevant=True, correct=True) for memory in result.memories
+    ]
+)
 ```
 
 Everything works asynchronously too, with the same method names:
@@ -265,12 +273,13 @@ The memory operations live on `client.memory`.
 | Method | Purpose |
 |---|---|
 | `memory.list_domains()` | Which domains this credential may name, and their tag vocabulary |
-| `memory.start_session(domain)` | Open a session so related searches are recorded as one series |
+| `memory.start_session(domain)` | Open a session, with every session-bound operation already applied |
 | `memory.search(query, ...)` | Find memories answering a task-based query |
 | `memory.get_memory(idx)` | Fetch a memory a search returned only as a reference |
 | `memory.create_memory(...)` | Save new knowledge |
 | `memory.enrich_memory(...)` | Add to a memory a search returned, or open a new one |
 | `memory.share_feedback(...)` | Rate the results of one search |
+| `memory.search(...).memories[0].feedback(...)` | Rate a single result directly, no `FeedbackRating` needed |
 | `memory.revert_memory(operation_id)` | Undo one of your own writes |
 | `memory.import_memories(memories, ...)` | Contribute many memories at once, splitting the batch as the service requires |
 

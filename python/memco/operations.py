@@ -6,12 +6,14 @@ health gate; this module owns only the calls.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Generator, Iterable
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from . import _convert, _deprecation, _limits, _requests
 from .types import (
+    AsyncMemory,
     DataSource,
     DomainList,
     FeedbackRating,
@@ -22,7 +24,6 @@ from .types import (
     Memory,
     RevertResult,
     SearchResult,
-    Session,
     Tag,
     WriteResult,
 )
@@ -32,10 +33,10 @@ if TYPE_CHECKING:  # pragma: no cover - agent imports this module, so this canno
 
 __all__ = [
     "AsyncMemoryOperations",
+    "AsyncSession",
     "AsyncSessionOpener",
-    "AsyncSessionScope",
     "MemoryOperations",
-    "SessionScope",
+    "Session",
 ]
 
 
@@ -47,8 +48,7 @@ class MemoryOperations:
     Example:
         >>> with Memco() as client:
         ...     session = client.memory.start_session("coding")
-        ...     result = client.memory.search("how does X work",
-        ...                                   session_id=session.session_id)
+        ...     result = session.search("how does X work")
     """
 
     def __init__(self, stub: Any, call: Callable[..., Any]) -> None:
@@ -108,7 +108,8 @@ class MemoryOperations:
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
-            The open session.
+            The open session, with every session-bound operation already
+            applied -- :meth:`with_session` returns the same kind of object.
 
         Raises:
             MemcoInvalidRequestError: If the domain is blank.
@@ -116,27 +117,29 @@ class MemoryOperations:
 
         Example:
             >>> session = client.memory.start_session("coding")
-            >>> session.session_id
+            >>> session.id
             'session-z2ye39'
         """
-        return _convert.to_session(
+        session_id, instructions = _convert.to_session(
             self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout)
         )
+        return Session(self, session_id, instructions)
 
-    def with_session(self, domain: str, *, timeout: float | None = None) -> SessionScope:
+    def with_session(self, domain: str, *, timeout: float | None = None) -> Session:
         """Open a session and apply it to every call made through the result.
 
-        The same as :meth:`start_session`, except that the id is bound rather
-        than handed back to be threaded through each call by hand. Prefer this
-        wherever the session outlives a line or two: a call that silently drops
-        the id is still a valid call, it just stops being part of the series.
+        The same as :meth:`start_session`: kept as its own name for the
+        context-manager call site, wherever the session outlives a line or two.
+        A call that silently drops the id is still a valid call, it just stops
+        being part of the series.
 
         Args:
             domain: Slug of the domain, as returned by :meth:`list_domains`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
-            The operations, with the opened session applied.
+            The open session, with every session-bound operation already
+            applied -- the same as what :meth:`start_session` returns.
 
         Raises:
             MemcoInvalidRequestError: If the domain is blank.
@@ -146,7 +149,7 @@ class MemoryOperations:
             >>> with client.memory.with_session("coding") as session:
             ...     result = session.search("how does X work")
         """
-        return SessionScope(self, self.start_session(domain, timeout=timeout))
+        return self.start_session(domain, timeout=timeout)
 
     def search(
         self,
@@ -156,7 +159,7 @@ class MemoryOperations:
         session_id: str | None = None,
         tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
-    ) -> SearchResult:
+    ) -> SearchResult[Memory]:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
         scratch. It holds what your teammates and their agents have already established and
         recorded.
@@ -218,7 +221,9 @@ class MemoryOperations:
         request = _requests.search_request(
             query, domain=domain, session_id=session_id, tags=tags, known=self._known
         )
-        return _convert.to_search_result(self._call(self._stub.Search, request, timeout))
+        return _convert.to_search_result(
+            self._call(self._stub.Search, request, timeout), operations=self
+        )
 
     def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
         """Fetch one memory a search returned, by its idx, and get it back in full.
@@ -256,7 +261,12 @@ class MemoryOperations:
         response = self._call(
             self._stub.GetMemory, _requests.get_memory_request(idx, self._known), timeout
         )
-        return _convert.to_memory(_requests.require_memory(response, idx))
+        # session_id="": nothing recorded this fetch under a session, so
+        # feedback() on the result has nowhere to attach a rating and fails
+        # through the same validation a blank session_id always would.
+        return _convert.to_memory(
+            _requests.require_memory(response, idx), operations=self, session_id=""
+        )
 
     def create_memory(
         self,
@@ -322,7 +332,7 @@ class MemoryOperations:
             ...     query="how do I authenticate against the memory API",
             ...     title="Memory API takes a Bearer token",
             ...     content="The prefix is case-sensitive: lowercase 'bearer' is rejected.",
-            ...     session_id=session.session_id,
+            ...     session_id=session.id,
             ...     tags=[Tag(type="language", value="python")],
             ... )
             >>> result.operation_id
@@ -390,7 +400,7 @@ class MemoryOperations:
         Example:
             >>> client.memory.enrich_memory(
             ...     memory_idx="memory-9fg6vc-2",
-            ...     session_id=session.session_id,
+            ...     session_id=session.id,
             ...     title="A connection check does not prove the credential works",
             ...     content="That check carries no credential, so a bad token surfaces later.",
             ... )
@@ -440,7 +450,7 @@ class MemoryOperations:
 
         Example:
             >>> client.memory.share_feedback(
-            ...     session_id=session.session_id,
+            ...     session_id=session.id,
             ...     feedback=[
             ...         FeedbackRating(idx="memory-9fg6vc-2-insight-1",
             ...                        relevant=True, correct=True),
@@ -566,8 +576,7 @@ class AsyncMemoryOperations:
     Example:
         >>> async with AsyncMemco() as client:
         ...     session = await client.memory.start_session("coding")
-        ...     result = await client.memory.search("how does X work",
-        ...                                         session_id=session.session_id)
+        ...     result = await session.search("how does X work")
     """
 
     def __init__(self, stub: Any, call: Callable[..., Any]) -> None:
@@ -613,7 +622,7 @@ class AsyncMemoryOperations:
         _deprecation.warn_once(described.deprecation_message, described.sunset_date)
         return described
 
-    async def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
+    async def start_session(self, domain: str, *, timeout: float | None = None) -> AsyncSession:
         """Start a session and get its id. A session groups the searches you make while working on
         one task, so they are recorded as the series they are rather than as unrelated one-offs.
 
@@ -629,7 +638,8 @@ class AsyncMemoryOperations:
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
-            The open session.
+            The open session, with every session-bound operation already
+            applied -- :meth:`with_session` returns the same kind of object.
 
         Raises:
             MemcoInvalidRequestError: If the domain is blank.
@@ -637,34 +647,35 @@ class AsyncMemoryOperations:
 
         Example:
             >>> session = await client.memory.start_session("coding")
-            >>> session.session_id
+            >>> session.id
             'session-z2ye39'
         """
         response = await self._call(
             self._stub.StartSession, _requests.start_session_request(domain), timeout
         )
-        return _convert.to_session(response)
+        session_id, instructions = _convert.to_session(response)
+        return AsyncSession(self, session_id, instructions)
 
     def with_session(self, domain: str, *, timeout: float | None = None) -> AsyncSessionOpener:
         """Open a session and apply it to every call made through the result.
 
-        The same as :meth:`start_session`, except that the id is bound rather
-        than handed back to be threaded through each call by hand. Prefer this
-        wherever the session outlives a line or two: a call that silently drops
-        the id is still a valid call, it just stops being part of the series.
+        The same as :meth:`start_session`: kept as its own name for the
+        context-manager call site, wherever the session outlives a line or two.
+        A call that silently drops the id is still a valid call, it just stops
+        being part of the series.
 
         The result is both awaitable and an async context manager, so ``await``
-        and ``async with`` both reach the scope. Nothing is sent until one of
-        them opens the session, unlike the synchronous form, which opens it as
-        it is called.
+        and ``async with`` both reach the session. Nothing is sent until one of
+        them opens it, unlike the synchronous form, which opens it as it is
+        called.
 
         Args:
             domain: Slug of the domain, as returned by :meth:`list_domains`.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
-            A handle that opens the session and yields the scope, on ``await``
-            or on entering it.
+            A handle that opens the session and yields it, on ``await`` or on
+            entering it.
 
         Raises:
             MemcoInvalidRequestError: If the domain is blank.
@@ -684,7 +695,7 @@ class AsyncMemoryOperations:
         session_id: str | None = None,
         tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
-    ) -> SearchResult:
+    ) -> SearchResult[AsyncMemory]:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
         scratch. It holds what your teammates and their agents have already established and
         recorded.
@@ -746,9 +757,11 @@ class AsyncMemoryOperations:
         request = _requests.search_request(
             query, domain=domain, session_id=session_id, tags=tags, known=self._known
         )
-        return _convert.to_search_result(await self._call(self._stub.Search, request, timeout))
+        return _convert.to_async_search_result(
+            await self._call(self._stub.Search, request, timeout), operations=self
+        )
 
-    async def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
+    async def get_memory(self, idx: str, *, timeout: float | None = None) -> AsyncMemory:
         """Fetch one memory a search returned, by its idx, and get it back in full.
 
         Call when: you hold an idx whose content is not in front of you — a search returned the
@@ -784,7 +797,12 @@ class AsyncMemoryOperations:
         response = await self._call(
             self._stub.GetMemory, _requests.get_memory_request(idx, self._known), timeout
         )
-        return _convert.to_memory(_requests.require_memory(response, idx))
+        # session_id="": nothing recorded this fetch under a session, so
+        # feedback() on the result has nowhere to attach a rating and fails
+        # through the same validation a blank session_id always would.
+        return _convert.to_async_memory(
+            _requests.require_memory(response, idx), operations=self, session_id=""
+        )
 
     async def create_memory(
         self,
@@ -850,7 +868,7 @@ class AsyncMemoryOperations:
             ...     query="how do I authenticate against the memory API",
             ...     title="Memory API takes a Bearer token",
             ...     content="The prefix is case-sensitive: lowercase 'bearer' is rejected.",
-            ...     session_id=session.session_id,
+            ...     session_id=session.id,
             ...     tags=[Tag(type="language", value="python")],
             ... )
             >>> result.operation_id
@@ -918,7 +936,7 @@ class AsyncMemoryOperations:
         Example:
             >>> await client.memory.enrich_memory(
             ...     memory_idx="memory-9fg6vc-2",
-            ...     session_id=session.session_id,
+            ...     session_id=session.id,
             ...     title="A connection check does not prove the credential works",
             ...     content="That check carries no credential, so a bad token surfaces later.",
             ... )
@@ -968,7 +986,7 @@ class AsyncMemoryOperations:
 
         Example:
             >>> await client.memory.share_feedback(
-            ...     session_id=session.session_id,
+            ...     session_id=session.id,
             ...     feedback=[
             ...         FeedbackRating(idx="memory-9fg6vc-2-insight-1",
             ...                        relevant=True, correct=True),
@@ -1091,10 +1109,11 @@ class AsyncMemoryOperations:
         )
 
 
-class SessionScope:
-    """The memory operations with one session already applied.
+class Session:
+    """An open session, with every session-bound memory operation applied.
 
-    Returned by :meth:`MemoryOperations.with_session`; not constructed directly.
+    Returned by :meth:`MemoryOperations.start_session` and
+    :meth:`MemoryOperations.with_session` alike; not constructed directly.
     Every call made through it is recorded under the session it holds, so the id
     cannot be dropped, mistyped, or invented further down a call stack. The
     session supplies the domain too, which is why no operation here takes one.
@@ -1105,7 +1124,7 @@ class SessionScope:
     resource.
 
     Attributes:
-        session_id: The session every call through this scope names.
+        id: The session every call through this object names.
         instructions: What the service said when the session was opened.
 
     Example:
@@ -1117,27 +1136,31 @@ class SessionScope:
         ...     ])
     """
 
-    def __init__(self, operations: MemoryOperations, session: Session) -> None:
+    def __init__(
+        self, operations: MemoryOperations, session_id: str, instructions: Instructions
+    ) -> None:
         """Bind a session to a namespace.
 
         Args:
             operations: The namespace to forward every call to.
-            session: The session that was opened.
+            session_id: The session id that was opened.
+            instructions: What the service said when the session was opened.
         """
         self._operations = operations
-        self._session = session
+        self._id = session_id
+        self._instructions = instructions
 
     @property
-    def session_id(self) -> str:
-        """The session every call through this scope names."""
-        return self._session.session_id
+    def id(self) -> str:
+        """The session every call through this object names."""
+        return self._id
 
     @property
     def instructions(self) -> Instructions:
         """What the service said when the session was opened."""
-        return self._session.instructions
+        return self._instructions
 
-    def __enter__(self) -> SessionScope:
+    def __enter__(self) -> Session:
         """Enter a context manager.
 
         Returns:
@@ -1162,7 +1185,7 @@ class SessionScope:
         *,
         tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
-    ) -> SearchResult:
+    ) -> SearchResult[Memory]:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
         scratch. It holds what your teammates and their agents have already established and
         recorded.
@@ -1209,9 +1232,7 @@ class SessionScope:
             ...     tags=[Tag(type="language", value="python", version="3.12")],
             ... )
         """
-        return self._operations.search(
-            query, session_id=self.session_id, tags=tags, timeout=timeout
-        )
+        return self._operations.search(query, session_id=self.id, tags=tags, timeout=timeout)
 
     def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
         """Fetch one memory a search returned, by its idx, and get it back in full.
@@ -1246,7 +1267,11 @@ class SessionScope:
             >>> memory = session.get_memory("memory-9fg6vc-1")
             >>> [insight.title for insight in memory.insights]
         """
-        return self._operations.get_memory(idx, timeout=timeout)
+        # get_memory() itself has no session to bind, so it always comes back
+        # unrateable; rebind it to this session, which does have one.
+        return dataclasses.replace(
+            self._operations.get_memory(idx, timeout=timeout), _session_id=self.id
+        )
 
     def create_memory(
         self,
@@ -1308,7 +1333,7 @@ class SessionScope:
             query=query,
             title=title,
             content=content,
-            session_id=self.session_id,
+            session_id=self.id,
             tags=tags,
             source=source,
             timeout=timeout,
@@ -1367,7 +1392,7 @@ class SessionScope:
         """
         return self._operations.enrich_memory(
             memory_idx=memory_idx,
-            session_id=self.session_id,
+            session_id=self.id,
             title=title,
             content=content,
             tags=tags,
@@ -1411,7 +1436,7 @@ class SessionScope:
             ... ])
         """
         return self._operations.share_feedback(
-            session_id=self.session_id, feedback=feedback, timeout=timeout
+            session_id=self.id, feedback=feedback, timeout=timeout
         )
 
     def revert_memory(self, operation_id: str, *, timeout: float | None = None) -> RevertResult:
@@ -1492,9 +1517,7 @@ class SessionScope:
             >>> [(o.index, o.status.name) for o in result.results]
             [(0, 'QUEUED')]
         """
-        return self._operations.import_memories(
-            memories, session_id=self.session_id, timeout=timeout
-        )
+        return self._operations.import_memories(memories, session_id=self.id, timeout=timeout)
 
     def tools(self) -> Toolset:
         """This session's operations, described and rendered for an LLM.
@@ -1529,14 +1552,15 @@ class SessionScope:
         return _tools(self)
 
 
-class AsyncSessionScope:
-    """The memory operations with one session already applied, on an asyncio client.
+class AsyncSession:
+    """An open session, with every session-bound memory operation applied, on an asyncio client.
 
-    Returned by :meth:`AsyncMemoryOperations.with_session`; not constructed
-    directly. Mirrors :class:`SessionScope` method for method. Every call made
-    through it is recorded under the session it holds, so the id cannot be
-    dropped, mistyped, or invented further down a call stack. The session
-    supplies the domain too, which is why no operation here takes one.
+    Returned by :meth:`AsyncMemoryOperations.start_session` and
+    :meth:`AsyncMemoryOperations.with_session` alike; not constructed directly.
+    Mirrors :class:`Session` method for method. Every call made through it is
+    recorded under the session it holds, so the id cannot be dropped, mistyped,
+    or invented further down a call stack. The session supplies the domain too,
+    which is why no operation here takes one.
 
     Usable as an async context manager, which releases nothing: the contract has
     no call that ends a session, and a session id stays usable for as long as it
@@ -1544,7 +1568,7 @@ class AsyncSessionScope:
     resource.
 
     Attributes:
-        session_id: The session every call through this scope names.
+        id: The session every call through this object names.
         instructions: What the service said when the session was opened.
 
     Example:
@@ -1552,27 +1576,31 @@ class AsyncSessionScope:
         ...     result = await session.search("how does X work")
     """
 
-    def __init__(self, operations: AsyncMemoryOperations, session: Session) -> None:
+    def __init__(
+        self, operations: AsyncMemoryOperations, session_id: str, instructions: Instructions
+    ) -> None:
         """Bind a session to a namespace.
 
         Args:
             operations: The namespace to forward every call to.
-            session: The session that was opened.
+            session_id: The session id that was opened.
+            instructions: What the service said when the session was opened.
         """
         self._operations = operations
-        self._session = session
+        self._id = session_id
+        self._instructions = instructions
 
     @property
-    def session_id(self) -> str:
-        """The session every call through this scope names."""
-        return self._session.session_id
+    def id(self) -> str:
+        """The session every call through this object names."""
+        return self._id
 
     @property
     def instructions(self) -> Instructions:
         """What the service said when the session was opened."""
-        return self._session.instructions
+        return self._instructions
 
-    async def __aenter__(self) -> AsyncSessionScope:
+    async def __aenter__(self) -> AsyncSession:
         """Enter an async context manager.
 
         Returns:
@@ -1597,7 +1625,7 @@ class AsyncSessionScope:
         *,
         tags: Iterable[Tag] | None = None,
         timeout: float | None = None,
-    ) -> SearchResult:
+    ) -> SearchResult[AsyncMemory]:
         """Search Memco Shared Memory for existing knowledge before working a problem out from
         scratch. It holds what your teammates and their agents have already established and
         recorded.
@@ -1645,11 +1673,9 @@ class AsyncSessionScope:
             ...     tags=[Tag(type="language", value="python", version="3.12")],
             ... )
         """
-        return await self._operations.search(
-            query, session_id=self.session_id, tags=tags, timeout=timeout
-        )
+        return await self._operations.search(query, session_id=self.id, tags=tags, timeout=timeout)
 
-    async def get_memory(self, idx: str, *, timeout: float | None = None) -> Memory:
+    async def get_memory(self, idx: str, *, timeout: float | None = None) -> AsyncMemory:
         """Fetch one memory a search returned, by its idx, and get it back in full.
 
         Call when: you hold an idx whose content is not in front of you — a search returned the
@@ -1682,7 +1708,11 @@ class AsyncSessionScope:
             >>> memory = await session.get_memory("memory-9fg6vc-1")
             >>> [insight.title for insight in memory.insights]
         """
-        return await self._operations.get_memory(idx, timeout=timeout)
+        # get_memory() itself has no session to bind, so it always comes back
+        # unrateable; rebind it to this session, which does have one.
+        return dataclasses.replace(
+            await self._operations.get_memory(idx, timeout=timeout), _session_id=self.id
+        )
 
     async def create_memory(
         self,
@@ -1744,7 +1774,7 @@ class AsyncSessionScope:
             query=query,
             title=title,
             content=content,
-            session_id=self.session_id,
+            session_id=self.id,
             tags=tags,
             source=source,
             timeout=timeout,
@@ -1803,7 +1833,7 @@ class AsyncSessionScope:
         """
         return await self._operations.enrich_memory(
             memory_idx=memory_idx,
-            session_id=self.session_id,
+            session_id=self.id,
             title=title,
             content=content,
             tags=tags,
@@ -1847,7 +1877,7 @@ class AsyncSessionScope:
             ... ])
         """
         return await self._operations.share_feedback(
-            session_id=self.session_id, feedback=feedback, timeout=timeout
+            session_id=self.id, feedback=feedback, timeout=timeout
         )
 
     async def revert_memory(
@@ -1930,9 +1960,7 @@ class AsyncSessionScope:
             >>> [(o.index, o.status.name) for o in result.results]
             [(0, 'QUEUED')]
         """
-        return await self._operations.import_memories(
-            memories, session_id=self.session_id, timeout=timeout
-        )
+        return await self._operations.import_memories(memories, session_id=self.id, timeout=timeout)
 
     def tools(self) -> AsyncToolset:
         """This session's operations, described and rendered for an LLM.
@@ -1987,9 +2015,9 @@ class AsyncSessionOpener:
         self._operations = operations
         self._domain = domain
         self._timeout = timeout
-        self._scope: AsyncSessionScope | None = None
+        self._scope: AsyncSession | None = None
 
-    def __await__(self) -> Generator[Any, None, AsyncSessionScope]:
+    def __await__(self) -> Generator[Any, None, AsyncSession]:
         """Open the session.
 
         Returns:
@@ -1997,7 +2025,7 @@ class AsyncSessionOpener:
         """
         return self._open().__await__()
 
-    async def __aenter__(self) -> AsyncSessionScope:
+    async def __aenter__(self) -> AsyncSession:
         """Open the session on entering an async context manager.
 
         Returns:
@@ -2016,7 +2044,7 @@ class AsyncSessionOpener:
         There is no call that ends a session, so there is nothing to undo here.
         """
 
-    async def _open(self) -> AsyncSessionScope:
+    async def _open(self) -> AsyncSession:
         """Open the session and bind it, once.
 
         Awaiting or entering the same handle twice returns the session it
@@ -2028,6 +2056,5 @@ class AsyncSessionOpener:
             The scope, with the opened session applied to every call.
         """
         if self._scope is None:
-            session = await self._operations.start_session(self._domain, timeout=self._timeout)
-            self._scope = AsyncSessionScope(self._operations, session)
+            self._scope = await self._operations.start_session(self._domain, timeout=self._timeout)
         return self._scope

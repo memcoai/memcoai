@@ -1,6 +1,6 @@
 /**
- * The operations reached as `client.memory`, and the session-scoped view of
- * them.
+ * The operations reached as `client.memory`, and the open session that carries
+ * them bound.
  *
  * Two shapes are worth naming, and both are forced by the language rather than
  * chosen:
@@ -9,8 +9,9 @@
  *   the first argument of an operation is ever positional.
  * - Node has no synchronous gRPC, so opening a session is deferred:
  *   {@link SessionOpener} is awaitable, and opens at most one session however
- *   often it is reached. It is deliberately not async-disposable — the scope it
- *   yields is, which is what makes `await using` need the inner `await`.
+ *   often it is reached. It is deliberately not async-disposable — the
+ *   {@link Session} it yields is, which is what makes `await using` need the
+ *   inner `await`.
  */
 
 import type {
@@ -37,7 +38,6 @@ import {
   type Memory,
   type RevertResult,
   type SearchResult,
-  type Session,
   type Tag,
   type WriteResult
 } from './types.js'
@@ -283,9 +283,9 @@ export interface ImportMemoriesOptions extends TimeoutOptions {
 }
 
 /**
- * What {@link SessionScope.search} takes.
+ * What {@link Session.search} takes.
  *
- * {@link SearchOptions} with the domain and the session removed: the scope
+ * {@link SearchOptions} with the domain and the session removed: the session
  * supplies both, so the pair that would otherwise have to be got right cannot
  * be got wrong here. What is left behaves as it does on an unscoped search,
  * except that the tags go out untrimmed — a search naming a session leaves the
@@ -295,7 +295,7 @@ export interface ImportMemoriesOptions extends TimeoutOptions {
 export type ScopedSearchOptions = TimeoutOptions & Pick<SearchOptions, 'tags'>
 
 /**
- * What {@link SessionScope.createMemory} writes a new memory from.
+ * What {@link Session.createMemory} writes a new memory from.
  *
  * {@link CreateMemoryOptions} with the domain and the session removed, so the
  * memory always lands in the session's domain and is always recorded as part of
@@ -308,9 +308,9 @@ export type ScopedCreateMemoryOptions = Omit<
 >
 
 /**
- * What {@link SessionScope.enrichMemory} writes an addition from.
+ * What {@link Session.enrichMemory} writes an addition from.
  *
- * {@link EnrichMemoryOptions} with the session removed, which the scope
+ * {@link EnrichMemoryOptions} with the session removed, which the session
  * supplies. There was never a domain on it to remove — an addition takes the
  * domain from its session either way — so the memory idx, still including the
  * {@link NEW_MEMORY} sentinel, is what remains to choose.
@@ -318,9 +318,9 @@ export type ScopedCreateMemoryOptions = Omit<
 export type ScopedEnrichMemoryOptions = Omit<EnrichMemoryOptions, 'sessionId'>
 
 /**
- * What {@link SessionScope.shareFeedback} records a batch of ratings from.
+ * What {@link Session.shareFeedback} records a batch of ratings from.
  *
- * {@link ShareFeedbackOptions} with the session removed, which the scope
+ * {@link ShareFeedbackOptions} with the session removed, which the session
  * supplies — so the ratings cannot be filed against a session other than the
  * one that returned the results they judge. The batch is still bounded, and
  * still needs at least one rating.
@@ -396,7 +396,8 @@ export class MemoryOperations {
    *
    * @param domain The domain to work in.
    * @param options Per-call deadline.
-   * @returns The session handle, and the service's guidance for working in it.
+   * @returns The open session, with every session-bound operation already
+   *   applied — {@link withSession} returns the same kind of object.
    * @throws MemcoInvalidRequestError If the domain is blank.
    */
   async startSession(
@@ -409,19 +410,22 @@ export class MemoryOperations {
       options.timeout,
       'StartSession'
     )
-    return convert.toSession(response)
+    const fields = convert.toSessionFields(response)
+    return new Session(this, fields.id, fields.instructions)
   }
 
   /**
    * Open a session and bind it, so no later call can drop the handle.
    *
+   * The same as {@link startSession}: kept as its own name for the
+   * context-manager call site, wherever the session outlives a line or two.
    * Nothing is sent until the result is awaited, and awaiting it twice opens
-   * one session and returns the same scope — which is what makes it safe to
+   * one session and returns the same object — which is what makes it safe to
    * hold in a variable.
    *
    * @param domain The domain to work in.
    * @param options Per-call deadline.
-   * @returns An opener. Await it for the scope, which is the disposable one.
+   * @returns An opener. Await it for the session, which is the disposable one.
    *
    * @example
    * ```ts
@@ -468,7 +472,7 @@ export class MemoryOperations {
       options.timeout,
       'Search'
     )
-    return convert.toSearchResult(response)
+    return convert.toSearchResult(response, opts => this.shareFeedback(opts))
   }
 
   /**
@@ -491,7 +495,13 @@ export class MemoryOperations {
       options.timeout,
       'GetMemory'
     )
-    return convert.toMemory(requests.requireMemory(response, idx))
+    // sessionId '': nothing recorded this fetch under a session, so
+    // feedback() on the result has nowhere to attach a rating and fails
+    // through the same checkSessionId validation a blank id always would.
+    return convert.toMemory(
+      requests.requireMemory(response, idx),
+      convert.feedbackSubmitter('', opts => this.shareFeedback(opts))
+    )
   }
 
   /**
@@ -657,44 +667,44 @@ export class MemoryOperations {
 }
 
 /**
- * The operations, bound to one session.
+ * An open session, with every session-bound memory operation applied.
  *
- * No method here takes a session id or a domain: the scope supplies both. That
+ * Returned by {@link MemoryOperations.startSession} and
+ * {@link MemoryOperations.withSession} alike; not constructed directly. No
+ * method here takes a session id or a domain: this object supplies both. That
  * is the point of it — a call that silently drops the session id is still a
  * valid call. It opens a session of its own and records the search there, so
  * the series you were assembling quietly splits in two, and a later rating
  * lands against a search you did not mean to make.
+ *
+ * Nothing closes one: the contract has no operation that ends a session, so
+ * this is a handle to carry rather than a resource to release. Used as an
+ * async-disposable, `[Symbol.asyncDispose]` releases nothing either — it
+ * exists so `await using` can bound the region of code a session belongs to,
+ * which is a claim about the reader's attention rather than about a resource.
  */
-export class SessionScope {
+export class Session {
   /**
-   * @param operations The namespace to delegate to.
-   * @param session The session this scope is bound to.
+   * @param operations The namespace this session's calls forward to.
+   * @param id The session id that was opened.
+   * @param instructions What the service said when the session was opened.
+   *
+   * @internal Constructed by {@link MemoryOperations.startSession}, never by a
+   *   caller.
    */
   constructor(
     private readonly operations: MemoryOperations,
-    private readonly session: Session
+    readonly id: string,
+    readonly instructions: Instructions
   ) {}
 
-  /** The session handle, for a call that needs to name it directly. */
-  get sessionId(): string {
-    return this.session.sessionId
-  }
-
-  /** What the service asks the caller to do within this session. */
-  get instructions(): Instructions {
-    return this.session.instructions
-  }
-
   /**
-   * Leave the scope.
+   * Leave the session.
    *
-   * Deliberately a no-op. The contract has no operation that ends a session,
-   * so there is nothing to release; this exists so `await using` can bound the
-   * region of code a session belongs to, which is a claim about the reader's
-   * attention rather than about a resource.
+   * Deliberately a no-op. See the class documentation.
    */
   async [Symbol.asyncDispose](): Promise<void> {
-    // Nothing to release. See the comment above.
+    // Nothing to release. See the class documentation.
   }
 
   /**
@@ -708,10 +718,7 @@ export class SessionScope {
     query: string,
     options: ScopedSearchOptions = {}
   ): Promise<SearchResult> {
-    return this.operations.search(query, {
-      ...options,
-      sessionId: this.sessionId
-    })
+    return this.operations.search(query, { ...options, sessionId: this.id })
   }
 
   /**
@@ -719,10 +726,16 @@ export class SessionScope {
    *
    * @param idx The handle, copied exactly as it appeared in a search response.
    * @param options Per-call deadline.
-   * @returns The memory.
+   * @returns The memory, its `feedback()` bound to this session — unlike
+   *   {@link MemoryOperations.getMemory}, which has no session of its own to
+   *   bind.
    */
-  getMemory(idx: string, options: TimeoutOptions = {}): Promise<Memory> {
-    return this.operations.getMemory(idx, options)
+  async getMemory(idx: string, options: TimeoutOptions = {}): Promise<Memory> {
+    const memory = await this.operations.getMemory(idx, options)
+    const submit = convert.feedbackSubmitter(this.id, opts =>
+      this.operations.shareFeedback(opts)
+    )
+    return { ...memory, feedback: rating => submit(memory.idx, rating) }
   }
 
   /**
@@ -732,10 +745,7 @@ export class SessionScope {
    * @returns The operation id, when the write can be undone, and guidance.
    */
   createMemory(options: ScopedCreateMemoryOptions): Promise<WriteResult> {
-    return this.operations.createMemory({
-      ...options,
-      sessionId: this.sessionId
-    })
+    return this.operations.createMemory({ ...options, sessionId: this.id })
   }
 
   /**
@@ -745,10 +755,7 @@ export class SessionScope {
    * @returns The operation id, when the write can be undone, and guidance.
    */
   enrichMemory(options: ScopedEnrichMemoryOptions): Promise<WriteResult> {
-    return this.operations.enrichMemory({
-      ...options,
-      sessionId: this.sessionId
-    })
+    return this.operations.enrichMemory({ ...options, sessionId: this.id })
   }
 
   /**
@@ -758,10 +765,7 @@ export class SessionScope {
    * @returns What was recorded, and anything the service wants to say back.
    */
   shareFeedback(options: ScopedShareFeedbackOptions): Promise<FeedbackResult> {
-    return this.operations.shareFeedback({
-      ...options,
-      sessionId: this.sessionId
-    })
+    return this.operations.shareFeedback({ ...options, sessionId: this.id })
   }
 
   /**
@@ -791,7 +795,7 @@ export class SessionScope {
   ): Promise<ImportResult> {
     return this.operations.importMemories(memories, {
       ...options,
-      sessionId: this.sessionId
+      sessionId: this.id
     })
   }
 
@@ -822,19 +826,19 @@ export class SessionScope {
 /**
  * A session that has not been opened yet.
  *
- * Awaiting it opens one and yields the {@link SessionScope}; awaiting it again
- * yields the same scope rather than opening a second session. Nothing is sent
+ * Awaiting it opens one and yields the {@link Session}; awaiting it again
+ * yields the same session rather than opening a second one. Nothing is sent
  * until it is awaited, so an opener that is created and dropped costs no call
  * and produces no unhandled rejection.
  *
  * It deliberately carries no `Symbol.asyncDispose` of its own. `await using`
  * binds the expression rather than anything awaited out of it, so
  * `await using s = client.memory.withSession(d)` would bind this object and not
- * the scope — leaving that off makes it a type error rather than a puzzle at
- * run time. Write `await using s = await client.memory.withSession(d)`.
+ * the session it opens — leaving that off makes it a type error rather than a
+ * puzzle at run time. Write `await using s = await client.memory.withSession(d)`.
  */
-export class SessionOpener implements PromiseLike<SessionScope> {
-  private opened: Promise<SessionScope> | undefined
+export class SessionOpener implements PromiseLike<Session> {
+  private opened: Promise<Session> | undefined
 
   /**
    * @param operations The namespace to open the session on.
@@ -848,15 +852,15 @@ export class SessionOpener implements PromiseLike<SessionScope> {
   ) {}
 
   /**
-   * Open the session, at most once, and hand the scope on.
+   * Open the session, at most once, and hand it on.
    *
-   * @param onfulfilled Called with the bound scope.
+   * @param onfulfilled Called with the open session.
    * @param onrejected Called if the session could not be opened.
    * @returns The chained promise.
    */
-  then<Fulfilled = SessionScope, Rejected = never>(
+  then<Fulfilled = Session, Rejected = never>(
     onfulfilled?:
-      ((value: SessionScope) => Fulfilled | PromiseLike<Fulfilled>) | null,
+      ((value: Session) => Fulfilled | PromiseLike<Fulfilled>) | null,
     onrejected?: ((reason: unknown) => Rejected | PromiseLike<Rejected>) | null
   ): PromiseLike<Fulfilled | Rejected> {
     this.opened ??= this.open()
@@ -871,10 +875,8 @@ export class SessionOpener implements PromiseLike<SessionScope> {
    * absorbs a transient failure, and holding the rejected promise would poison
    * this opener for the life of the object.
    */
-  private open(): Promise<SessionScope> {
-    const opening = this.operations
-      .startSession(this.domain, this.options)
-      .then(session => new SessionScope(this.operations, session))
+  private open(): Promise<Session> {
+    const opening = this.operations.startSession(this.domain, this.options)
     opening.catch(() => {
       this.opened = undefined
     })

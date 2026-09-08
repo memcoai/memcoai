@@ -24,13 +24,14 @@ Reached as ``client.memory``.
 Sessions
 --------
 
-Returned by ``client.memory.with_session(...)``, which opens a session and
-applies it to every call made through the result.
+Returned by ``client.memory.start_session(...)`` and
+``client.memory.with_session(...)`` alike; both hand back the same object,
+with every session-bound operation already applied.
 
-.. autoclass:: memco.operations.SessionScope
+.. autoclass:: memco.operations.Session
    :members:
 
-.. autoclass:: memco.operations.AsyncSessionScope
+.. autoclass:: memco.operations.AsyncSession
    :members:
 
 .. autoclass:: memco.operations.AsyncSessionOpener

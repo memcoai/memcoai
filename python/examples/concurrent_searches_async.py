@@ -49,9 +49,7 @@ async def main() -> None:
         session = await client.memory.start_session("coding")
 
         # All four run concurrently over the single channel.
-        results = await asyncio.gather(
-            *(search(client, query, session.session_id) for query in QUERIES)
-        )
+        results = await asyncio.gather(*(search(client, query, session.id) for query in QUERIES))
 
         for query, summary in results:
             print(f"{summary:32s} {query}")

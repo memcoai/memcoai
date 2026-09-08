@@ -17,7 +17,7 @@ from memco.errors import (
     MemcoAuthenticationError,
 )
 from memco.memory.v1 import memory_pb2 as pb
-from memco.operations import SessionScope
+from memco.operations import Session
 
 from .fake_server import Harness
 
@@ -49,7 +49,7 @@ def test_the_offered_operations_are_exactly_what_the_scope_carries():
     # an operation added and not offered fails here.
     carried = {
         name
-        for name, _ in inspect.getmembers(SessionScope, inspect.isfunction)
+        for name, _ in inspect.getmembers(Session, inspect.isfunction)
         if not name.startswith("_")
     }
     assert set(agent._OPERATIONS) == carried - NOT_AN_OPERATION
@@ -498,9 +498,9 @@ def test_the_builder_refuses_anything_that_is_not_its_own_scope():
     # Reached through session.tools() a caller cannot get this wrong, but the
     # builder is what enforces it: given the other surface's scope it would
     # otherwise fail as "no rendering for coroutine", which says nothing.
-    with pytest.raises(TypeError, match="SessionScope"):
+    with pytest.raises(TypeError, match="Session"):
         agent._tools(object())  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="AsyncSessionScope"):
+    with pytest.raises(TypeError, match="AsyncSession"):
         agent._async_tools(object())  # type: ignore[arg-type]
 
 
@@ -529,3 +529,16 @@ async def test_the_async_toolset_awaits_the_call_and_speaks_the_same_shapes(
     assert "invalid request" in await toolset.call("memco_search", {"query": ""})
     built = {one.name: one for one in toolset.to_langchain()}
     assert await built["memco_search"].ainvoke({"query": "how does X work"}) == "0 memories"
+
+
+async def test_the_async_toolset_can_render_a_memory_fetched_directly(
+    async_client: AsyncMemco, harness: Harness
+):
+    # get_memory on the async surface returns an AsyncMemory, not a Memory;
+    # render() must recognise it too or every memco_get_memory call breaks.
+    harness.memory.responses["GetMemory"] = pb.GetMemoryResponse(
+        memory=pb.MemoryResult(idx="memory-a-1", kind="insight")
+    )
+    toolset = (await async_client.memory.with_session("coding")).tools()
+    rendered = await toolset.call("memco_get_memory", {"idx": "memory-a-1"})
+    assert "memory-a-1" in rendered

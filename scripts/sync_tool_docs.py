@@ -97,8 +97,8 @@ written down so that the service starting to is not a failed build.
 OPERATION_CLASSES = {
     "MemoryOperations": "MemoryOperations",
     "AsyncMemoryOperations": "AsyncMemoryOperations",
-    "SessionScope": "MemoryOperations",
-    "AsyncSessionScope": "AsyncMemoryOperations",
+    "Session": "MemoryOperations",
+    "AsyncSession": "AsyncMemoryOperations",
 }
 """The classes carrying the operations, and the class each one's out-of-class
 references name.

@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   // the first failure, which is safe here only because search() returns its
   // failures rather than throwing them.
   const results = await Promise.all(
-    QUERIES.map(query => search(client, query, session.sessionId))
+    QUERIES.map(query => search(client, query, session.id))
   )
 
   for (const [query, summary] of results) {

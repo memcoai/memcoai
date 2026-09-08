@@ -9,23 +9,38 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { MemcoInternalError } from '../src/errors.js'
 import {
+  feedbackSubmitter,
   toDomainList,
   toFeedbackResult,
   toImportResult,
   toMemory,
   toRevertResult,
   toSearchResult,
-  toSession,
-  toWriteResult
+  toSessionFields,
+  toWriteResult,
+  type FeedbackCaller
 } from '../src/internal/convert.js'
 import * as pb from '../src/internal/gen.js'
-import { ImportStatus, RevertOutcome } from '../src/types.js'
+import {
+  ImportStatus,
+  RevertOutcome,
+  type FeedbackRating
+} from '../src/types.js'
+
+/** A shareFeedback stub that fails the test if it is ever actually called. */
+const NO_SHARE: FeedbackCaller = () => {
+  throw new Error('shareFeedback was not expected to be called in this test')
+}
+
+/** A submitter that fails the test if `feedback()` is ever actually called. */
+const NO_FEEDBACK = feedbackSubmitter('unused', NO_SHARE)
 
 test('an instructions part with nothing to say stays an empty string', () => {
   // The contract documents an empty part as a real state, so it is not folded
   // to null the way an absent notice or operation id is.
-  const session = toSession(
+  const session = toSessionFields(
     pb.StartSessionResponse.fromPartial({ sessionId: 's' })
   )
   assert.equal(session.instructions.content, '')
@@ -36,7 +51,7 @@ test('a response carrying no instructions message reads as nothing to say', () =
   // ts-proto leaves an unset nested message undefined rather than handing back
   // a default instance, so the conversion is what has to turn it into the empty
   // instructions a caller can read without a guard.
-  const session = toSession(
+  const session = toSessionFields(
     pb.StartSessionResponse.fromPartial({ sessionId: 's' })
   )
   assert.deepEqual(session.instructions, {
@@ -49,7 +64,7 @@ test('a response carrying no instructions message reads as nothing to say', () =
 })
 
 test('instructions are read part for part', () => {
-  const session = toSession(
+  const session = toSessionFields(
     pb.StartSessionResponse.fromPartial({
       sessionId: 's',
       instructions: {
@@ -120,7 +135,8 @@ test('an insight update is kept as the ISO day the service sent', () => {
     pb.MemoryResult.fromPartial({
       idx: 'memory-a-1',
       insights: [{ updated: '2026-08-26' }]
-    })
+    }),
+    NO_FEEDBACK
   )
   assert.equal(memory.insights[0].updated, '2026-08-26')
 })
@@ -145,7 +161,8 @@ for (const raw of [
     // Every value here is one that `new Date(raw)` would have accepted or
     // silently shifted, which is why the parse is hand-rolled.
     const memory = toMemory(
-      pb.MemoryResult.fromPartial({ idx: 'm', insights: [{ updated: raw }] })
+      pb.MemoryResult.fromPartial({ idx: 'm', insights: [{ updated: raw }] }),
+      NO_FEEDBACK
     )
     assert.equal(memory.insights[0].updated, null)
   })
@@ -156,18 +173,20 @@ test('a leap day is a real date in a leap year', () => {
     pb.MemoryResult.fromPartial({
       idx: 'm',
       insights: [{ updated: '2024-02-29' }]
-    })
+    }),
+    NO_FEEDBACK
   )
   assert.equal(memory.insights[0].updated, '2024-02-29')
 })
 
 test('empty optional strings become null', () => {
   const search = toSearchResult(
-    pb.SearchResponse.fromPartial({ sessionId: 's', notice: '' })
+    pb.SearchResponse.fromPartial({ sessionId: 's', notice: '' }),
+    NO_SHARE
   )
   assert.equal(search.notice, null)
   assert.equal(
-    toMemory(pb.MemoryResult.fromPartial({ idx: 'm' })).reference,
+    toMemory(pb.MemoryResult.fromPartial({ idx: 'm' }), NO_FEEDBACK).reference,
     null
   )
   const feedback = toFeedbackResult(
@@ -181,11 +200,13 @@ test('empty optional strings become null', () => {
 
 test('populated optional strings are kept', () => {
   const search = toSearchResult(
-    pb.SearchResponse.fromPartial({ sessionId: 's', notice: 'heads up' })
+    pb.SearchResponse.fromPartial({ sessionId: 's', notice: 'heads up' }),
+    NO_SHARE
   )
   assert.equal(search.notice, 'heads up')
   const memory = toMemory(
-    pb.MemoryResult.fromPartial({ idx: 'm', reference: 'memory-a-1' })
+    pb.MemoryResult.fromPartial({ idx: 'm', reference: 'memory-a-1' }),
+    NO_FEEDBACK
   )
   assert.equal(memory.reference, 'memory-a-1')
 })
@@ -415,7 +436,8 @@ test('a search result nests its memories and their insights', () => {
           ]
         }
       ]
-    })
+    }),
+    NO_SHARE
   )
   assert.equal(result.sessionId, 'session-a')
   const memory = result.memories[0]
@@ -479,4 +501,127 @@ test('a sunset date the service malformed becomes null, not a throw', () => {
   )
   assert.equal(result.sunsetDate, null)
   assert.equal(result.deprecationMessage, 'migrate to v2')
+})
+
+// -- feedback wiring --------------------------------------------------------
+
+test("a memory's feedback() calls the submitter with its own idx", async () => {
+  const calls: [string, unknown][] = []
+  const memory = toMemory(
+    pb.MemoryResult.fromPartial({ idx: 'memory-a-1' }),
+    async (idx, rating) => {
+      calls.push([idx, rating])
+      return {
+        idx,
+        relevant: rating.relevant,
+        correct: rating.correct,
+        advice: null
+      }
+    }
+  )
+  const entry = await memory.feedback({ relevant: true, correct: false })
+  assert.deepEqual(calls, [['memory-a-1', { relevant: true, correct: false }]])
+  assert.deepEqual(entry, {
+    idx: 'memory-a-1',
+    relevant: true,
+    correct: false,
+    advice: null
+  })
+})
+
+test('a submitter forwards a comment to the caller unchanged', async () => {
+  const received: unknown[] = []
+  const submit = feedbackSubmitter('session-a', async options => {
+    received.push([...options.feedback])
+    return {
+      sessionId: 'session-a',
+      entries: [
+        { idx: 'memory-a-1', relevant: true, correct: true, advice: null }
+      ],
+      instructions: {
+        content: '',
+        policy: '',
+        adding: '',
+        rating: '',
+        next: ''
+      }
+    }
+  })
+  await submit('memory-a-1', { relevant: true, correct: true, comment: 'why' })
+  assert.deepEqual(received, [
+    [{ idx: 'memory-a-1', relevant: true, correct: true, comment: 'why' }]
+  ])
+})
+
+test('a submitter throws a typed error rather than returning undefined when entries is empty', async () => {
+  const submit = feedbackSubmitter('session-a', async () => ({
+    sessionId: 'session-a',
+    entries: [],
+    instructions: {
+      content: '',
+      policy: '',
+      adding: '',
+      rating: '',
+      next: ''
+    }
+  }))
+  await assert.rejects(
+    submit('memory-a-1', { relevant: true, correct: true }),
+    (error: unknown) => {
+      assert.ok(error instanceof MemcoInternalError)
+      assert.match(error.detail, /no feedback entry.*"memory-a-1"/)
+      return true
+    }
+  )
+})
+
+test('toSearchResult builds its submitter from the response own session id', async () => {
+  const seen: Array<{
+    sessionId: string
+    rating: Pick<FeedbackRating, 'idx' | 'relevant' | 'correct'>
+  }> = []
+  const result = toSearchResult(
+    pb.SearchResponse.fromPartial({
+      sessionId: 'session-from-response',
+      memories: [{ idx: 'memory-a-1' }, { idx: 'memory-a-2' }]
+    }),
+    async options => {
+      const [rating] = [...options.feedback]
+      seen.push({
+        sessionId: options.sessionId,
+        rating: {
+          idx: rating!.idx,
+          relevant: rating!.relevant,
+          correct: rating!.correct
+        }
+      })
+      return {
+        sessionId: options.sessionId,
+        entries: [{ idx: 'x', relevant: true, correct: true, advice: null }],
+        instructions: {
+          content: '',
+          policy: '',
+          adding: '',
+          rating: '',
+          next: ''
+        }
+      }
+    }
+  )
+  await result.memories[0]!.feedback({ relevant: true, correct: true })
+  await result.memories[1]!.feedback({ relevant: false, correct: false })
+  // Every memory in the result shares the one submitter, built from the
+  // response's own session id rather than one supplied by the caller — and
+  // each call still carries its own memory's idx and its own rating, so a
+  // regression where every memory closed over the same idx would fail here.
+  assert.deepEqual(seen, [
+    {
+      sessionId: 'session-from-response',
+      rating: { idx: 'memory-a-1', relevant: true, correct: true }
+    },
+    {
+      sessionId: 'session-from-response',
+      rating: { idx: 'memory-a-2', relevant: false, correct: false }
+    }
+  ])
 })

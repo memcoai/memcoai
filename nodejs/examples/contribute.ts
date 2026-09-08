@@ -17,8 +17,11 @@ const DOMAIN = 'coding'
 async function main(): Promise<void> {
   await using client = await new Memco().connect()
 
-  // Held as an id rather than bound in a scope, which is the other half of
-  // what search_and_rate.ts shows: every call below names it explicitly.
+  // startSession() returns the same fully capable session withSession() does,
+  // so holding it as a plain id here (and calling client.memory.* by hand
+  // below) is not the only option any more — it is the shape to prefer when
+  // the id itself needs to travel somewhere the session object can't: into a
+  // database row, across a queue, or into a log line to be reattached later.
   const session = await client.memory.startSession(DOMAIN)
 
   // Writes are accepted asynchronously, so the result addresses the operation
@@ -31,7 +34,7 @@ async function main(): Promise<void> {
       'that one acceptance, so retrying a write that appears to fail can ' +
       'record it twice. Retry the read operations instead, and use the ' +
       'returned operation id to undo a write you did not mean to make.',
-    sessionId: session.sessionId,
+    sessionId: session.id,
     tags: [
       { type: 'language', value: 'typescript' },
       { type: 'task', value: 'implementation' }
@@ -52,7 +55,7 @@ async function main(): Promise<void> {
   // constant is worth preferring over typing the string.
   const enriched = await client.memory.enrichMemory({
     memoryIdx: NEW_MEMORY,
-    sessionId: session.sessionId,
+    sessionId: session.id,
     title: "Connecting is what teaches a client the service's limits",
     content:
       'connect() probes health and then calls listDomains. The second call ' +

@@ -1,12 +1,14 @@
 """Proto message to frozen dataclass conversion."""
 
-import dataclasses
 from datetime import date
+from typing import cast
 
 import pytest
 
 from memco import types
 from memco._convert import (
+    to_async_memory,
+    to_async_search_result,
     to_domain_list,
     to_feedback_result,
     to_import_result,
@@ -17,6 +19,13 @@ from memco._convert import (
     to_write_result,
 )
 from memco.memory.v1 import memory_pb2 as pb
+from memco.operations import AsyncMemoryOperations, MemoryOperations
+
+# A stand-in for an operations namespace: to_memory/to_search_result only ever
+# store what they are given, so identity, not behaviour, is what these tests
+# check. Cast rather than a real MemoryOperations, which needs a live stub.
+_SENTINEL_SYNC = cast(MemoryOperations, object())
+_SENTINEL_ASYNC = cast(AsyncMemoryOperations, object())
 
 
 def test_enums_fold_unknown_wire_values_to_unspecified():
@@ -28,17 +37,19 @@ def test_enums_fold_unknown_wire_values_to_unspecified():
     assert types.ImportStatus.from_wire(999) is types.ImportStatus.UNSPECIFIED
 
 
-def test_results_are_frozen():
-    session = to_session(pb.StartSessionResponse(session_id="session-a"))
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        session.session_id = "other"  # type: ignore[misc]
+def test_session_converts_to_a_plain_id_and_instructions_pair():
+    # operations.py builds the rich Session/AsyncSession from this tuple, since
+    # _convert.py must not import operations.py (that would cycle).
+    session_id, instructions = to_session(pb.StartSessionResponse(session_id="session-a"))
+    assert session_id == "session-a"
+    assert isinstance(instructions, types.Instructions)
 
 
 def test_instructions_keep_empty_strings():
     # The contract documents an empty part as meaningful, so it stays a str.
-    session = to_session(pb.StartSessionResponse(session_id="s"))
-    assert session.instructions.content == ""
-    assert session.instructions.policy == ""
+    _, instructions = to_session(pb.StartSessionResponse(session_id="s"))
+    assert instructions.content == ""
+    assert instructions.policy == ""
 
 
 def test_repeated_fields_become_tuples():
@@ -201,6 +212,49 @@ def test_search_result_nests_memories_and_insights():
     assert memory.intents == ("why does X happen",)
     insight = memory.insights[0]
     assert (insight.title, insight.endorsed, insight.disputed) == ("T", 1, 0)
+
+
+def test_to_memory_defaults_to_unbound():
+    memory = to_memory(pb.MemoryResult(idx="m"))
+    assert memory._operations is None
+    assert memory._session_id == ""
+
+
+def test_to_memory_attaches_the_operations_and_session_it_was_given():
+    memory = to_memory(pb.MemoryResult(idx="m"), operations=_SENTINEL_SYNC, session_id="session-a")
+    assert memory._operations is _SENTINEL_SYNC
+    assert memory._session_id == "session-a"
+
+
+def test_to_async_memory_attaches_the_operations_and_session_it_was_given():
+    memory = to_async_memory(
+        pb.MemoryResult(idx="m"), operations=_SENTINEL_ASYNC, session_id="session-a"
+    )
+    assert isinstance(memory, types.AsyncMemory)
+    assert memory._operations is _SENTINEL_ASYNC
+    assert memory._session_id == "session-a"
+
+
+def test_to_search_result_binds_every_memory_to_the_response_s_own_session():
+    response = pb.SearchResponse(
+        session_id="session-a", memories=[pb.MemoryResult(idx="m1"), pb.MemoryResult(idx="m2")]
+    )
+    result = to_search_result(response, operations=_SENTINEL_SYNC)
+    assert all(memory._operations is _SENTINEL_SYNC for memory in result.memories)
+    assert all(memory._session_id == "session-a" for memory in result.memories)
+
+
+def test_to_search_result_defaults_to_unbound_memories():
+    response = pb.SearchResponse(session_id="session-a", memories=[pb.MemoryResult(idx="m1")])
+    result = to_search_result(response)
+    assert result.memories[0]._operations is None
+
+
+def test_to_async_search_result_builds_async_memories():
+    response = pb.SearchResponse(session_id="session-a", memories=[pb.MemoryResult(idx="m1")])
+    result = to_async_search_result(response, operations=_SENTINEL_ASYNC)
+    assert isinstance(result.memories[0], types.AsyncMemory)
+    assert result.memories[0]._operations is _SENTINEL_ASYNC
 
 
 def test_tag_round_trips_through_the_wire():

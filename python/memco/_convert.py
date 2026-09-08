@@ -16,10 +16,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from memco.memory.v1 import memory_pb2 as _pb
 
 from .types import (
+    AsyncMemory,
     DomainEntry,
     DomainList,
     FeedbackEntry,
@@ -34,11 +36,15 @@ from .types import (
     RevertOutcome,
     RevertResult,
     SearchResult,
-    Session,
     WriteResult,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - avoids a cycle with operations.py
+    from .operations import AsyncMemoryOperations, MemoryOperations
+
 __all__ = [
+    "to_async_memory",
+    "to_async_search_result",
     "to_domain_list",
     "to_feedback_result",
     "to_import_result",
@@ -124,11 +130,21 @@ def _to_insight(message: _pb.InsightResult) -> Insight:
     )
 
 
-def to_memory(message: _pb.MemoryResult) -> Memory:
+def to_memory(
+    message: _pb.MemoryResult,
+    *,
+    operations: MemoryOperations | None = None,
+    session_id: str = "",
+) -> Memory:
     """Convert a ``MemoryResult`` message.
 
     Args:
         message: The generated message.
+        operations: The namespace ``feedback()`` submits through, or ``None``
+            to build a memory with no feedback capability at all.
+        session_id: The session ``feedback()`` records a rating under. An empty
+            string is what a memory fetched by ``get_memory`` carries: nothing
+            recorded it under a session, so a rating has nowhere to attach.
 
     Returns:
         The immutable equivalent, with nested insights converted and an empty
@@ -141,6 +157,38 @@ def to_memory(message: _pb.MemoryResult) -> Memory:
         intents=tuple(message.intents),
         insights=tuple(_to_insight(insight) for insight in message.insights),
         reference=_optional(message.reference),
+        _operations=operations,
+        _session_id=session_id,
+    )
+
+
+def to_async_memory(
+    message: _pb.MemoryResult,
+    *,
+    operations: AsyncMemoryOperations | None = None,
+    session_id: str = "",
+) -> AsyncMemory:
+    """Convert a ``MemoryResult`` message, for the asyncio client.
+
+    Mirrors :func:`to_memory`; see it for what each argument means.
+
+    Args:
+        message: The generated message.
+        operations: The namespace ``feedback()`` submits through.
+        session_id: The session ``feedback()`` records a rating under.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return AsyncMemory(
+        idx=message.idx,
+        kind=message.kind,
+        times_served=message.times_served,
+        intents=tuple(message.intents),
+        insights=tuple(_to_insight(insight) for insight in message.insights),
+        reference=_optional(message.reference),
+        _operations=operations,
+        _session_id=session_id,
     )
 
 
@@ -214,33 +262,68 @@ def to_domain_list(message: _pb.ListDomainsResponse) -> DomainList:
     )
 
 
-def to_session(message: _pb.StartSessionResponse) -> Session:
+def to_session(message: _pb.StartSessionResponse) -> tuple[str, Instructions]:
     """Convert a ``StartSessionResponse``.
+
+    Returns the fields rather than a :class:`~memco.operations.Session`: that
+    class holds a live reference to the namespace that opened it, and this
+    module must stay a pure function of the wire message -- ``operations.py``
+    is where the rich object is assembled.
 
     Args:
         message: The generated response.
 
     Returns:
-        The immutable equivalent.
+        The session id, and the guidance that came with opening it.
     """
-    return Session(
-        session_id=message.session_id,
-        instructions=_to_instructions(message.instructions),
-    )
+    return message.session_id, _to_instructions(message.instructions)
 
 
-def to_search_result(message: _pb.SearchResponse) -> SearchResult:
+def to_search_result(
+    message: _pb.SearchResponse, *, operations: MemoryOperations | None = None
+) -> SearchResult[Memory]:
     """Convert a ``SearchResponse``.
 
     Args:
         message: The generated response.
+        operations: The namespace each memory's ``feedback()`` submits
+            through, bound to this response's own session id.
 
     Returns:
         The immutable equivalent, with an empty notice mapped to ``None``.
     """
     return SearchResult(
         session_id=message.session_id,
-        memories=tuple(to_memory(memory) for memory in message.memories),
+        memories=tuple(
+            to_memory(memory, operations=operations, session_id=message.session_id)
+            for memory in message.memories
+        ),
+        notice=_optional(message.notice),
+        instructions=_to_instructions(message.instructions),
+    )
+
+
+def to_async_search_result(
+    message: _pb.SearchResponse, *, operations: AsyncMemoryOperations | None = None
+) -> SearchResult[AsyncMemory]:
+    """Convert a ``SearchResponse``, for the asyncio client.
+
+    Mirrors :func:`to_search_result`; see it for what each argument means.
+
+    Args:
+        message: The generated response.
+        operations: The namespace each memory's ``feedback()`` submits
+            through.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return SearchResult(
+        session_id=message.session_id,
+        memories=tuple(
+            to_async_memory(memory, operations=operations, session_id=message.session_id)
+            for memory in message.memories
+        ),
         notice=_optional(message.notice),
         instructions=_to_instructions(message.instructions),
     )

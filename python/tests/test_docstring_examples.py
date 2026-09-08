@@ -23,7 +23,8 @@ import pytest
 
 from memco import AsyncMemco
 from memco.agent import AsyncToolset
-from memco.operations import AsyncMemoryOperations, AsyncSessionScope
+from memco.operations import AsyncMemoryOperations, AsyncSession
+from memco.types import AsyncMemory
 
 PACKAGE = pathlib.Path(__file__).parent.parent / "memco"
 
@@ -36,8 +37,9 @@ GENERATED = "memory"
 RECEIVERS = {
     "client": AsyncMemco,
     "client.memory": AsyncMemoryOperations,
-    "session": AsyncSessionScope,
+    "session": AsyncSession,
     "toolset": AsyncToolset,
+    "memory": AsyncMemory,
 }
 
 AWAITED = re.compile(r"await\s+([\w.]+)\.(\w+)\(")

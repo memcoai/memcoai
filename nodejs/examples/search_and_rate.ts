@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   // scope for every search made for the same task, and for the ratings
   // afterwards.
   await using session = await client.memory.withSession(DOMAIN)
-  console.log(`session ${session.sessionId}`)
+  console.log(`session ${session.id}`)
 
   const result = await session.search(
     'how does gRPC health checking interact with an auth interceptor',

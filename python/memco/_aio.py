@@ -105,8 +105,7 @@ class AsyncMemco:
     Example:
         >>> async with AsyncMemco() as client:
         ...     session = await client.memory.start_session("coding")
-        ...     result = await client.memory.search("how does health checking work",
-        ...                                         session_id=session.session_id)
+        ...     result = await session.search("how does health checking work")
     """
 
     def __init__(

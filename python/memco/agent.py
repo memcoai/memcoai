@@ -41,8 +41,9 @@ import grpc
 
 from ._validate import NEW_MEMORY
 from .errors import MemcoConfigError, MemcoInvalidRequestError, MemcoNotFoundError
-from .operations import AsyncSessionScope, SessionScope
+from .operations import AsyncSession, Session
 from .types import (
+    AsyncMemory,
     DomainEntry,
     FeedbackResult,
     Instructions,
@@ -479,7 +480,7 @@ class AsyncToolset(tuple[AsyncTool, ...]):
             return _reported(exc)
 
 
-def _tools(session: SessionScope) -> Toolset:
+def _tools(session: Session) -> Toolset:
     """Build every memory operation as a tool bound to one open session.
 
     Args:
@@ -490,7 +491,7 @@ def _tools(session: SessionScope) -> Toolset:
         One tool per operation the session scope carries.
 
     Raises:
-        TypeError: If given the other surface's scope.
+        TypeError: If given the other surface's session.
         MemcoConfigError: If this package's docstrings are unavailable, which is
             what running Python with ``-OO`` does. Every description is derived
             from them, and tools carrying none steer a model by nothing.
@@ -499,8 +500,8 @@ def _tools(session: SessionScope) -> Toolset:
         >>> with client.memory.with_session("coding") as session:
         ...     [tool.name for tool in session.tools()]
     """
-    if not isinstance(session, SessionScope):
-        raise TypeError(f"tools() takes a SessionScope; {type(session).__name__} has its own")
+    if not isinstance(session, Session):
+        raise TypeError(f"tools() takes a Session; {type(session).__name__} has its own")
     return Toolset(
         Tool(
             name=_PREFIX + name,
@@ -512,7 +513,7 @@ def _tools(session: SessionScope) -> Toolset:
     )
 
 
-def _async_tools(session: AsyncSessionScope) -> AsyncToolset:
+def _async_tools(session: AsyncSession) -> AsyncToolset:
     """Build every memory operation as an awaitable tool bound to one session.
 
     Args:
@@ -532,8 +533,8 @@ def _async_tools(session: AsyncSessionScope) -> AsyncToolset:
         >>> async with client.memory.with_session("coding") as session:
         ...     [tool.name for tool in session.tools()]
     """
-    if not isinstance(session, AsyncSessionScope):
-        raise TypeError(f"tools() takes an AsyncSessionScope; {type(session).__name__} has its own")
+    if not isinstance(session, AsyncSession):
+        raise TypeError(f"tools() takes an AsyncSession; {type(session).__name__} has its own")
     return AsyncToolset(
         AsyncTool(
             name=_PREFIX + name,
@@ -548,7 +549,9 @@ def _async_tools(session: AsyncSessionScope) -> AsyncToolset:
 # -- rendering ------------------------------------------------------------
 
 
-def render(value: SearchResult | Memory | WriteResult | FeedbackResult | RevertResult) -> str:
+def render(
+    value: SearchResult[Any] | Memory | AsyncMemory | WriteResult | FeedbackResult | RevertResult,
+) -> str:
     """Render an operation's result as text a model can read.
 
     Every result carries :class:`~memco.types.Instructions` — the service's own
@@ -664,7 +667,7 @@ def _instructions(instructions: Instructions) -> str:
     )
 
 
-def _memory(memory: Memory) -> str:
+def _memory(memory: Memory | AsyncMemory) -> str:
     """Render one memory and its insights.
 
     Args:
@@ -701,7 +704,7 @@ def _memory(memory: Memory) -> str:
     return "\n".join(lines)
 
 
-def _search_result(result: SearchResult) -> str:
+def _search_result(result: SearchResult[Any]) -> str:
     """Render what a search selected.
 
     Args:
@@ -770,6 +773,7 @@ def _revert_result(result: RevertResult) -> str:
 _RENDERERS: dict[type, Callable[[Any], str]] = {
     SearchResult: _search_result,
     Memory: _memory,
+    AsyncMemory: _memory,
     WriteResult: _write_result,
     FeedbackResult: _feedback_result,
     RevertResult: _revert_result,
@@ -1139,7 +1143,7 @@ def _specifications() -> tuple[tuple[str, str, dict[str, Any], dict[str, object]
     """
     built = []
     for name in _OPERATIONS:
-        method = getattr(SessionScope, name)
+        method = getattr(Session, name)
         description, documented = _describe(method, name)
         hints = get_type_hints(method)
         signature = inspect.signature(method)

@@ -97,8 +97,7 @@ class Memco:
     Example:
         >>> with Memco() as client:
         ...     session = client.memory.start_session("coding")
-        ...     result = client.memory.search("how does gRPC health checking work",
-        ...                                   session_id=session.session_id)
+        ...     result = session.search("how does gRPC health checking work")
         ...     for memory in result.memories:
         ...         print(memory.idx, len(memory.insights))
     """
