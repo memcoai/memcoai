@@ -13,6 +13,12 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
+[project.urls]
+Homepage = "https://memco.ai"
+Documentation = "https://docs.memco.ai"
+Source = "https://github.com/memcoai/memcoai"
+Issues = "https://github.com/memcoai/memcoai/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",

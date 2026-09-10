@@ -9,7 +9,7 @@
     "grpc",
     "sdk"
   ],
-  "homepage": "https://github.com/memcoai/memcoai/tree/main/nodejs#readme",
+  "homepage": "https://memco.ai",
   "bugs": {
     "url": "https://github.com/memcoai/memcoai/issues"
   },
