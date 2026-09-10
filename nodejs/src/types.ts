@@ -755,7 +755,7 @@ export interface ImportResult {
  * contract this package speaks.
  */
 export interface ProtoRecord {
-  /** Its path within the contract, such as `memco/memory/v1/memory.proto`. */
+  /** Its path within the contract, such as `memcoai/memory/v1/memory.proto`. */
   readonly path: string
   /** The SHA-256 of its contents when the client was generated. */
   readonly sha256: string
