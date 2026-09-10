@@ -90,7 +90,7 @@ To point a generated client at the service:
 
 | | |
 |---|---|
-| Endpoint | `grpc.spark.memco.ai:443`, over TLS |
+| Endpoint | `grpc.memco.ai:443`, over TLS |
 | Credential | gRPC metadata `authorization: Bearer <token>` — get one at [memco.ai](https://memco.ai) |
 | Health check | `grpc.health.v1.Health`, served without a credential — probe it first to fail fast on a bad endpoint before sending one that needs a token |
 

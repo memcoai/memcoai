@@ -79,7 +79,7 @@ class AsyncMemco:
             a session token. When omitted, ``MEMCO_API_TOKEN`` is used, falling back
             to the deprecated ``MEMCO_API_KEY`` with a warning.
         host: Service endpoint, optionally including a port. When omitted,
-            ``MEMCO_API_HOST`` is used, falling back to ``grpc.spark.memco.ai``.
+            ``MEMCO_API_HOST`` is used, falling back to ``grpc.memco.ai``.
         tls: Whether to dial over TLS using the system trust store.
         timeout: Default per-call deadline in seconds.
         env: Environment mapping to read defaults from. Defaults to

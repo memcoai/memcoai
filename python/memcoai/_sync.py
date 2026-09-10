@@ -64,7 +64,7 @@ class Memco:
             to the deprecated ``MEMCO_API_KEY`` with a warning.
         host: Service endpoint, optionally including a port such as
             ``localhost:50051``. When omitted, ``MEMCO_API_HOST`` is used,
-            falling back to ``grpc.spark.memco.ai``. Port 443 is assumed when the
+            falling back to ``grpc.memco.ai``. Port 443 is assumed when the
             host carries none.
         tls: Whether to dial over TLS using the system trust store. Set to
             ``False`` only for a plaintext endpoint such as a local server.

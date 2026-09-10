@@ -35,7 +35,7 @@ Configuration comes from arguments first and the environment second:
 
 * ``MEMCO_API_TOKEN`` — the credential: an API key or a session token.
   The older ``MEMCO_API_KEY`` still works but warns.
-* ``MEMCO_API_HOST`` — the endpoint, defaulting to ``grpc.spark.memco.ai:443``.
+* ``MEMCO_API_HOST`` — the endpoint, defaulting to ``grpc.memco.ai:443``.
 * ``MEMCO_LOG`` — the SDK's log level, defaulting to ``info``: ``debug``,
   ``info``, ``warning``, ``error``, ``critical``, or ``none`` to turn it off.
   The ``log_level`` argument on either client does the same and wins over it.

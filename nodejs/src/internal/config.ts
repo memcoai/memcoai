@@ -16,7 +16,7 @@ import { ROOT, getLogger } from './logging.js'
 const log = getLogger(`${ROOT}.config`)
 
 /** Endpoint used when neither an argument nor `MEMCO_API_HOST` supplies one. */
-export const DEFAULT_HOST = 'grpc.spark.memco.ai'
+export const DEFAULT_HOST = 'grpc.memco.ai'
 
 /** Port used when the host does not carry one of its own. */
 export const DEFAULT_PORT = 443

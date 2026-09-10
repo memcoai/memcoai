@@ -161,7 +161,7 @@ Arguments win over the environment, which wins over the defaults.
 | Setting | Argument | Environment | Default |
 |---|---|---|---|
 | Credential | `token` | `MEMCO_API_TOKEN` | required |
-| Endpoint | `host` | `MEMCO_API_HOST` | `grpc.spark.memco.ai:443` |
+| Endpoint | `host` | `MEMCO_API_HOST` | `grpc.memco.ai:443` |
 | TLS | `tls` | — | `True` |
 | Deadline | `timeout` | — | 30 seconds |
 | Log level | `log_level` | `MEMCO_LOG` | `info` |
@@ -197,8 +197,8 @@ raised, since a client is often built somewhere the traceback does not reach.
 
 ```console
 $ python app.py
-2026-08-31 10:02:11,604 memcoai._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
-2026-08-31 10:02:14,318 memcoai._sync INFO closed connection to grpc.spark.memco.ai:443
+2026-08-31 10:02:11,604 memcoai._sync INFO connected to grpc.memco.ai:443 (tls=True)
+2026-08-31 10:02:14,318 memcoai._sync INFO closed connection to grpc.memco.ai:443
 ```
 
 Set `MEMCO_LOG` to change that level — `debug`, `info`, `warning`, `error`,
@@ -217,10 +217,10 @@ cap silently trimmed a list you passed:
 ```console
 $ MEMCO_LOG=debug python app.py
 2026-08-31 10:02:11,417 memcoai._config DEBUG credential taken from MEMCO_API_TOKEN
-2026-08-31 10:02:11,417 memcoai._config DEBUG endpoint grpc.spark.memco.ai:443 tls=True (host from the default)
-2026-08-31 10:02:11,502 memcoai._sync DEBUG health check on grpc.spark.memco.ai:443 ok in 84ms
+2026-08-31 10:02:11,417 memcoai._config DEBUG endpoint grpc.memco.ai:443 tls=True (host from the default)
+2026-08-31 10:02:11,502 memcoai._sync DEBUG health check on grpc.memco.ai:443 ok in 84ms
 2026-08-31 10:02:11,604 memcoai._sync DEBUG ListDomains ok in 101ms
-2026-08-31 10:02:11,604 memcoai._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
+2026-08-31 10:02:11,604 memcoai._sync INFO connected to grpc.memco.ai:443 (tls=True)
 2026-08-31 10:02:11,731 memcoai._validate DEBUG tags trimmed from 62 to 50 by the service's cap
 2026-08-31 10:02:11,905 memcoai._sync DEBUG Search ok in 173ms
 ```
@@ -252,7 +252,7 @@ with Memco() as client:  # records flow through your handlers
 
 ```console
 $ MEMCO_LOG=none python app.py
-INFO:memcoai._sync:connected to grpc.spark.memco.ai:443 (tls=True)
+INFO:memcoai._sync:connected to grpc.memco.ai:443 (tls=True)
 ```
 
 Use the environment variable rather than `log_level="none"` for this: the

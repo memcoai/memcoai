@@ -14,7 +14,7 @@ from .errors import MemcoConfigError
 
 _log = logging.getLogger(__name__)
 
-DEFAULT_HOST = "grpc.spark.memco.ai"
+DEFAULT_HOST = "grpc.memco.ai"
 """Endpoint used when neither an argument nor ``MEMCO_API_HOST`` supplies one."""
 
 DEFAULT_PORT = 443
@@ -66,7 +66,7 @@ class ClientConfig:
         rather than as the malformed address it is.
 
         Returns:
-            The gRPC target, for example ``grpc.spark.memco.ai:443`` or
+            The gRPC target, for example ``grpc.memco.ai:443`` or
             ``[2001:db8::1]:443``.
         """
         host = f"[{self.host}]" if ":" in self.host else self.host

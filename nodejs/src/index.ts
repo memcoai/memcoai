@@ -9,7 +9,7 @@
  * | Variable | What it sets |
  * |---|---|
  * | `MEMCO_API_TOKEN` | the credential. Required. |
- * | `MEMCO_API_HOST` | the endpoint. Defaults to `grpc.spark.memco.ai:443`. |
+ * | `MEMCO_API_HOST` | the endpoint. Defaults to `grpc.memco.ai:443`. |
  * | `MEMCO_LOG` | the log level: `critical`, `error`, `warning`, `info`, `debug`, or `none` to silence. Defaults to `info`. |
  *
  * `MEMCO_API_KEY` is still read as a fallback for `MEMCO_API_TOKEN`, and warns

@@ -97,5 +97,5 @@ test('a null token falls back to the environment', () => {
     token: null as never,
     env: { MEMCO_API_TOKEN: 'from-the-environment' }
   })
-  assert.equal(config.target, 'grpc.spark.memco.ai:443')
+  assert.equal(config.target, 'grpc.memco.ai:443')
 })

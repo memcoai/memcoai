@@ -164,13 +164,13 @@ handle. `AGENT_RECOVERABLE` names that line.
 
 Arguments win over the environment, which wins over the defaults.
 
-| Setting    | Option     | Environment       | Default                   |
-| ---------- | ---------- | ----------------- | ------------------------- |
-| Credential | `token`    | `MEMCO_API_TOKEN` | required                  |
-| Endpoint   | `host`     | `MEMCO_API_HOST`  | `grpc.spark.memco.ai:443` |
-| TLS        | `tls`      | —                 | `true`                    |
-| Deadline   | `timeout`  | —                 | 30 seconds                |
-| Log level  | `logLevel` | `MEMCO_LOG`       | `info`                    |
+| Setting    | Option     | Environment       | Default             |
+| ---------- | ---------- | ----------------- | ------------------- |
+| Credential | `token`    | `MEMCO_API_TOKEN` | required            |
+| Endpoint   | `host`     | `MEMCO_API_HOST`  | `grpc.memco.ai:443` |
+| TLS        | `tls`      | —                 | `true`              |
+| Deadline   | `timeout`  | —                 | 30 seconds          |
+| Log level  | `logLevel` | `MEMCO_LOG`       | `info`              |
 
 The credential is either a Memco API key or a session token issued for your
 account; both go in the same header. `MEMCO_API_KEY` is still honoured but
@@ -194,7 +194,7 @@ Everything the SDK logs is written to `stderr` under a name beginning `memco.` �
 says which part of the SDK spoke.
 
 ```
-2026-08-31T12:00:00.000Z memco.client INFO connected to grpc.spark.memco.ai:443 (tls=true)
+2026-08-31T12:00:00.000Z memco.client INFO connected to grpc.memco.ai:443 (tls=true)
 2026-08-31T12:00:00.120Z memco.client DEBUG Search ok in 118ms
 2026-08-31T12:00:00.120Z memco.validate DEBUG tags trimmed from 62 to 50 by the service's cap
 ```

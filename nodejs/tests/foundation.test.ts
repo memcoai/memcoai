@@ -72,7 +72,9 @@ test('provenance reports the contract the generated client was built from', () =
   const recorded = provenance()
   assert.match(recorded.serverCommit, /^[0-9a-f]{40}$/)
   assert.ok(
-    recorded.protos.some(proto => proto.path === 'memcoai/memory/v1/memory.proto')
+    recorded.protos.some(
+      proto => proto.path === 'memcoai/memory/v1/memory.proto'
+    )
   )
   assert.equal(
     provenance(),
