@@ -42,9 +42,9 @@ a provider package for the model you run — plus a model credential:
 npm install langchain @langchain/google-genai
 ```
 
-Its module comment gives the full command, and [`gemini.md`](gemini.md) covers
-getting a Google key. The tools it uses come from the SDK's own agent layer, so
-the file itself is the framework wiring and nothing more.
+Its module comment gives the full command. The tools it uses come from the
+SDK's own agent layer, so the file itself is the framework wiring and nothing
+more.
 
 `tests/examples.test.ts` imports every example in this directory on each run,
 and asserts that importing one runs nothing — so an example that stopped

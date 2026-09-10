@@ -35,7 +35,7 @@
  * Run it with:
  *
  *     export MEMCO_API_TOKEN=...
- *     export GOOGLE_API_KEY=...           # see gemini.md, next to this file
+ *     export GOOGLE_API_KEY=...
  *
  *     npm run build:test && node build/js/examples/langchain_agent.js
  *

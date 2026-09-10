@@ -21,10 +21,12 @@ dev = [
     "types-protobuf",
     "ruff>=0.6",
     "pytest-cov>=5",
-    # examples/langchain_agent.py is imported by the suite like every other
-    # example, so the framework it names has to be installed to run the tests.
-    # A provider package (langchain-google-genai, ...) is needed only to run it.
     "langchain>=1.0",
+    "ddgs>=9",
+    # The test suite fakes the model, so it never needs a real provider package —
+    # this is here only so `uv run examples/langchain_agent.py` works from a
+    # synced checkout without a --with flag for the one it defaults to.
+    "langchain-google-genai>=4",
 ]
 docs = [
     "sphinx>=7.3",
