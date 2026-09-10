@@ -1,5 +1,8 @@
 <p align="center">
-  <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memcoai/main/assets/logo.svg" width="320">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/memcoai/memcoai/main/assets/logo-dark.svg">
+    <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memcoai/main/assets/logo.svg" width="320">
+  </picture>
 </p>
 
 <p align="center">
