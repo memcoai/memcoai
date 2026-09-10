@@ -105,8 +105,16 @@ jobs:
     name: Publish to PyPI
     needs: [gate, ci]
     runs-on: ubuntu-latest
-    # PYPI_API_TOKEN lives in this environment. Give it a required reviewer and
-    # a tag push becomes verify-everything, then wait for a human.
+    # Trusted publishing exchanges this job's OIDC identity for a short-lived
+    # PyPI token, so there is no long-lived secret to hold, leak or rotate.
+    # PyPI issues it only to the publisher configured on the project: this
+    # repository, this workflow file, this environment — see
+    # https://docs.github.com/en/actions/concepts/security/openid-connect.
+    permissions:
+      id-token: write
+    # No secret lives here now, but the environment stays: give it a required
+    # reviewer and a tag push becomes verify-everything, then wait for a human
+    # before the irreversible upload.
     environment:
       name: pypi
       url: https://pypi.org/project/memcoai/${{ needs.gate.outputs.version }}
@@ -120,21 +128,12 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
 
-      # The guard is not ceremony: uv uploads anonymously on an empty token, so
-      # a secret that was never filled in would otherwise surface as an opaque
-      # 403 from PyPI rather than as the setup mistake it is.
-      #
-      # To move to trusted publishing later: drop UV_PUBLISH_TOKEN and add
-      # `--trusted-publishing always` plus `id-token: write` to this job.
+      # `always` rather than `automatic`: a trusted publisher that is missing
+      # or misconfigured on PyPI's side must fail loudly here, not fall back
+      # to an anonymous upload that fails with an opaque 403 reading like a
+      # PyPI outage rather than the setup mistake it is.
       - name: Publish
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          [ -n "$UV_PUBLISH_TOKEN" ] || {
-            echo "::error::PYPI_API_TOKEN is not set in the 'pypi' environment"
-            exit 1
-          }
-          uv publish dist/*.whl dist/*.tar.gz
+        run: uv publish --trusted-publishing always dist/*.whl dist/*.tar.gz
 
   release:
     name: Draft the GitHub release
