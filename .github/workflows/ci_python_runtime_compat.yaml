@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# Cold caches and large downloads (langchain's optional extras, torch-adjacent
+# wheels pulled in transitively) occasionally outrun uv's 30s default read
+# timeout on a shared runner; this only widens the window; retries still cap
+# at UV_HTTP_RETRIES' default of 3.
+env:
+  UV_HTTP_TIMEOUT: "60"
+
 jobs:
   runtime-compat:
     name: Runtime compat (${{ matrix.label }})
