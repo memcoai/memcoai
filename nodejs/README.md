@@ -29,24 +29,24 @@ knowledge goes instead.
 ## Install
 
 ```bash
-npm install @memcoai/memcoai
+npm install @memco/memcoai
 ```
 
 Node 22 or newer. The package ships both ESM and CommonJS builds with full type
 declarations for each, so `import` and `require` both work.
 
 ```ts
-import { Memco } from '@memcoai/memcoai'
+import { Memco } from '@memco/memcoai'
 ```
 
 ```js
-const { Memco } = require('@memcoai/memcoai')
+const { Memco } = require('@memco/memcoai')
 ```
 
 ## Quick start
 
 ```ts
-import { Memco } from '@memcoai/memcoai'
+import { Memco } from '@memco/memcoai'
 
 await using client = await new Memco().connect() // reads MEMCO_API_TOKEN
 
@@ -112,7 +112,7 @@ A bound session carries the tools a model needs, described in the service's own
 words rather than each SDK's:
 
 ```ts
-import { briefing } from '@memcoai/memcoai'
+import { briefing } from '@memco/memcoai'
 import { createAgent } from 'langchain'
 
 await using client = await new Memco().connect()
@@ -284,7 +284,7 @@ if (reverted.outcome === RevertOutcome.EXPIRED) {
 Which version of the service contract this package was generated from:
 
 ```ts
-import { provenance } from '@memcoai/memcoai'
+import { provenance } from '@memco/memcoai'
 
 provenance().serverCommit // '93ec8030bac33afa1bf2aa376d5f5a406098d81a'
 provenance().protos[0].path // 'memcoai/memory/v1/memory.proto'

@@ -12,7 +12,7 @@ seven headings — Prerequisites, Setting up, Running the checks, Layout, Tests,
 Documentation, Style — so the two can be read side by side:
 
 - [Python](#python) — published to PyPI as `memcoai`
-- [Node.js](#nodejs) — published to npm as `@memcoai/memcoai`
+- [Node.js](#nodejs) — published to npm as `@memco/memcoai`
 
 ## Reporting a bug
 
@@ -332,7 +332,7 @@ signatures genuinely are `Any`. Say why in the comment.
 # Node.js
 
 The Node.js SDK is in [`nodejs/`](nodejs/) and is published to npm as
-[`@memcoai/memcoai`](https://www.npmjs.com/package/@memcoai/memcoai).
+[`@memco/memcoai`](https://www.npmjs.com/package/@memco/memcoai).
 
 ## Prerequisites
 

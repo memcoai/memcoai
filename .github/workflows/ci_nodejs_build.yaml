@@ -61,14 +61,14 @@ jobs:
         working-directory: /tmp/verify
         run: |
           node --input-type=module - <<'JS'
-          import { provenance } from '@memcoai/memcoai'
+          import { provenance } from '@memco/memcoai'
           if (!provenance().serverCommit) {
             throw new Error('the provenance descriptor did not reach the tarball')
           }
           console.log('esm ok:', provenance().serverCommit)
           JS
           node --input-type=commonjs - <<'JS'
-          const { provenance } = require('@memcoai/memcoai')
+          const { provenance } = require('@memco/memcoai')
           if (!provenance().serverCommit) {
             throw new Error('the provenance descriptor did not reach the tarball')
           }
@@ -97,7 +97,7 @@ jobs:
           }
           JSON
           cat > consumer.mts <<'TS'
-          import { provenance } from '@memcoai/memcoai'
+          import { provenance } from '@memco/memcoai'
           export const wrong: number = provenance().serverCommit
           TS
           cp consumer.mts consumer.cts
