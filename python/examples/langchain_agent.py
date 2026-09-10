@@ -1,43 +1,24 @@
-"""A LangChain agent wired to shared memory and a web-search tool.
+"""Wire a LangChain agent to Memco shared memory and a web-search tool.
 
-The SDK supplies the tool-building blocks: what each memory tool does, its JSON
-Schema, results rendered as text, the service's own guidance on the domain, and
-the rule for which failures a model may see versus which end the run. This file
-adds only what's specific to the run.
+The agent runs the same task twice. The first run has nothing in memory to go
+on, so it searches the web; if it saves what it finds, the second run can
+just search memory instead. Both runs report the tokens and time spent, so
+you can see the difference memory makes.
 
-It runs the same task twice, back to back. The first run has nothing in memory
-to go on, so it does the full research; if it saves what it found, the second
-run can just search memory and skip the research. Both runs report how many
-tokens the research took and how long it ran, and the final line compares
-them — the cost of writing something down once, against paying to rediscover
-it every time.
-
-From a checkout of this repo, with the dev extras synced
-(``uv sync --extra dev``), the project's own environment already has
-everything this file needs::
+Run it with::
 
     export MEMCO_API_TOKEN=...
     export GOOGLE_API_KEY=...
 
-    uv run examples/langchain_agent.py
-
-From outside the repo, or without syncing first, install the same packages
-yourself::
-
     pip install memco langchain langchain-google-genai ddgs
     python examples/langchain_agent.py
-
-or in one command, with nothing installed up front::
-
-    uv run --with memco --with langchain --with langchain-google-genai --with ddgs \
-        python examples/langchain_agent.py
 
 Any provider LangChain speaks works — set ``MEMCO_EXAMPLE_MODEL`` to
 ``<provider>:<model>`` for the one you run, such as
 ``anthropic:claude-opus-5``, and install that provider's package instead.
 
-Run for real, this writes a new memory into whatever domain and credential you
-point it at, the same as ``contribute.py`` does.
+Running it for real writes a new memory to whatever domain and credential you
+point it at.
 """
 
 import os
@@ -56,7 +37,6 @@ MODEL = os.environ.get("MEMCO_EXAMPLE_MODEL", "google_genai:gemini-3.1-pro-previ
 
 IDENTITY = "You are an engineering assistant for the team that builds the Memco SDKs."
 
-# A symptom of (grpc/grpc#41725).
 TASK = (
     "One of our services runs as a Cloud Run Function and calls several Google "
     "Cloud APIs — Secrets Manager, Pub/Sub, BigQuery, and Workflows — over gRPC. "
@@ -73,11 +53,7 @@ def run_once(client: Memco, entry: DomainEntry) -> tuple[int, float]:
         entry: The domain to run in, from ``list_domains``.
 
     Returns:
-        The tokens spent on research (tool-calling turns only — both runs land
-        on the same answer, so the final response's tokens are excluded; what
-        differs between runs is the research, not restating the result), and
-        how long the whole run took in seconds. Tool calls — a web search, a
-        memory operation — take real time a token count alone doesn't show.
+        Tokens spent researching, and how long the run took in seconds.
     """
     started = monotonic()
     with client.memory.with_session(DOMAIN) as session:
@@ -107,8 +83,7 @@ def run_once(client: Memco, entry: DomainEntry) -> tuple[int, float]:
             for call in calls:
                 print(f"  -> {call['name']}({call['args']})", flush=True)
             usage = getattr(message, "usage_metadata", None)
-            # Only a tool-calling turn's tokens count as research; the final
-            # turn (no tool_calls) is just the answer, the same in both runs.
+            # Skip the final answer's tokens: it's the same in both runs.
             if usage and calls:
                 total_tokens += usage.get("total_tokens", 0)
 

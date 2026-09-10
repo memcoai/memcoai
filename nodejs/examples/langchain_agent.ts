@@ -1,74 +1,153 @@
 /**
- * Give a LangChain agent the team's shared memory.
+ * Wire a LangChain agent to Memco shared memory and a web-search tool.
  *
- * The SDK supplies all of it: what each tool does, the JSON Schema for its
- * arguments, the results rendered as text, the guidance the service publishes
- * about the domain, the rule about which failures a model may see, and the
- * handover to LangChain itself. The same toolset also speaks Anthropic's and
- * OpenAI's tool formats, so one session drives an agent on any of them.
- *
- * What is left here is the shape of the run, and three things about it are
- * deliberate — none of them the framework's default.
- *
- * The session is opened once, in code, before the agent runs, and bound with
- * `withSession`. The agent never sees a session id and cannot omit or invent
- * one, so every call it makes is recorded as part of the same series.
- *
- * Domain guidance is supplied rather than exposed. `listDomains` is called here
- * and `briefing` renders its answer into the system prompt, because a tool the
- * model may forget to call is a tool that does not steer it.
- *
- * Validation errors go back to the agent and everything else is thrown. A
- * malformed request is something a model can fix on the next turn; a rejected
- * credential is not, and letting it read that failure only invites it to keep
- * trying. `AGENT_RECOVERABLE` is where that line is drawn, and keeping it
- * drawn takes a line of wiring here, because LangChain JS hands the model
- * every tool exception by default.
- *
- * LangChain is not a dependency of this SDK, and neither is any provider
- * package. `@memcoai/memco` installs its gRPC runtime and nothing else, and
- * `toLangChain()` imports LangChain only when it is called, so both have to be
- * installed explicitly before this file will run:
- *
- *     npm install langchain @langchain/google-genai
+ * The agent runs the same task twice. The first run has nothing in memory to
+ * go on, so it searches the web; if it saves what it finds, the second run
+ * can just search memory instead. Both runs report the tokens and time
+ * spent, so you can see the difference memory makes.
  *
  * Run it with:
  *
  *     export MEMCO_API_TOKEN=...
  *     export GOOGLE_API_KEY=...
  *
+ *     npm install langchain ddg-search @langchain/google-genai
  *     npm run build:test && node build/js/examples/langchain_agent.js
  *
  * Any provider LangChain speaks works — set `MEMCO_EXAMPLE_MODEL` to
  * `<provider>:<model>` for the one you run, such as `anthropic:claude-opus-5`,
  * and install that provider's package instead.
+ *
+ * Running it for real writes a new memory to whatever domain and credential
+ * you point it at.
  */
 
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
-import { AIMessage, createAgent, toolErrorMiddleware } from 'langchain'
+import type { ClientTool } from '@langchain/core/tools'
+import { search as ddgSearch } from 'ddg-search'
+import { AIMessage, createAgent, tool, toolErrorMiddleware } from 'langchain'
 
-import { Memco, briefing } from '../src/index.js'
+import { Memco, briefing, type DomainEntry } from '../src/index.js'
 
 const DOMAIN = 'coding'
 
-// Provider-agnostic: any "<provider>:<model>" LangChain understands, given the
-// matching provider package. Gemini Flash is the default because it is
-// generally available, cheap enough to run the example repeatedly, and calls
-// tools well.
-//
-// The provider is spelled `google-genai`, with a hyphen: the underscored
-// `google_genai` is not in LangChain JS's provider table at all. The prefix is
-// not optional either — a bare `gemini-3.7-flash` infers `google-vertexai`
-// here, which is the other credential route and a different package.
-const MODEL = process.env.MEMCO_EXAMPLE_MODEL ?? 'google-genai:gemini-3.7-flash'
+// The provider is spelled `google-genai`, with a hyphen — `google_genai` is
+// not in LangChain JS's provider table.
+const MODEL =
+  process.env.MEMCO_EXAMPLE_MODEL ?? 'google-genai:gemini-3.1-pro-preview'
+
+const IDENTITY =
+  'You are an engineering assistant for the team that builds the Memco SDKs.'
 
 const TASK =
-  'Find out how a client should authenticate against the Memco memory API. ' +
-  'Rate each result you were given. If shared memory did not answer it, say ' +
-  'so plainly rather than guessing.'
+  'One of our services runs as a Cloud Run Function and calls several Google ' +
+  'Cloud APIs — Secrets Manager, Pub/Sub, BigQuery, and Workflows — over gRPC. ' +
+  'Since upgrading grpcio to 1.78.1, those calls started failing. Find out ' +
+  "what's going on and report it."
 
-/** Run the example. */
+/** Tokens spent on research, and how long the run took, in seconds. */
+interface RunReport {
+  tokens: number
+  seconds: number
+}
+
+/**
+ * Run one full agent turn on {@link TASK}, printing its trace and answer.
+ *
+ * @param client A connected client.
+ * @param entry The domain to run in, from `listDomains`.
+ * @returns Tokens spent researching, and how long the run took in seconds.
+ */
+async function runOnce(client: Memco, entry: DomainEntry): Promise<RunReport> {
+  const started = performance.now()
+  await using session = await client.memory.withSession(DOMAIN)
+  console.log(`session ${session.id} in ${entry.slug}\n`)
+
+  // ddg-search hardcodes a 2013-era User-Agent that DuckDuckGo's anti-bot
+  // check tends to reject; this rewrites it to something current.
+  const modernUserAgentFetch: typeof fetch = async (input, init) => {
+    const headers = new Headers(init?.headers)
+    headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    )
+    return fetch(input, { ...init, headers })
+  }
+
+  const webSearch = tool(
+    async ({ query }: { query: string }): Promise<string> => {
+      try {
+        const { results } = await ddgSearch(query, {
+          maxPages: 1,
+          maxResults: 5,
+          region: '',
+          time: '',
+          fetchImpl: modernUserAgentFetch
+        })
+        return (
+          results.map(r => `${r.title}: ${r.description}`).join('\n') ||
+          'no results'
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return `web search failed: ${message}`
+      }
+    },
+    {
+      name: 'web_search',
+      description: 'Search the web with DuckDuckGo.',
+      schema: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query']
+      }
+    }
+  )
+
+  const tools = (await session.tools().toLangChain()) as ClientTool[]
+  tools.push(webSearch)
+
+  const runnable = createAgent({
+    model: MODEL,
+    tools,
+    systemPrompt: [IDENTITY, briefing(entry, session.instructions)].join(
+      '\n\n'
+    ),
+    // LangChain JS turns every tool exception into a message by default; this
+    // makes an unrecoverable error (like a bad credential) end the run instead.
+    middleware: [toolErrorMiddleware({ onError: () => {} })]
+  })
+
+  let tokens = 0
+  let lastText = ''
+  for await (const step of await runnable.stream(
+    { messages: [{ role: 'user', content: TASK }] },
+    { streamMode: 'values' }
+  )) {
+    const message = step.messages.at(-1)
+    if (message === undefined) continue
+    lastText = message.text
+    // Only an assistant turn carries tool calls, so the class is the test.
+    if (!(message instanceof AIMessage)) continue
+    const calls = message.tool_calls ?? []
+    for (const call of calls) {
+      console.log(`  -> ${call.name}(${JSON.stringify(call.args)})`)
+    }
+    // Skip the final answer's tokens: it's the same in both runs.
+    if (calls.length > 0) {
+      tokens += message.usage_metadata?.total_tokens ?? 0
+    }
+  }
+
+  const seconds = (performance.now() - started) / 1000
+  console.log(`\n${lastText}\n`)
+  return { tokens, seconds }
+}
+
+/** Run the example twice, to show what shared memory saves the second time. */
 async function main(): Promise<void> {
   await using client = await new Memco().connect()
 
@@ -82,37 +161,32 @@ async function main(): Promise<void> {
     return
   }
 
-  // Opened here, outside the agent loop, and bound to every call the tools
-  // make. Nothing the model sends can change or drop it.
-  await using session = await client.memory.withSession(DOMAIN)
-  console.log(`session ${session.id} in ${entry.slug}\n`)
+  console.log('=== first run: nothing in memory yet ===\n')
+  const cold = await runOnce(client, entry)
 
-  const runnable = createAgent({
-    model: MODEL,
-    tools: await session.tools().toLangChain(),
-    systemPrompt: briefing(entry, session.instructions),
-    // Left out, a rejected credential would reach the model as a tool message
-    // and it would keep calling: LangChain turns every tool exception into one
-    // by default. A tool from `toLangChain()` has already decided what a model
-    // may see — the AGENT_RECOVERABLE failures come back as ordinary text, and
-    // nothing else does — so all this has to say is "throw what the tool
-    // threw", which is what an `onError` returning nothing means.
-    middleware: [toolErrorMiddleware({ onError: () => {} })]
-  })
-  const result = await runnable.invoke({
-    messages: [{ role: 'user', content: TASK }]
-  })
+  console.log('=== waiting for the write to become searchable ===\n')
+  await sleep(10_000)
 
-  for (const message of result.messages) {
-    // Only an assistant turn carries tool calls, so the class is the test.
-    // LangChain gives its message classes a `Symbol.hasInstance`, so this asks
-    // about the shape rather than about which copy built it.
-    if (!(message instanceof AIMessage)) continue
-    for (const call of message.tool_calls ?? []) {
-      console.log(`  -> ${call.name}(${JSON.stringify(call.args)})`)
-    }
+  console.log("=== second run: the first run's finding is in memory now ===\n")
+  const warm = await runOnce(client, entry)
+
+  console.log('=== summary ===')
+  console.log(
+    `cold run: ${cold.tokens} tokens, ${cold.seconds.toFixed(1)}s (nothing in memory yet)`
+  )
+  console.log(
+    `warm run: ${warm.tokens} tokens, ${warm.seconds.toFixed(1)}s (memory answered it)`
+  )
+  if (cold.tokens > 0) {
+    const savedTokens = cold.tokens - warm.tokens
+    const percent = Math.round((savedTokens / cold.tokens) * 100)
+    console.log(`tokens saved: ${savedTokens} (${percent}%)`)
   }
-  console.log(`\n${result.messages.at(-1)?.text}`)
+  if (cold.seconds > 0) {
+    const savedSeconds = cold.seconds - warm.seconds
+    const percent = Math.round((savedSeconds / cold.seconds) * 100)
+    console.log(`time saved: ${savedSeconds.toFixed(1)}s (${percent}%)`)
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

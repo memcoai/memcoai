@@ -49,7 +49,7 @@ class ScriptedModel(GenericFakeChatModel):
 
 
 def web_search_tool() -> BaseTool:
-    """Build the same web-search tool ``main()`` builds."""
+    """Build the same web-search tool ``run_once`` builds."""
 
     @tool
     def web_search(query: str) -> str:
