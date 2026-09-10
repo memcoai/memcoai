@@ -1,0 +1,84 @@
+name: CI (Node.js)
+
+on:
+  # Branches only. A tag push belongs to the release pipeline, which calls this
+  # workflow itself; an unfiltered `push` would run every check twice.
+  push:
+    branches: ["**"]
+  pull_request:
+  # The release pipeline calls this so a tag re-runs every check from one
+  # definition. Duplicating the jobs there would guarantee they drift.
+  workflow_call:
+    inputs:
+      full:
+        description: Run every job, whatever the ref.
+        type: boolean
+        default: false
+
+# Public repository: grant nothing by default, and let a fork PR run every
+# hermetic job without needing a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# This file decides *when* each check runs; the steps of each one live in the
+# ci_nodejs_*.yaml workflow it calls.
+jobs:
+  # ---- cheap, runs on every push -----------------------------------------
+
+  # The contract check is language-agnostic and belongs to no single SDK, so it
+  # is defined once and called from here as well as from ci_python.yaml. See the
+  # comment at the top of that file for why it is not a job in either.
+  provenance:
+    uses: ./.github/workflows/provenance.yaml
+
+  lint:
+    uses: ./.github/workflows/ci_nodejs_lint.yaml
+
+  typecheck:
+    uses: ./.github/workflows/ci_nodejs_typecheck.yaml
+
+  test:
+    uses: ./.github/workflows/ci_nodejs_test.yaml
+
+  # ---- longer: pull requests, main, and releases -------------------------
+
+  test-matrix:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_nodejs_test_matrix.yaml
+
+  # There is deliberately no `runtime-compat` job here. The Python one exists
+  # because its generated modules assert dependency floors at import time, so a
+  # dependency floor is a thing that can be observed to hold or fail. The
+  # generated TypeScript asserts nothing at all, and the 22/24/26 matrix above
+  # already covers the axis that would be worth sweeping.
+
+  build:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_nodejs_build.yaml
+
+  docs:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_nodejs_docs.yaml
+
+  # ---- live: every pull request, main, and releases -----------------------
+
+  integration:
+    # Runs on pull requests too, because a contract change that only breaks
+    # over the wire would otherwise land green and surface in a user's hands;
+    # `inputs.full` keeps it ahead of a release, so a publish cannot ship a
+    # build nothing verified live.
+    if: >-
+      inputs.full
+      || github.event_name == 'pull_request'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    uses: ./.github/workflows/ci_nodejs_integration.yaml
+    # Named rather than `inherit`: this is the one check that needs a
+    # credential, and this is the one it needs. A fork's pull request has none,
+    # so the value may be empty; the called workflow decides whether that is a
+    # skip or a failure.
+    secrets:
+      MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}

@@ -1,0 +1,118 @@
+name: Build (Python)
+
+# Called by ci_python.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      uv-version:
+        description: The uv release to install. ci_python.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and install
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: true
+
+      # Not `--wheel`: plain `uv build` writes the sdist first and then builds
+      # the wheel *from that sdist*, so every check below runs against a wheel
+      # that came through the source distribution. That is what proves the sdist
+      # is whole: a requirements input or a generated module missing from it
+      # fails here rather than in a consumer's install from source.
+      - name: Build the sdist, and the wheel from it
+        run: uv build
+
+      # Validated with `packaging`, the same parser PyPI's own index uses.
+      # `twine check` is not used here: hatchling emits Metadata-Version 2.5 and
+      # no released twine reads it yet, so twine would reject a valid wheel.
+      - name: Check distribution metadata
+        run: |
+          uv run --no-project --with packaging python - <<'PY'
+          import glob
+          import zipfile
+
+          from packaging.metadata import Metadata
+
+          archive = zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0])
+          name = next(n for n in archive.namelist() if n.endswith("METADATA"))
+          parsed = Metadata.from_email(archive.read(name), validate=True)
+          print("metadata valid:", parsed.name, parsed.version)
+          PY
+
+      # The generated code and the SDK are two PEP 420 namespace portions that
+      # are merged at build time. That merge half-works silently: one portion
+      # alone imports fine, so only an install proves the wheel is whole.
+      - name: Install into a clean environment and prove the merge
+        run: |
+          uv venv --python 3.12 /tmp/verify
+          uv pip install --no-cache --python /tmp/verify/bin/python dist/*.whl
+          uv pip install --no-cache --python /tmp/verify/bin/python mypy types-protobuf
+          cd /tmp
+          /tmp/verify/bin/python - <<'PY'
+          import importlib.resources as resources
+
+          import memcoai as mc
+          from memcoai.memory.v1 import memory_pb2 as pb
+
+          assert pb.DESCRIPTOR.name == "memcoai/memory/v1/memory.proto"
+          assert mc.provenance().server_commit, "provenance descriptor missing from the wheel"
+          assert (resources.files("memcoai") / "py.typed").is_file(), "py.typed did not ship"
+          print("wheel is whole:", len(mc.__all__), "public symbols")
+          PY
+
+      # Importing one known module would not notice a future generated
+      # subpackage being dropped from the wheel, so compare against the source.
+      # .json covers the tool manifest, which ships in the same tree. Nothing
+      # imports it — the SDK reads it at build time, not at runtime — so no
+      # import check would notice its absence, and a consumer that wants the
+      # definitions raw expects to find it in the installed package.
+      - name: Every generated file reached the wheel
+        run: |
+          python - <<'PY'
+          import glob
+          import pathlib
+          import zipfile
+
+          source = {
+              str(p).replace("\\", "/")
+              for p in pathlib.Path("memcoai/memory").rglob("*")
+              if p.is_file() and p.suffix in {".py", ".pyi", ".json"}
+          }
+          shipped = set(zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0]).namelist())
+          missing = sorted(source - shipped)
+          assert not missing, f"generated files absent from the wheel: {missing}"
+          print(f"all {len(source)} generated files shipped")
+          PY
+
+      # A missing py.typed makes every annotation invisible downstream without
+      # failing anything, so assert a consumer actually sees the types.
+      - name: Prove the installed package is seen as typed
+        run: |
+          cd /tmp
+          cat > consumer.py <<'PY'
+          from memcoai import Memco
+          wrong: int = Memco(token="t").provenance().server_commit
+          PY
+          /tmp/verify/bin/python -m mypy consumer.py 2>&1 | tee out.txt
+          grep -q 'Incompatible types in assignment' out.txt \
+            || { echo "installed package is not seen as typed"; exit 1; }
+
+      # The release pipeline uploads these to PyPI as-is; rebuilding there would
+      # ship an artefact that none of the above ever ran against.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: dist-python
+          path: python/dist

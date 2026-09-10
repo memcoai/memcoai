@@ -1,0 +1,81 @@
+{
+  "name": "@memcoai/memcoai",
+  "version": "0.1.0",
+  "description": "Node.js SDK for Memco Shared Memory.",
+  "keywords": [
+    "memco",
+    "shared-memory",
+    "agent",
+    "grpc",
+    "sdk"
+  ],
+  "homepage": "https://memco.ai",
+  "bugs": {
+    "url": "https://github.com/memcoai/memcoai/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memcoai/memcoai.git",
+    "directory": "nodejs"
+  },
+  "license": "MIT",
+  "author": "Memco Labs, Inc.",
+  "type": "module",
+  "main": "./dist/cjs/src/index.js",
+  "types": "./dist/cjs/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/src/index.d.ts",
+        "default": "./dist/esm/src/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/src/index.d.ts",
+        "default": "./dist/cjs/src/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "client/SDK_PROVENANCE.yaml",
+    "client/src/gen/tools.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "build:esm": "tsc -p tsconfig.esm.json && cp src/internal/moduleDir.esm.js dist/esm/src/internal/moduleDir.js && cp src/internal/moduleDir.d.ts dist/esm/src/internal/moduleDir.d.ts",
+    "build:cjs": "tsc -p tsconfig.cjs.json && cp src/internal/moduleDir.cjs.js dist/cjs/src/internal/moduleDir.js && cp src/internal/moduleDir.d.ts dist/cjs/src/internal/moduleDir.d.ts && printf '{\"type\":\"commonjs\"}\\n' > dist/cjs/package.json",
+    "build": "rm -rf dist && npm run build:esm && npm run build:cjs",
+    "build:test": "rm -rf build/js && tsc -p tsconfig.test.json && cp src/internal/moduleDir.esm.js build/js/src/internal/moduleDir.js",
+    "test": "npm run build:test && node --test --enable-source-maps 'build/js/tests/**/*.test.js'",
+    "system-test": "npm run build:test && node --test --enable-source-maps 'build/js/systemtest/**/*.test.js'",
+    "coverage": "npm run build:test && mkdir -p coverage && node --test --enable-source-maps --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=95 --test-coverage-branches=90 --test-coverage-exclude=build/js/client/** --test-coverage-exclude=build/js/examples/** --test-coverage-exclude=build/js/tests/** --test-coverage-exclude=build/js/src/types.js --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info 'build/js/tests/**/*.test.js'",
+    "docs": "typedoc",
+    "docs:markdown": "typedoc --options typedoc.llms.json"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.1",
+    "@grpc/grpc-js": "^1.14.4"
+  },
+  "devDependencies": {
+    "@langchain/core": "1.2.9",
+    "@langchain/google-genai": "2.3.0",
+    "@types/node": "22.20.1",
+    "ddg-search": "2026.2.16",
+    "langchain": "1.5.10",
+    "prettier": "3.9.6",
+    "typedoc": "0.28.20",
+    "typedoc-plugin-markdown": "4.13.0",
+    "typescript": "5.9.3"
+  }
+}

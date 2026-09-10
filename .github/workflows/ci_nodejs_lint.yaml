@@ -1,0 +1,30 @@
+name: Lint (Node.js)
+
+# Called by ci_nodejs.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # `--no` means "run what is installed, or fail". Without it npx quietly
+      # downloads whatever is missing and runs that instead, so a devDependency
+      # dropped from package.json would still produce a green Lint job — the one
+      # place that mistake ought to surface.
+      - run: npx --no -- prettier --check .

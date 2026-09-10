@@ -1,0 +1,93 @@
+name: Test (Node.js)
+
+# Called by ci_nodejs.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (24)
+    # Pinned from .nvmrc, the version the SDK is developed against. Leaving it
+    # to the matrix would mean whichever runtime the runner happened to ship
+    # produced the coverage numbers.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # Coverage runs on this job only: the matrix jobs prove the suite passes on
+      # every supported runtime, and measuring the same lines three times would
+      # say nothing new. `--test-coverage-lines=95` in the `coverage` script is
+      # the gate — this step fails the build below the floor, so the badge cannot
+      # go stale.
+      - run: npm run coverage
+      - name: Report coverage
+        if: always()
+        run: |
+          node --input-type=module - <<'JS' >> "$GITHUB_STEP_SUMMARY"
+          import { existsSync, readFileSync } from 'node:fs'
+
+          const report = 'coverage/lcov.info'
+          if (!existsSync(report)) {
+            console.log('### Coverage\n\nNo report produced — the suite did not finish.')
+            process.exit(0)
+          }
+
+          // Accumulated per SF...end_of_record block, never read positionally:
+          // writers disagree on the order of these four inside a record — Node's
+          // own reporter emits BRF, BRH, LH, LF, which is neither the order the
+          // format documents nor the one lcov itself writes. Keying on the tag
+          // is the only reading that cannot attribute one file's numbers to
+          // another.
+          const counters = ['LF', 'LH', 'BRF', 'BRH']
+          const records = []
+          let current = null
+          for (const line of readFileSync(report, 'utf8').split('\n')) {
+            const text = line.trim()
+            if (text === 'end_of_record') {
+              if (current !== null) records.push(current)
+              current = null
+              continue
+            }
+            const at = text.indexOf(':')
+            if (at === -1) continue
+            const tag = text.slice(0, at)
+            const value = text.slice(at + 1)
+            if (tag === 'SF') {
+              current = { file: value, LF: 0, LH: 0, BRF: 0, BRH: 0 }
+            } else if (current !== null && counters.includes(tag)) {
+              current[tag] = Number(value)
+            }
+          }
+
+          const total = (tag) => records.reduce((sum, record) => sum + record[tag], 0)
+          // A file with no branches at all is fully covered, not 0% covered.
+          const rate = (hit, found) => (found === 0 ? 100 : (hit / found) * 100)
+
+          const lines = rate(total('LH'), total('LF')).toFixed(1)
+          const branches = rate(total('BRH'), total('BRF')).toFixed(1)
+          console.log(`### Coverage\n\n**${lines}%** of lines, **${branches}%** of branches.\n`)
+          console.log('| Module | Lines |\n|---|---|')
+          records.sort((a, b) => rate(a.LH, a.LF) - rate(b.LH, b.LF))
+          for (const record of records) {
+            console.log(`| \`${record.file}\` | ${rate(record.LH, record.LF).toFixed(0)}% |`)
+          }
+          JS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: coverage-nodejs
+          # Relative to the workspace, not to defaults.run.working-directory.
+          path: nodejs/coverage/lcov.info
+          retention-days: 14

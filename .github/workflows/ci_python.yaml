@@ -1,0 +1,100 @@
+name: CI (Python)
+
+on:
+  # Branches only. A tag push belongs to the release pipeline, which calls this
+  # workflow itself; an unfiltered `push` would run every check twice.
+  push:
+    branches: ["**"]
+  pull_request:
+  # The release pipeline calls this so a tag re-runs every check from one
+  # definition. Duplicating the jobs there would guarantee they drift.
+  workflow_call:
+    inputs:
+      full:
+        description: Run every job, whatever the ref.
+        type: boolean
+        default: false
+
+# Public repository: grant nothing by default, and let a fork PR run every
+# hermetic job without needing a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# This file decides *when* each check runs; the steps of each one live in the
+# ci_python_*.yaml workflow it calls. The uv pin is repeated in every call
+# because a called workflow cannot see this file's `env`, and a `with:` value
+# cannot read it either. Keep the copies identical, and equal to UV_VERSION in
+# release_python.yaml.
+jobs:
+  # ---- cheap, runs on every push -----------------------------------------
+
+  # Language-agnostic, so it is defined once and called by every language's CI
+  # rather than owned by this one. See the comment at the top of that file.
+  provenance:
+    uses: ./.github/workflows/provenance.yaml
+
+  lint:
+    uses: ./.github/workflows/ci_python_lint.yaml
+    with:
+      uv-version: "0.9.7"
+
+  typecheck:
+    uses: ./.github/workflows/ci_python_typecheck.yaml
+    with:
+      uv-version: "0.9.7"
+
+  test:
+    uses: ./.github/workflows/ci_python_test.yaml
+    with:
+      uv-version: "0.9.7"
+
+  # ---- longer: pull requests, main, and releases -------------------------
+
+  test-matrix:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_python_test_matrix.yaml
+    with:
+      uv-version: "0.9.7"
+
+  build:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_python_build.yaml
+    with:
+      uv-version: "0.9.7"
+
+  docs:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_python_docs.yaml
+    with:
+      uv-version: "0.9.7"
+
+  runtime-compat:
+    if: inputs.full || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci_python_runtime_compat.yaml
+    with:
+      uv-version: "0.9.7"
+
+  # ---- live: every pull request, main, and releases -----------------------
+
+  integration:
+    # Runs on pull requests too, because a contract change that only breaks
+    # over the wire would otherwise land green and surface in a user's hands;
+    # `inputs.full` keeps it ahead of a release, so a publish cannot ship a
+    # build nothing verified live.
+    if: >-
+      inputs.full
+      || github.event_name == 'pull_request'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    uses: ./.github/workflows/ci_python_integration.yaml
+    with:
+      uv-version: "0.9.7"
+    # Named rather than `inherit`: this is the one check that needs a
+    # credential, and this is the one it needs. A fork's pull request has none,
+    # so the value may be empty; the called workflow decides whether that is a
+    # skip or a failure.
+    secrets:
+      MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}

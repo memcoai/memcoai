@@ -1,0 +1,43 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.json",
+  "name": "@memcoai/memcoai",
+  "readme": "README.md",
+
+  // Published verbatim as memco-docs-nodejs-<version>.tar.gz. TypeDoc writes
+  // nothing but the site into `out` — it keeps no build cache that would have
+  // to be routed elsewhere first — and githubPages is off so not even a stray
+  // .nojekyll reaches the documentation site.
+  "out": "docs/_build/html",
+  "cleanOutputDir": true,
+  "githubPages": false,
+
+  // The generated client is the export's to document, not ours. `exclude`
+  // keeps its files out of the entry-point expansion; excludeExternals with
+  // externalPattern stops a re-exported symbol arriving behind it.
+  "exclude": ["client/**", "tests/**", "examples/**", "**/node_modules/**"],
+  "externalPattern": ["**/client/**", "**/node_modules/**"],
+  "excludeExternals": true,
+  "excludeInternal": true,
+  "excludePrivate": true,
+
+  // Every warning is a build failure, and these are the ones worth failing on.
+  // `invalidLink` fails on an unresolved {@link}; `notExported` fails when a
+  // public signature names a type that is not itself public, which is what
+  // stops a generated type leaking out of src/index.ts; `notDocumented` is the
+  // rule that every public symbol carries a doc comment.
+  "treatWarningsAsErrors": true,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "rewrittenLink": true,
+    "notDocumented": true,
+    "unusedMergeModuleWith": true
+  },
+
+  "sort": ["source-order"],
+  "navigationLinks": {
+    "GitHub": "https://github.com/memcoai/memcoai"
+  }
+}

@@ -1,0 +1,54 @@
+name: Docs (Node.js)
+
+# Called by ci_nodejs.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodejs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version-file: nodejs/.nvmrc
+          cache: npm
+          cache-dependency-path: nodejs/package-lock.json
+      - run: npm ci
+      # Sphinx's -W, in TypeDoc's vocabulary: an unresolved {@link} or an
+      # undocumented public symbol fails here rather than rotting in the
+      # published reference. typedoc.json sets the same flag; passing it on the
+      # command line means the build cannot be softened by editing that file
+      # without also editing this one.
+      - run: npx --no -- typedoc --treatWarningsAsErrors
+      # The same entry point rendered a second time as markdown, and assembled
+      # into the llms.txt pair the reference publishes beside the HTML. After
+      # the HTML: typedoc.json sets cleanOutputDir, so the HTML pass empties
+      # the directory the assembler writes into.
+      - run: npx --no -- typedoc --options typedoc.llms.json --treatWarningsAsErrors
+      # The assembler is standard library only, so it needs no dependency
+      # install — but it does need a declared interpreter rather than whatever
+      # the runner image happens to ship. Same pin as provenance.yaml, which
+      # runs the repository's other scripts.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      # Writes llms.txt and llms-full.txt into the HTML output, so the artifact
+      # below carries them and the release tarball publishes them beside the
+      # reference. Fails if a page the build published is not reachable from
+      # llms.txt, so a newly exported symbol has to be indexed before it ships.
+      - run: python ../scripts/build_llms_txt.py nodejs
+      # Named per language: artifact names are unique within a run, and the
+      # release pipeline downloads this one by name.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: docs-nodejs
+          path: nodejs/docs/_build/html

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The published CommonJS build. `module: commonjs` forces
+  // `moduleResolution: node10` — tsc rejects node16/nodenext resolution with
+  // any module other than node16/nodenext, and rejects `bundler` with
+  // commonjs.
+  //
+  // Both runtime dependencies resolve under node10, measured rather than
+  // assumed:
+  //   @grpc/grpc-js       has no `exports` map at all; main/types at the root.
+  //   @bufbuild/protobuf  ships `typesVersions` mapping "wire" ->
+  //                       ./dist/cjs/wire/index.d.ts, the node10 fallback for
+  //                       its exports-only "./wire" subpath.
+  // The emit is still `require("@bufbuild/protobuf/wire")`, which Node
+  // resolves through the `require` condition. No `paths` shim is needed.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "outDir": "dist/cjs",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "client/src/gen/**/*.ts"]
+}
