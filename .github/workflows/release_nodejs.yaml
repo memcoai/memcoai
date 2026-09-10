@@ -1,20 +1,11 @@
 name: Release (Node.js)
 
-# Publishing a release is the trigger, not a bare tag push: a human writes or
-# generates the notes and hits Publish through the normal GitHub UI, and only
-# then does this pipeline build and attach the real artefacts. That ordering
-# is deliberate — the previous design had CI draft the release with the
-# artefacts already attached, for a human to edit before publishing, and
-# editing a draft's notes through the GitHub UI turned out to silently drop
-# already-attached assets. Publish-then-attach has no window where that can
-# happen: nothing is attached until after the human is done.
-#
-# `on: release` carries no tag-prefix filter the way `push: tags: [...]` did,
-# so this fires for a `python-v*` release too — `gate`'s `if:` below is what
-# skips it immediately when the prefix isn't this pipeline's.
+# The tag prefix scopes a release to one SDK, so each SDK in this repository
+# versions independently: `python-v*` is the Python pipeline, `go-v*` will be
+# Go's once it has build tooling of its own.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["nodejs-v*"]
 
 permissions:
   contents: read
@@ -22,32 +13,28 @@ permissions:
 # A release must never be cancelled part-way: an npm version cannot be
 # re-published, so a half-finished run is not something to replace with a newer one.
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   gate:
     name: Gate
-    if: startsWith(github.event.release.tag_name, 'nodejs-v')
     runs-on: ubuntu-latest
-    # The release that triggered this run already exists and is already
-    # public by the time gate runs — publishing is the trigger. A bad tag can
-    # no longer be caught before anything public happens, so this job cleans
-    # up after itself on failure instead: delete the release and its tag
-    # rather than leave a live release with no build artefacts behind for
-    # someone to trip over.
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
-          ref: ${{ github.event.release.tag_name }}
           # The ancestry check below needs the history joining the tag to main,
           # which the default shallow fetch does not have.
           fetch-depth: 0
+          # `persist-credentials` is deliberately left at its default here,
+          # unlike in the live-smoke job: the ancestry check below runs
+          # `git fetch origin main`, and the credential the checkout leaves in
+          # .git/config is what authenticates that fetch while the repository
+          # is not yet public. This job holds no secret of its own, so there is
+          # nothing for that credential to sit beside.
 
       # This job installs nothing. Every hosted runner already ships Node, and
       # the whole gate is a regex and a string comparison — pulling a toolchain
@@ -55,24 +42,15 @@ jobs:
       - name: The tag names a valid version, and the one the package declares
         id: version
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
         run: |
           node --input-type=module - <<'JS' >> "$GITHUB_OUTPUT"
-          import { execFileSync } from 'node:child_process'
           import { readFileSync } from 'node:fs'
 
           // The expression published at semver.org, inlined verbatim. Capture
           // groups: major, minor, patch, prerelease, build metadata.
           const SEMVER =
             /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
-
-          function fail(message) {
-            execFileSync('gh', ['release', 'delete', tag, '--yes', '--cleanup-tag'])
-            console.error(`${message}; release and tag removed`)
-            process.exit(1)
-          }
 
           // The tag is the only thing a human types here, and everything
           // downstream is named from it. Refusing a version npm would reject
@@ -81,7 +59,8 @@ jobs:
           const raw = tag.replace(/^nodejs-v/, '')
           const match = SEMVER.exec(raw)
           if (match === null) {
-            fail(`tag ${tag} does not name a semantic version: ${JSON.stringify(raw)}`)
+            console.error(`tag ${tag} does not name a semantic version: ${JSON.stringify(raw)}`)
+            process.exit(1)
           }
 
           const declared = JSON.parse(readFileSync('nodejs/package.json', 'utf8')).version
@@ -92,7 +71,10 @@ jobs:
           // and then name the assets from the declared spelling rather than the
           // tag's. Here the two cannot disagree.
           if (raw !== declared) {
-            fail(`tag ${tag} claims version ${raw}, but nodejs/package.json declares ${declared}`)
+            console.error(
+              `tag ${tag} claims version ${raw}, but nodejs/package.json declares ${declared}`
+            )
+            process.exit(1)
           }
 
           console.log(`version=${declared}`)
@@ -101,20 +83,15 @@ jobs:
           console.log(`prerelease=${match[4] !== undefined}`)
           JS
 
-      # "On main, on tag": a release published from a side branch ships code
-      # that never passed review, and nothing else in this pipeline would notice.
+      # "On main, on tag": a tag pushed from a side branch releases code that
+      # never passed review, and nothing else in this pipeline would notice.
       - name: The tagged commit is contained in main
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name }}
         run: |
           # Fetched explicitly so FETCH_HEAD is well defined regardless of
           # which refs the checkout happened to bring down.
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {
-            gh release delete "$TAG" --yes --cleanup-tag
-            echo "::error::$TAG is not an ancestor of main; release from main only. Release and tag removed."
+            echo "::error::$GITHUB_REF_NAME is not an ancestor of main; release from main only"
             exit 1
           }
 
@@ -141,8 +118,8 @@ jobs:
     permissions:
       id-token: write
     # No secret lives here now, but the environment stays: give it a required
-    # reviewer and publishing a release becomes verify-everything, then wait
-    # for a human before the irreversible upload.
+    # reviewer and a tag push becomes verify-everything, then wait for a human
+    # before the irreversible upload.
     environment:
       name: npm
       url: https://www.npmjs.com/package/@memco/memcoai/v/${{ needs.gate.outputs.version }}
@@ -181,8 +158,8 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then dist_tag=next; else dist_tag=latest; fi
           npm publish "$1" --access public --tag "$dist_tag"
 
-  attach:
-    name: Attach release artefacts
+  release:
+    name: Draft the GitHub release
     needs: [gate, publish]
     runs-on: ubuntu-latest
     # The only job here that writes anything back to the repository.
@@ -210,16 +187,16 @@ jobs:
           cp -r docs/. "stage/nodejs/$VERSION/"
           tar czf "memco-docs-nodejs-$VERSION.tar.gz" -C stage nodejs
 
-      # The release already exists and is already published — that is what
-      # triggered this run — so this only adds to it. `--clobber` makes a
-      # re-run (say, after a transient failure here) overwrite rather than
-      # error on assets a previous attempt already uploaded.
-      - name: Attach the build artefacts
+      # A draft, not a release: the generated notes are a starting point, and
+      # nobody should read them until someone has edited them. The irreversible
+      # step already happened one job ago, on npm.
+      - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.gate.outputs.version }}
+          PRERELEASE: ${{ needs.gate.outputs.prerelease }}
         run: |
           # Both assets named in full, never globbed. npm's tarball ends in
           # `.tgz` and the documentation's in `.tar.gz`, so any glob loose
@@ -235,4 +212,16 @@ jobs:
             echo "::error::$npm_tarball is not among the artefacts"
             exit 1
           }
-          gh release upload "$TAG" --clobber "$npm_tarball" "$docs_tarball"
+          # --verify-tag: hours pass between the tag push and this step, and
+          # without it a tag deleted meanwhile makes `gh` silently create a new
+          # one at the default branch head. `gh` has no --prerelease detection
+          # of its own, so an rc would otherwise draft as a finished release.
+          if [ "$PRERELEASE" = "true" ]; then set -- --prerelease; else set --; fi
+          url=$(gh release create "$TAG" \
+            --draft \
+            --verify-tag \
+            --generate-notes \
+            --title "Node.js SDK $VERSION" \
+            "$@" \
+            "$npm_tarball" "$docs_tarball")
+          echo "::notice::draft release ready to edit and publish: $url"
