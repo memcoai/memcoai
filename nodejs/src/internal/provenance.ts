@@ -255,7 +255,7 @@ let cached: Provenance | undefined
  *
  * @example
  * ```ts
- * import { provenance } from '@memcoai/memcoai'
+ * import { provenance } from '@memco/memcoai'
  *
  * console.log(provenance().serverCommit)
  * console.log(provenance().protos[0]?.path)
@@ -268,7 +268,7 @@ export function provenance(): Provenance {
       text = readFileSync(PROVENANCE_FILE, 'utf8')
     } catch {
       throw new MemcoConfigError(
-        `${RESOURCE} is missing from the installed @memcoai/memcoai package; ` +
+        `${RESOURCE} is missing from the installed @memco/memcoai package; ` +
           'the tarball was built wrongly'
       )
     }

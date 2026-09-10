@@ -110,41 +110,37 @@ jobs:
     name: Publish to npm
     needs: [gate, ci]
     runs-on: ubuntu-latest
-    # NPM_TOKEN lives in this environment. Give it a required reviewer and a tag
-    # push becomes verify-everything, then wait for a human.
+    # Trusted publishing exchanges this job's OIDC identity for a short-lived
+    # npm token, so there is no long-lived secret to hold, leak or rotate. npm
+    # issues it only to the publisher configured on the package: this
+    # repository, this workflow file — see
+    # https://docs.npmjs.com/trusted-publishers.
+    permissions:
+      id-token: write
+    # No secret lives here now, but the environment stays: give it a required
+    # reviewer and a tag push becomes verify-everything, then wait for a human
+    # before the irreversible upload.
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@memcoai/memcoai/v/${{ needs.gate.outputs.version }}
+      url: https://www.npmjs.com/package/@memco/memcoai/v/${{ needs.gate.outputs.version }}
     steps:
       # Exactly the artifact the build job verified.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           name: dist-nodejs
           path: dist
-      # No `node-version`, and no checkout to read .nvmrc from: the runner's own
-      # Node and npm publish a tarball perfectly well, and the only thing this
-      # step is here for is the `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
-      # line it writes into ~/.npmrc.
+      # Trusted publishing needs npm >=11.5.1 to negotiate the OIDC exchange,
+      # which the runner's own bundled npm cannot be relied on to have — Node
+      # 24 is pinned because it ships one that does.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
         with:
+          node-version: "24"
           registry-url: https://registry.npmjs.org
 
-      # The guard is not ceremony: with an empty token the line setup-node wrote
-      # expands to nothing, and the registry answers a missing credential with
-      # an ENEEDAUTH that reads like a permissions problem rather than the
-      # unfilled secret it is.
-      #
-      # To move to trusted publishing later: drop NODE_AUTH_TOKEN and add
-      # `id-token: write` to this job.
       - name: Publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PRERELEASE: ${{ needs.gate.outputs.prerelease }}
         run: |
-          [ -n "$NODE_AUTH_TOKEN" ] || {
-            echo "::error::NPM_TOKEN is not set in the 'npm' environment"
-            exit 1
-          }
           # The -f test is not redundant: bash leaves an unmatched glob as its
           # own literal text, so with the artefact missing `$#` is 1 and `$1` is
           # the string `dist/*.tgz`. A count check alone would pass it straight
@@ -155,7 +151,7 @@ jobs:
             || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
           # npm has a dist-tag that PyPI has no equivalent of, and it defaults to
           # `latest`. A prerelease published without --tag would therefore become
-          # what a plain `npm install @memcoai/memcoai` resolves to, for everyone.
+          # what a plain `npm install @memco/memcoai` resolves to, for everyone.
           #
           # --access public because a *scoped* package publishes restricted by
           # default — a paid, org-only artefact nobody outside can install.
@@ -206,7 +202,7 @@ jobs:
           # `.tgz` and the documentation's in `.tar.gz`, so any glob loose
           # enough to catch both catches one of them twice, and any glob tight
           # enough to catch one silently drops the other.
-          npm_tarball="dist/memcoai-memcoai-$VERSION.tgz"
+          npm_tarball="dist/memco-memcoai-$VERSION.tgz"
           docs_tarball="memco-docs-nodejs-$VERSION.tar.gz"
           # Only the npm tarball is checked: it arrives from an artefact
           # download and can plausibly be absent or differently named, whereas

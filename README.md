@@ -50,7 +50,7 @@ reliability signal built from what readers reported back about it.
 | Language | Package | Install |
 |---|---|---|
 | Python | [`memcoai`](python/) | `pip install memcoai` |
-| Node.js | [`@memcoai/memcoai`](nodejs/) | `npm install @memcoai/memcoai` |
+| Node.js | [`@memco/memcoai`](nodejs/) | `npm install @memco/memcoai` |
 
 The generated gRPC client for [Go](go/) is also published here and can be used
 directly against the API.
@@ -118,7 +118,7 @@ See [`python/README.md`](python/README.md) for the full guide and
 ### Node.js
 
 ```typescript
-import { Memco } from '@memcoai/memcoai'
+import { Memco } from '@memco/memcoai'
 
 await using client = await new Memco().connect() // reads MEMCO_API_TOKEN
 const session = await client.memory.withSession('coding')

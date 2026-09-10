@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": ["src/index.ts"],
   "tsconfig": "tsconfig.json",
-  "name": "@memcoai/memcoai",
+  "name": "@memco/memcoai",
   "readme": "README.md",
 
   // Published verbatim as memco-docs-nodejs-<version>.tar.gz. TypeDoc writes

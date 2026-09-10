@@ -1,5 +1,5 @@
 {
-  "name": "@memcoai/memcoai",
+  "name": "@memco/memcoai",
   "version": "0.1.0",
   "description": "Node.js SDK for Memco Shared Memory.",
   "keywords": [
