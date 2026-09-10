@@ -19,6 +19,9 @@ env:
   # Must match ci_python.yaml. The artefacts are built there and published
   # here, so a drift between the two is silent.
   UV_VERSION: "0.9.7"
+  # Cold caches and large downloads occasionally outrun uv's 30s default read
+  # timeout on a shared runner; this only widens the window.
+  UV_HTTP_TIMEOUT: "60"
 
 jobs:
   gate:
@@ -36,6 +39,7 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           version: ${{ env.UV_VERSION }}
+          enable-cache: true
 
       # The tag is the only thing a human types, and everything downstream is
       # named from it. Parsing with `packaging` means a version PyPI would
