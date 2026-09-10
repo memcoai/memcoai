@@ -2,8 +2,8 @@
 
 import pytest
 
-from memco import errors
-from memco._config import DEFAULT_HOST, DEFAULT_PORT, resolve
+from memcoai import errors
+from memcoai._config import DEFAULT_HOST, DEFAULT_PORT, resolve
 
 
 def test_explicit_token_wins_over_env():

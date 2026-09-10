@@ -17,15 +17,15 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
-import memco
-from memco import AsyncMemco, Memco, errors
-from memco import _requests as requests
-from memco._config import DEFAULT_HOST, DEFAULT_PORT, resolve
-from memco._convert import _to_date
-from memco._provenance import parse
-from memco.memory.v1 import memory_pb2 as pb
-from memco.memory.v1 import memory_pb2_grpc as pbg
-from memco.types import DataSource, ImportedInsight, ImportedMemory, Tag
+import memcoai
+from memcoai import AsyncMemco, Memco, errors
+from memcoai import _requests as requests
+from memcoai._config import DEFAULT_HOST, DEFAULT_PORT, resolve
+from memcoai._convert import _to_date
+from memcoai._provenance import parse
+from memcoai.memory.v1 import memory_pb2 as pb
+from memcoai.memory.v1 import memory_pb2_grpc as pbg
+from memcoai.types import DataSource, ImportedInsight, ImportedMemory, Tag
 
 from .conftest import TOKEN
 from .fake_server import FakeHealthService, FakeMemoryService, Harness
@@ -129,7 +129,7 @@ def test_calling_a_closed_client_raises_a_memco_error(harness: Harness):
 RACE_SCRIPT = """
 import threading
 
-from memco import Memco, errors
+from memcoai import Memco, errors
 from tests.fake_server import Harness
 
 harness = Harness()
@@ -232,7 +232,7 @@ LOOP_SCRIPT = """
 import asyncio
 import sys
 
-from memco import AsyncMemco
+from memcoai import AsyncMemco
 client = AsyncMemco(token="t", host=sys.argv[1], tls=False)   # no loop exists yet
 
 
@@ -248,7 +248,7 @@ LATER_SCRIPT = """
 import asyncio
 import sys
 
-from memco import AsyncMemco
+from memcoai import AsyncMemco
 asyncio.run(asyncio.sleep(0))          # leaves no current loop behind
 client = AsyncMemco(token="t", host=sys.argv[1], tls=False)
 
@@ -266,7 +266,7 @@ REUSE_SCRIPT = """
 import asyncio
 import sys
 
-from memco import AsyncMemco
+from memcoai import AsyncMemco
 
 client = AsyncMemco(token="t", host=sys.argv[1], tls=False)
 
@@ -672,7 +672,7 @@ def test_a_blank_tag_keeps_its_own_message_through_the_guard():
 
 def test_the_legacy_env_var_warning_reaches_the_caller(harness: Harness):
     # DeprecationWarning is shown by default only when attributed to the
-    # caller's own module, so a warning blamed on memco/_sync.py warns nobody.
+    # caller's own module, so a warning blamed on memcoai/_sync.py warns nobody.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         client = Memco(
@@ -683,7 +683,7 @@ def test_the_legacy_env_var_warning_reaches_the_caller(harness: Harness):
         )
         client.close()
     assert caught, "no warning was raised"
-    package = str(pathlib.Path(memco.__file__).parent)
+    package = str(pathlib.Path(memcoai.__file__).parent)
     assert not caught[0].filename.startswith(package), (
         f"warning blamed on the SDK itself: {caught[0].filename}"
     )

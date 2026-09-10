@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import pytest
 
-from memco import AsyncMemco, Memco
-from memco.errors import MemcoConfigError, MemcoInternalError, MemcoInvalidRequestError
-from memco.memory.v1 import memory_pb2 as pb
-from memco.types import AsyncMemory, Memory
+from memcoai import AsyncMemco, Memco
+from memcoai.errors import MemcoConfigError, MemcoInternalError, MemcoInvalidRequestError
+from memcoai.memory.v1 import memory_pb2 as pb
+from memcoai.types import AsyncMemory, Memory
 
 from .conftest import TOKEN
 from .fake_server import Harness

@@ -12,12 +12,12 @@ import inspect
 import grpc
 import pytest
 
-from memco import NEW_MEMORY, AsyncMemco, Memco, agent, types
-from memco.errors import (
+from memcoai import NEW_MEMORY, AsyncMemco, Memco, agent, types
+from memcoai.errors import (
     MemcoAuthenticationError,
 )
-from memco.memory.v1 import memory_pb2 as pb
-from memco.operations import Session
+from memcoai.memory.v1 import memory_pb2 as pb
+from memcoai.operations import Session
 
 from .fake_server import Harness
 
@@ -490,7 +490,7 @@ def test_a_cross_reference_to_an_operation_names_the_tool():
     assert agent._reference("share_feedback") == "memco_share_feedback"
     assert agent._reference("MemoryOperations.revert_memory") == "memco_revert_memory"
     # Anything that is not an operation keeps only its last component.
-    assert agent._reference("memco.types.DataSource.AGENT") == "AGENT"
+    assert agent._reference("memcoai.types.DataSource.AGENT") == "AGENT"
     assert agent._reference("list_domains") == "list_domains"
 
 

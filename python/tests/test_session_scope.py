@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from memco import AsyncMemco, Memco, types
-from memco.errors import MemcoInvalidRequestError
+from memcoai import AsyncMemco, Memco, types
+from memcoai.errors import MemcoInvalidRequestError
 
 from .fake_server import Harness
 

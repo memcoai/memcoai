@@ -14,8 +14,8 @@ from typing import Any
 import grpc
 import pytest
 
-from memco._channel import RETRYABLE_METHODS, USER_AGENT, build_async_channel, build_channel
-from memco._config import resolve
+from memcoai._channel import RETRYABLE_METHODS, USER_AGENT, build_async_channel, build_channel
+from memcoai._config import resolve
 
 _REAL_INSECURE = grpc.insecure_channel
 
@@ -77,6 +77,6 @@ def test_both_builders_carry_the_retry_policy(captured_options: list[Any], build
         entry["method"]
         for method_config in config["methodConfig"]
         for entry in method_config["name"]
-        if entry["service"] == "memco.memory.v1.MemoryService"
+        if entry["service"] == "memcoai.memory.v1.MemoryService"
     }
     assert named == set(RETRYABLE_METHODS)

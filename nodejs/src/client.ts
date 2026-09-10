@@ -80,7 +80,7 @@ export interface MemcoOptions extends ResolveOptions {
  *
  * @example
  * ```ts
- * import { Memco } from '@memcoai/memco'
+ * import { Memco } from '@memcoai/memcoai'
  *
  * await using client = await new Memco().connect()  // reads MEMCO_API_TOKEN
  * const { domains } = await client.memory.listDomains()

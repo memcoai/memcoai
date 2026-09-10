@@ -64,12 +64,12 @@ jobs:
           /tmp/verify/bin/python - <<'PY'
           import importlib.resources as resources
 
-          import memco as mc
-          from memco.memory.v1 import memory_pb2 as pb
+          import memcoai as mc
+          from memcoai.memory.v1 import memory_pb2 as pb
 
-          assert pb.DESCRIPTOR.name == "memco/memory/v1/memory.proto"
+          assert pb.DESCRIPTOR.name == "memcoai/memory/v1/memory.proto"
           assert mc.provenance().server_commit, "provenance descriptor missing from the wheel"
-          assert (resources.files("memco") / "py.typed").is_file(), "py.typed did not ship"
+          assert (resources.files("memcoai") / "py.typed").is_file(), "py.typed did not ship"
           print("wheel is whole:", len(mc.__all__), "public symbols")
           PY
 
@@ -88,7 +88,7 @@ jobs:
 
           source = {
               str(p).replace("\\", "/")
-              for p in pathlib.Path("memco/memory").rglob("*")
+              for p in pathlib.Path("memcoai/memory").rglob("*")
               if p.is_file() and p.suffix in {".py", ".pyi", ".json"}
           }
           shipped = set(zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0]).namelist())
@@ -103,7 +103,7 @@ jobs:
         run: |
           cd /tmp
           cat > consumer.py <<'PY'
-          from memco import Memco
+          from memcoai import Memco
           wrong: int = Memco(token="t").provenance().server_commit
           PY
           /tmp/verify/bin/python -m mypy consumer.py 2>&1 | tee out.txt

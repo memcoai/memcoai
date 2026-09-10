@@ -21,12 +21,12 @@ import re
 
 import pytest
 
-from memco import AsyncMemco
-from memco.agent import AsyncToolset
-from memco.operations import AsyncMemoryOperations, AsyncSession
-from memco.types import AsyncMemory
+from memcoai import AsyncMemco
+from memcoai.agent import AsyncToolset
+from memcoai.operations import AsyncMemoryOperations, AsyncSession
+from memcoai.types import AsyncMemory
 
-PACKAGE = pathlib.Path(__file__).parent.parent / "memco"
+PACKAGE = pathlib.Path(__file__).parent.parent / "memcoai"
 
 # The generated client is exported from the server repository and rewritten on
 # every export, so its docstrings are not this repository's to hold to anything.

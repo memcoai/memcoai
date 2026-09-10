@@ -3,10 +3,10 @@
 import grpc
 import pytest
 
-import memco
-from memco import _validate as v
-from memco.errors import MemcoInvalidRequestError
-from memco.types import FeedbackRating, ImportedInsight, ImportedMemory, Tag
+import memcoai
+from memcoai import _validate as v
+from memcoai.errors import MemcoInvalidRequestError
+from memcoai.types import FeedbackRating, ImportedInsight, ImportedMemory, Tag
 
 
 def imported(**overrides) -> ImportedMemory:
@@ -48,7 +48,7 @@ def test_batch_size_is_not_checked_locally():
 
 
 def test_no_numeric_limit_is_exported():
-    assert not [name for name in dir(memco) if name.startswith("MAX_")]
+    assert not [name for name in dir(memcoai) if name.startswith("MAX_")]
     assert not [name for name in dir(v) if name.startswith("MAX_")]
 
 

@@ -5,8 +5,8 @@ from typing import cast
 
 import pytest
 
-from memco import types
-from memco._convert import (
+from memcoai import types
+from memcoai._convert import (
     to_async_memory,
     to_async_search_result,
     to_domain_list,
@@ -18,8 +18,8 @@ from memco._convert import (
     to_session,
     to_write_result,
 )
-from memco.memory.v1 import memory_pb2 as pb
-from memco.operations import AsyncMemoryOperations, MemoryOperations
+from memcoai.memory.v1 import memory_pb2 as pb
+from memcoai.operations import AsyncMemoryOperations, MemoryOperations
 
 # A stand-in for an operations namespace: to_memory/to_search_result only ever
 # store what they are given, so identity, not behaviour, is what these tests

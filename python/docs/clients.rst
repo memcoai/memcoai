@@ -6,13 +6,13 @@ checks performed when it is opened — a health probe, and the ``list_domains``
 call that proves the credential and reports the service's input limits. The
 operations themselves live on namespaces hanging off it.
 
-.. autoclass:: memco.Memco
+.. autoclass:: memcoai.Memco
    :members:
 
-.. autoclass:: memco.AsyncMemco
+.. autoclass:: memcoai.AsyncMemco
    :members:
 
 Provenance
 ----------
 
-.. autofunction:: memco.provenance
+.. autofunction:: memcoai.provenance

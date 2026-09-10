@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": ["src/index.ts"],
   "tsconfig": "tsconfig.json",
-  "name": "@memcoai/memco",
+  "name": "@memcoai/memcoai",
   "readme": "README.md",
 
   // Published verbatim as memco-docs-nodejs-<version>.tar.gz. TypeDoc writes
@@ -38,6 +38,6 @@
 
   "sort": ["source-order"],
   "navigationLinks": {
-    "GitHub": "https://github.com/memcoai/memco"
+    "GitHub": "https://github.com/memcoai/memcoai"
   }
 }

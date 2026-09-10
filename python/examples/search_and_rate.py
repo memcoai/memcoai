@@ -10,8 +10,8 @@ Run it with::
     python examples/search_and_rate.py
 """
 
-from memco import Memco
-from memco.types import FeedbackRating, Tag
+from memcoai import Memco
+from memcoai.types import FeedbackRating, Tag
 
 DOMAIN = "coding"
 

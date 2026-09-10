@@ -1,6 +1,6 @@
 """The example's wiring, exercised through a real agent run.
 
-memco.agent decides what a model is told, what it may send, and how the tools reach
+memcoai.agent decides what a model is told, what it may send, and how the tools reach
 LangChain; tests/test_agent covers all of that against the toolset directly. What's left
 to this file is what only a real run shows: that a tool result comes back as a tool
 message, that an error the SDK raises escapes the run instead of being swallowed, that
@@ -24,8 +24,8 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool, tool
 
-from memco import Memco
-from memco.errors import MemcoAuthenticationError
+from memcoai import Memco
+from memcoai.errors import MemcoAuthenticationError
 
 from .fake_server import Harness
 
@@ -128,7 +128,7 @@ def test_a_rejected_credential_ends_the_run(client: Memco, harness: Harness):
 def test_a_memory_miss_falls_back_to_the_web_and_writes_a_memory_back(
     client: Memco, harness: Harness, monkeypatch: pytest.MonkeyPatch
 ):
-    # Keeps the web search hermetic, the same way Harness keeps the memco calls
+    # Keeps the web search hermetic, the same way Harness keeps the memcoai calls
     # hermetic: no test in this suite may make a real network call. Patched on
     # ddgs.ddgs.DDGS, not the DDGS re-exported by the package: that name is a
     # proxy whose call returns an instance of this real class, so patching the
@@ -179,7 +179,7 @@ def test_a_web_search_failure_reaches_the_model_as_text_instead_of_crashing(
 
 
 def test_the_example_defines_no_wiring_helpers_of_its_own(example: Any):
-    # Everything reusable for talking to LangChain lives in memco.agent, so the
+    # Everything reusable for talking to LangChain lives in memcoai.agent, so the
     # example defines no wiring helpers of its own. run_once is the exception:
     # it is this example's own two-runs-and-compare orchestration, not
     # framework plumbing, so it has nowhere else to live.

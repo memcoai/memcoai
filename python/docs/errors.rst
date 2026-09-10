@@ -1,7 +1,7 @@
 Errors
 ======
 
-.. automodule:: memco.errors
+.. automodule:: memcoai.errors
    :members:
    :member-order: bysource
    :show-inheritance:

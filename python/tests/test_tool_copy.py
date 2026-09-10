@@ -1,14 +1,14 @@
 """The copy a model reads is the service's, unchanged.
 
-``memco/memory/tools.json`` carries the agent-facing descriptions the hosted MCP
+``memcoai/memory/tools.json`` carries the agent-facing descriptions the hosted MCP
 server publishes, and ``scripts/sync_tool_docs.py`` writes them into the
-docstrings ``memco.agent`` reads. Nothing at runtime opens the manifest, so
+docstrings ``memcoai.agent`` reads. Nothing at runtime opens the manifest, so
 these tests are what holds the two ends together: they read it directly and
 assert the copy survived the round trip into a tool definition.
 
 The same script emits ``nodejs/src/gen/toolCopy.ts``, which has no docstrings to
 read back and so states its copy outright. What that target can be held to from
-here is what only Python can see — that the script and ``memco.agent`` still
+here is what only Python can see — that the script and ``memcoai.agent`` still
 agree on the tables both steer by, and that the emitter's own rules hold.
 ``nodejs/tests/toolCopy.test.ts`` checks the module against the manifest.
 
@@ -29,10 +29,10 @@ from typing import Any
 
 import pytest
 
-from memco import Memco, agent, types
-from memco.memory.v1 import memory_pb2 as pb
+from memcoai import Memco, agent, types
+from memcoai.memory.v1 import memory_pb2 as pb
 
-MANIFEST = Path(__file__).resolve().parents[1] / "memco" / "memory" / "tools.json"
+MANIFEST = Path(__file__).resolve().parents[1] / "memcoai" / "memory" / "tools.json"
 MARKER = re.compile(r"\$\{tool:([a-z_]+)\}")
 
 # The manifest describes what the MCP server accepts; these three take a
@@ -249,7 +249,7 @@ def published(manifest) -> dict[str, dict[str, Any]]:
 
 
 def operations_source() -> str:
-    return (Path(__file__).resolve().parents[1] / "memco" / "operations.py").read_text("utf-8")
+    return (Path(__file__).resolve().parents[1] / "memcoai" / "operations.py").read_text("utf-8")
 
 
 def test_the_generator_refuses_copy_that_reads_as_a_section_header(published):
@@ -303,7 +303,7 @@ def test_the_generator_is_idempotent(manifest):
 # `nodejs/src/gen/toolCopy.ts` is emitted, not rewritten, so drift is plain
 # string inequality and there is no AST to read the copy back out of. These
 # cover what the Node suite cannot see: that the script's copies of the tables
-# `memco.agent` steers by still match it, and that the emitter's own rules hold.
+# `memcoai.agent` steers by still match it, and that the emitter's own rules hold.
 
 
 def test_the_generator_and_the_sdk_agree_on_how_a_tool_is_named():

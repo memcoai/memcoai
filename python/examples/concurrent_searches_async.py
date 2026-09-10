@@ -12,9 +12,9 @@ Run it with::
 
 import asyncio
 
-from memco import AsyncMemco
-from memco.errors import MemcoAPIError
-from memco.types import SearchResult
+from memcoai import AsyncMemco
+from memcoai.errors import MemcoAPIError
+from memcoai.types import SearchResult
 
 QUERIES = [
     "how does gRPC health checking work",

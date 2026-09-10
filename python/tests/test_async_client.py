@@ -8,9 +8,9 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
-import memco
-from memco import AsyncMemco, errors, types
-from memco.memory.v1 import memory_pb2 as pb
+import memcoai
+from memcoai import AsyncMemco, errors, types
+from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
 from .fake_server import Harness
@@ -90,12 +90,12 @@ async def test_a_bad_token_surfaces_on_connect(harness: Harness):
 async def test_a_rejected_credential_is_logged(harness: Harness, caplog):
     harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
     with (
-        caplog.at_level(logging.ERROR, logger="memco"),
+        caplog.at_level(logging.ERROR, logger="memcoai"),
         pytest.raises(errors.MemcoAuthenticationError),
     ):
         async with AsyncMemco(token=TOKEN, host=harness.address, tls=False):
             pass
-    assert [record.name for record in caplog.records] == ["memco._aio"]
+    assert [record.name for record in caplog.records] == ["memcoai._aio"]
     assert TOKEN not in caplog.text
 
 
@@ -201,7 +201,7 @@ async def test_the_user_agent_is_sent_by_the_async_client(
     sent = harness.memory.metadata[-1]["user-agent"]
     # Prepended, not appended: gRPC's own token must survive or the transport
     # becomes unidentifiable.
-    assert sent.startswith(f"memco-python/{memco.__version__}")
+    assert sent.startswith(f"memco-python/{memcoai.__version__}")
     # The asyncio transport identifies itself as grpc-python-asyncio, so match
     # the stem rather than the synchronous spelling.
     assert "grpc-python" in sent

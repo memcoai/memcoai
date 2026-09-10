@@ -12,12 +12,12 @@ if _MATCH is None:
     raise RuntimeError("LICENSE carries no copyright year for the documentation footer")
 _LICENCE_YEAR = _MATCH.group(1)
 
-project = "memco"
+project = "memcoai"
 author = "Memco Labs, Inc."
 # Sphinx does not derive the footer notice from `author`; without this it
 # renders a bare "Copyright ©".
 copyright = f"{_LICENCE_YEAR} {author}"  # noqa: A001 - the name Sphinx requires
-release = _version("memco")
+release = _version("memcoai")
 version = release
 
 extensions = [
@@ -45,7 +45,7 @@ autodoc_default_options = {
     "undoc-members": False,
     "show-inheritance": True,
 }
-# The SDK re-exports everything through memco.client; documenting the module a
+# The SDK re-exports everything through memcoai.client; documenting the module a
 # symbol happens to live in would leak the private layout into the reference.
 add_module_names = False
 
@@ -65,9 +65,9 @@ nitpick_ignore = [
     ("py:class", "grpc.ClientCallDetails"),
     # Generated protobuf types, returned by the to_proto() helpers. They ship
     # no documentation inventory and are an implementation detail.
-    ("py:class", "memco.memory.v1.memory_pb2.Tag"),
-    ("py:class", "memco.memory.v1.memory_pb2.FeedbackRating"),
-    ("py:class", "memco.memory.v1.memory_pb2.ImportedInsight"),
+    ("py:class", "memcoai.memory.v1.memory_pb2.Tag"),
+    ("py:class", "memcoai.memory.v1.memory_pb2.FeedbackRating"),
+    ("py:class", "memcoai.memory.v1.memory_pb2.ImportedInsight"),
     # Set in __init__ rather than at class level, so napoleon renders them as
     # instance-variable fields, which are not cross-reference targets.
     ("py:attr", "MemcoAPIError.code"),
@@ -77,7 +77,7 @@ nitpick_ignore = [
 
 exclude_patterns = ["_build"]
 html_theme = "furo"
-html_title = f"memco {release}"
+html_title = f"memcoai {release}"
 
 # Every release is served twice on the documentation site — under its own number
 # and under `latest` — so each page names the copy under `latest` as canonical.
@@ -91,7 +91,7 @@ html_static_path = ["../../assets"]
 html_theme_options = {
     "light_logo": "logo.svg",
     "dark_logo": "logo-dark.svg",
-    "source_repository": "https://github.com/memcoai/memco/",
+    "source_repository": "https://github.com/memcoai/memcoai/",
     "source_branch": "main",
     "source_directory": "python/docs/",
 }

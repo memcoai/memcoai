@@ -1,5 +1,5 @@
 {
-  "name": "@memcoai/memco",
+  "name": "@memcoai/memcoai",
   "version": "0.1.0",
   "description": "Node.js SDK for Memco Shared Memory.",
   "keywords": [
@@ -9,13 +9,13 @@
     "grpc",
     "sdk"
   ],
-  "homepage": "https://github.com/memcoai/memco/tree/main/nodejs#readme",
+  "homepage": "https://github.com/memcoai/memcoai/tree/main/nodejs#readme",
   "bugs": {
-    "url": "https://github.com/memcoai/memco/issues"
+    "url": "https://github.com/memcoai/memcoai/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/memcoai/memco.git",
+    "url": "git+https://github.com/memcoai/memcoai.git",
     "directory": "nodejs"
   },
   "license": "MIT",

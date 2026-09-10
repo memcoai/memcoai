@@ -5,8 +5,8 @@ import pathlib
 
 import pytest
 
-from memco._provenance import parse, provenance
-from memco.errors import MemcoConfigError
+from memcoai._provenance import parse, provenance
+from memcoai.errors import MemcoConfigError
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -15,7 +15,7 @@ def test_provenance_is_readable_from_the_installed_package():
     p = provenance()
     assert p.server_commit
     assert p.protos
-    assert p.protos[0].path == "memco/memory/v1/memory.proto"
+    assert p.protos[0].path == "memcoai/memory/v1/memory.proto"
 
 
 def test_provenance_is_cached():
@@ -23,7 +23,7 @@ def test_provenance_is_cached():
 
 
 def test_checksum_matches_the_contract_in_the_repository():
-    proto = REPO / "proto" / "memco" / "memory" / "v1" / "memory.proto"
+    proto = REPO / "proto" / "memcoai" / "memory" / "v1" / "memory.proto"
     expected = hashlib.sha256(proto.read_bytes()).hexdigest()
     assert provenance().protos[0].sha256 == expected
 
@@ -40,13 +40,13 @@ requires:
   python:
     grpcio: ">=1.76.0,<2"
 protos:
-  - path: memco/memory/v1/memory.proto
+  - path: memcoai/memory/v1/memory.proto
     sha256: deadbeef
 """
     )
     assert p.server_commit == "abc123"
     assert len(p.protos) == 1
-    assert (p.protos[0].path, p.protos[0].sha256) == ("memco/memory/v1/memory.proto", "deadbeef")
+    assert (p.protos[0].path, p.protos[0].sha256) == ("memcoai/memory/v1/memory.proto", "deadbeef")
 
 
 def test_nested_keys_cannot_impersonate_the_real_ones():

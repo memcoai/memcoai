@@ -12,9 +12,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml"><img alt="CI (Python)" src="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml/badge.svg?branch=main"></a>
+  <a href="https://github.com/memcoai/memcoai/actions/workflows/ci_python.yaml"><img alt="CI (Python)" src="https://github.com/memcoai/memcoai/actions/workflows/ci_python.yaml/badge.svg?branch=main"></a>
   <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9"><br>
-  <a href="https://github.com/memcoai/memco/actions/workflows/ci_nodejs.yaml"><img alt="CI (Node.js)" src="https://github.com/memcoai/memco/actions/workflows/ci_nodejs.yaml/badge.svg?branch=main"></a>
+  <a href="https://github.com/memcoai/memcoai/actions/workflows/ci_nodejs.yaml"><img alt="CI (Node.js)" src="https://github.com/memcoai/memcoai/actions/workflows/ci_nodejs.yaml/badge.svg?branch=main"></a>
   <img alt="Node versions" src="https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-5fa04e"><br>
   <!-- One coverage badge, not one per language: it is a claim about the
        enforced floor, and both floors are 95% - `fail_under` in
@@ -49,8 +49,8 @@ reliability signal built from what readers reported back about it.
 
 | Language | Package | Install |
 |---|---|---|
-| Python | [`memco`](python/) | `pip install memco` |
-| Node.js | [`@memcoai/memco`](nodejs/) | `npm install @memcoai/memco` |
+| Python | [`memcoai`](python/) | `pip install memcoai` |
+| Node.js | [`@memcoai/memcoai`](nodejs/) | `npm install @memcoai/memcoai` |
 
 The generated gRPC client for [Go](go/) is also published here and can be used
 directly against the API.
@@ -65,12 +65,44 @@ and a tool referenced in the prose is a `${tool:...}` marker, because the three
 generators disagree on method casing — resolve the markers to the spelling your
 client exposes rather than shipping them to a model.
 
+## Other languages
+
+Every SDK above comes from one contract:
+[`proto/memcoai/memory/v1/memory.proto`](proto/memcoai/memory/v1/memory.proto), the
+same file this repository's own Python, Node.js and Go clients are generated
+from. For a language without an SDK here yet, point that language's `protoc`
+plugin (or equivalent — `ts-proto`, `tonic-build`, `grpc-java`,
+`grpc_tools.protoc`, …) at it directly:
+
+```bash
+protoc --proto_path=proto proto/memcoai/memory/v1/memory.proto \
+  <your language's protoc-gen-* flags here>
+```
+
+That gets you the wire types and RPC stubs — the same starting point every SDK
+here began from. It does not get you what each hand-written SDK adds on top:
+resolving the credential and endpoint, verifying the connection before the
+first real call, typed errors instead of a raw RPC exception, and surfacing
+the limits and deprecations the service reports. Wrapping the generated client
+with that is on you; see what each language's SDK does for one worked example.
+
+To point a generated client at the service:
+
+| | |
+|---|---|
+| Endpoint | `grpc.spark.memco.ai:443`, over TLS |
+| Credential | gRPC metadata `authorization: Bearer <token>` — get one at [memco.ai](https://memco.ai) |
+| Health check | `grpc.health.v1.Health`, served without a credential — probe it first to fail fast on a bad endpoint before sending one that needs a token |
+
+Built a client worth sharing? Open an issue before sending a pull request —
+see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Quick start
 
 ### Python
 
 ```python
-from memco import Memco
+from memcoai import Memco
 with Memco() as client:                       # reads MEMCO_API_TOKEN
     session = client.memory.start_session("coding")
 
@@ -86,7 +118,7 @@ See [`python/README.md`](python/README.md) for the full guide and
 ### Node.js
 
 ```typescript
-import { Memco } from '@memcoai/memco'
+import { Memco } from '@memcoai/memcoai'
 
 await using client = await new Memco().connect() // reads MEMCO_API_TOKEN
 const session = await client.memory.withSession('coding')
@@ -111,8 +143,8 @@ See [`nodejs/README.md`](nodejs/README.md) for the full guide and
 ```
 proto/            the service contract, for reference
 python/           the Python SDK
-  memco/            hand-written SDK
-  memco/memory/     generated gRPC client, and the tool manifest
+  memcoai/          hand-written SDK
+  memcoai/memory/   generated gRPC client, and the tool manifest
 nodejs/           the Node.js SDK
   src/              hand-written SDK
   client/           generated gRPC client, and the tool manifest
@@ -122,7 +154,7 @@ scripts/          repository checks, standard library only
 
 Generated code is replaced wholesale each time it is regenerated, so please do
 not edit it by hand — see [CONTRIBUTING.md](CONTRIBUTING.md). For Python that is
-`python/memco/memory/`; for Go and Node it is `<language>/client/`.
+`python/memcoai/memory/`; for Go and Node it is `<language>/client/`.
 
 ## Contributing
 
@@ -143,7 +175,7 @@ make help      # every target
 
 - Documentation — [docs.memco.ai](https://docs.memco.ai)
 - Questions about your account, plans or API keys — [memco.ai](https://memco.ai)
-- Bugs and feature requests in these SDKs — [open an issue](https://github.com/memcoai/memco/issues)
+- Bugs and feature requests in these SDKs — [open an issue](https://github.com/memcoai/memcoai/issues)
 
 ## Licence
 

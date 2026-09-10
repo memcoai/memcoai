@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memco/main/assets/logo.svg" width="320">
+  <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memcoai/main/assets/logo.svg" width="320">
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml"><img alt="CI (Python)" src="https://github.com/memcoai/memco/actions/workflows/ci_python.yaml/badge.svg?branch=main"></a>
+  <a href="https://github.com/memcoai/memcoai/actions/workflows/ci_python.yaml"><img alt="CI (Python)" src="https://github.com/memcoai/memcoai/actions/workflows/ci_python.yaml/badge.svg?branch=main"></a>
   <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9"><br>
   <img alt="Coverage" src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
@@ -32,7 +32,7 @@ available synchronously and asynchronously, and the package is fully typed —
 ## Install
 
 ```bash
-pip install memco
+pip install memcoai
 ```
 
 Requires Python 3.10 or newer.
@@ -40,7 +40,7 @@ Requires Python 3.10 or newer.
 ## Quick start
 
 ```python
-from memco import Memco
+from memcoai import Memco
 
 with Memco() as client:  # reads MEMCO_API_TOKEN
     for domain in client.memory.list_domains().domains:
@@ -73,7 +73,7 @@ Rating more than one result at once still goes through `share_feedback`
 directly, with a `FeedbackRating` per result:
 
 ```python
-from memco.types import FeedbackRating
+from memcoai.types import FeedbackRating
 
 session.share_feedback(
     feedback=[
@@ -85,7 +85,7 @@ session.share_feedback(
 Everything works asynchronously too, with the same method names:
 
 ```python
-from memco import AsyncMemco
+from memcoai import AsyncMemco
 
 async with AsyncMemco() as client:
     async with client.memory.with_session("coding") as session:
@@ -93,7 +93,7 @@ async with AsyncMemco() as client:
 ```
 
 Runnable programs covering the common workflows are in
-[`examples/`](https://github.com/memcoai/memco/blob/main/python/examples/).
+[`examples/`](https://github.com/memcoai/memcoai/blob/main/python/examples/).
 
 ## Agents
 
@@ -103,7 +103,7 @@ results rendered as text it can read, and the handover to whatever is driving
 the loop. The SDK supplies all of it, from the session the tools are bound to:
 
 ```python
-from memco import Memco, agent
+from memcoai import Memco, agent
 
 with Memco() as client:
     entry = next(d for d in client.memory.list_domains().domains if d.slug == "coding")
@@ -134,7 +134,7 @@ nothing. `AsyncMemco`'s session has the same `tools()`, awaitable and described
 identically.
 
 The description a model reads for each tool is the service's, not this SDK's. It
-arrives with every export as `memco/memory/tools.json` — the same copy the hosted
+arrives with every export as `memcoai/memory/tools.json` — the same copy the hosted
 MCP server publishes — and is written into the docstrings the toolset is built
 from, so a change of wording reaches you with a release rather than silently.
 
@@ -151,7 +151,7 @@ handle that resolves to nothing all come back as text the model can act on —
 `agent.AGENT_RECOVERABLE` is where that line is drawn. Everything else, a
 rejected credential above all, is raised: no wording a model reads will fix it.
 
-[`examples/langchain_agent.py`](https://github.com/memcoai/memco/blob/main/python/examples/langchain_agent.py)
+[`examples/langchain_agent.py`](https://github.com/memcoai/memcoai/blob/main/python/examples/langchain_agent.py)
 is a complete agent in eighty lines, and defines no helpers of its own.
 
 ## Configuration
@@ -182,13 +182,13 @@ which `async with` calls for you.
 
 ## Logging
 
-Everything the SDK logs goes to a logger under `memco` — `memco._sync`,
-`memco._channel`, `memco._config` and so on — so configuring that one name
+Everything the SDK logs goes to a logger under `memcoai` — `memcoai._sync`,
+`memcoai._channel`, `memcoai._config` and so on — so configuring that one name
 governs all of it, while a single noisy area can still be quietened on its own:
 
 ```python
-logging.getLogger("memco").setLevel(logging.WARNING)
-logging.getLogger("memco._channel").setLevel(logging.ERROR)
+logging.getLogger("memcoai").setLevel(logging.WARNING)
+logging.getLogger("memcoai._channel").setLevel(logging.ERROR)
 ```
 
 The SDK configures itself at `INFO` when you import it: a line when a client
@@ -197,8 +197,8 @@ raised, since a client is often built somewhere the traceback does not reach.
 
 ```console
 $ python app.py
-2026-08-31 10:02:11,604 memco._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
-2026-08-31 10:02:14,318 memco._sync INFO closed connection to grpc.spark.memco.ai:443
+2026-08-31 10:02:11,604 memcoai._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
+2026-08-31 10:02:14,318 memcoai._sync INFO closed connection to grpc.spark.memco.ai:443
 ```
 
 Set `MEMCO_LOG` to change that level — `debug`, `info`, `warning`, `error`,
@@ -216,35 +216,35 @@ cap silently trimmed a list you passed:
 
 ```console
 $ MEMCO_LOG=debug python app.py
-2026-08-31 10:02:11,417 memco._config DEBUG credential taken from MEMCO_API_TOKEN
-2026-08-31 10:02:11,417 memco._config DEBUG endpoint grpc.spark.memco.ai:443 tls=True (host from the default)
-2026-08-31 10:02:11,502 memco._sync DEBUG health check on grpc.spark.memco.ai:443 ok in 84ms
-2026-08-31 10:02:11,604 memco._sync DEBUG ListDomains ok in 101ms
-2026-08-31 10:02:11,604 memco._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
-2026-08-31 10:02:11,731 memco._validate DEBUG tags trimmed from 62 to 50 by the service's cap
-2026-08-31 10:02:11,905 memco._sync DEBUG Search ok in 173ms
+2026-08-31 10:02:11,417 memcoai._config DEBUG credential taken from MEMCO_API_TOKEN
+2026-08-31 10:02:11,417 memcoai._config DEBUG endpoint grpc.spark.memco.ai:443 tls=True (host from the default)
+2026-08-31 10:02:11,502 memcoai._sync DEBUG health check on grpc.spark.memco.ai:443 ok in 84ms
+2026-08-31 10:02:11,604 memcoai._sync DEBUG ListDomains ok in 101ms
+2026-08-31 10:02:11,604 memcoai._sync INFO connected to grpc.spark.memco.ai:443 (tls=True)
+2026-08-31 10:02:11,731 memcoai._validate DEBUG tags trimmed from 62 to 50 by the service's cap
+2026-08-31 10:02:11,905 memcoai._sync DEBUG Search ok in 173ms
 ```
 
 **No credential is ever written to a record**, at any level.
 
 ### If your application configures its own logging
 
-The SDK owns its output by default: it attaches a stderr handler to `memco` and
+The SDK owns its output by default: it attaches a stderr handler to `memcoai` and
 stops that logger propagating, so records go to the SDK's handler and no longer
 reach the ones you attached further up, the root logger's included. That is what
 makes it work with no setup — and it is the wrong shape for an application with
 its own logging, where a redaction filter or log shipper on the root logger would
-never see a memco record.
+never see a memcoai record.
 
 To take the SDK's records back into your own pipeline, set `MEMCO_LOG=none` in
-the environment and configure the `memco` logger yourself:
+the environment and configure the `memcoai` logger yourself:
 
 ```python
 import logging
-from memco import Memco  # with MEMCO_LOG=none set
+from memcoai import Memco  # with MEMCO_LOG=none set
 
 logging.basicConfig(level=logging.INFO)
-logging.getLogger("memco").setLevel(logging.INFO)
+logging.getLogger("memcoai").setLevel(logging.INFO)
 
 with Memco() as client:  # records flow through your handlers
     ...
@@ -252,11 +252,11 @@ with Memco() as client:  # records flow through your handlers
 
 ```console
 $ MEMCO_LOG=none python app.py
-INFO:memco._sync:connected to grpc.spark.memco.ai:443 (tls=True)
+INFO:memcoai._sync:connected to grpc.spark.memco.ai:443 (tls=True)
 ```
 
 Use the environment variable rather than `log_level="none"` for this: the
-variable is applied when `memco` is imported, while the argument is applied
+variable is applied when `memcoai` is imported, while the argument is applied
 inside the constructor — after which the level you set is gone and the
 `connected` record has already been written.
 
@@ -321,7 +321,7 @@ if result.outcome is RevertOutcome.EXPIRED:
     print("outside the revert window")
 ```
 
-[`examples/handling_errors.py`](https://github.com/memcoai/memco/blob/main/python/examples/handling_errors.py) works through every
+[`examples/handling_errors.py`](https://github.com/memcoai/memcoai/blob/main/python/examples/handling_errors.py) works through every
 failure mode and what to do about each.
 
 ## Provenance
@@ -330,10 +330,10 @@ The package records which version of the service contract its generated client
 was built from:
 
 ```python
-from memco import provenance
+from memcoai import provenance
 
 provenance().server_commit  # the commit this wheel was built from
-provenance().protos[0].path  # 'memco/memory/v1/memory.proto'
+provenance().protos[0].path  # 'memcoai/memory/v1/memory.proto'
 ```
 
 ## Contributing
@@ -341,7 +341,7 @@ provenance().protos[0].path  # 'memco/memory/v1/memory.proto'
 Bug reports and pull requests are welcome, and you do not need access to Memco's
 servers to work on this — the test suite runs against an in-process gRPC server,
 so everything passes offline. The
-[Python section of CONTRIBUTING.md](https://github.com/memcoai/memco/blob/main/CONTRIBUTING.md#python)
+[Python section of CONTRIBUTING.md](https://github.com/memcoai/memcoai/blob/main/CONTRIBUTING.md#python)
 covers local setup, the checks, and the test conventions.
 
 ```bash
@@ -350,10 +350,10 @@ make check                  # lint, typecheck, test, docs — everything CI runs
 make -C python docs-serve   # build the reference and read it locally
 ```
 
-The generated client under `memco/memory/` is produced from the service
+The generated client under `memcoai/memory/` is produced from the service
 contract and is replaced wholesale when regenerated; everything else in
-`memco/` is hand-written.
+`memcoai/` is hand-written.
 
 ## Licence
 
-[MIT](https://github.com/memcoai/memco/blob/main/LICENSE) &copy; Memco Labs, Inc.
+[MIT](https://github.com/memcoai/memcoai/blob/main/LICENSE) &copy; Memco Labs, Inc.

@@ -11,12 +11,12 @@ are touching. After that the document splits, and each language repeats the same
 seven headings — Prerequisites, Setting up, Running the checks, Layout, Tests,
 Documentation, Style — so the two can be read side by side:
 
-- [Python](#python) — published to PyPI as `memco`
-- [Node.js](#nodejs) — published to npm as `@memcoai/memco`
+- [Python](#python) — published to PyPI as `memcoai`
+- [Node.js](#nodejs) — published to npm as `@memcoai/memcoai`
 
 ## Reporting a bug
 
-[Open an issue](https://github.com/memcoai/memco/issues) and include:
+[Open an issue](https://github.com/memcoai/memcoai/issues) and include:
 
 - what you did, what you expected, and what happened instead
 - the SDK version and your language runtime version
@@ -43,7 +43,7 @@ will be silently discarded:
 
 ```
 proto/                    the service contract
-python/memco/memory/      generated Python client, and the tool manifest
+python/memcoai/memory/    generated Python client, and the tool manifest
 go/client/                generated Go client, and the tool manifest
 nodejs/client/            generated Node client, and the tool manifest
 ```
@@ -72,7 +72,7 @@ reviewable in a diff rather than loaded from a data file:
 
 | SDK | Where the copy lands |
 |---|---|
-| Python | docstrings in `memco/operations.py` and `memco/types.py`, which `memco.agent` reads back at run time |
+| Python | docstrings in `memcoai/operations.py` and `memcoai/types.py`, which `memcoai.agent` reads back at run time |
 | Node.js | `nodejs/src/gen/toolCopy.ts` — TypeScript keeps no doc comments at run time, so the copy is compiled in |
 | Go | not compiled in; `go/client/tools` publishes the manifest as it ships, markers and all |
 
@@ -101,8 +101,8 @@ every language present and skip nothing, so a partial toolchain will fail on the
 language you have not installed.
 
 ```bash
-git clone https://github.com/memcoai/memco.git
-cd memco
+git clone https://github.com/memcoai/memcoai.git
+cd memcoai
 make install
 make check
 ```
@@ -165,7 +165,7 @@ pre-commit install
 # Python
 
 The Python SDK is in [`python/`](python/) and is published to PyPI as
-[`memco`](https://pypi.org/project/memco/).
+[`memcoai`](https://pypi.org/project/memcoai/).
 
 ## Prerequisites
 
@@ -217,7 +217,7 @@ make -C python build        # build the sdist and the wheel
 
 ```
 python/
-  memco/
+  memcoai/
     __init__.py       the public API: Memco, AsyncMemco, provenance
     types.py          the result types every operation returns
     errors.py         the exception hierarchy
@@ -230,8 +230,8 @@ python/
   docs/               Sphinx sources for the reference
 ```
 
-Anything under `memco/memory/` comes from the service contract. Everything else
-in `memco/` is hand-written, `__init__.py` included.
+Anything under `memcoai/memory/` comes from the service contract. Everything else
+in `memcoai/` is hand-written, `__init__.py` included.
 
 ## Tests
 
@@ -332,7 +332,7 @@ signatures genuinely are `Any`. Say why in the comment.
 # Node.js
 
 The Node.js SDK is in [`nodejs/`](nodejs/) and is published to npm as
-[`@memcoai/memco`](https://www.npmjs.com/package/@memcoai/memco).
+[`@memcoai/memcoai`](https://www.npmjs.com/package/@memcoai/memcoai).
 
 ## Prerequisites
 

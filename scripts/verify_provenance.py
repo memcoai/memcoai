@@ -23,16 +23,16 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PROTO = ROOT / "proto" / "memco" / "memory" / "v1" / "memory.proto"
+PROTO = ROOT / "proto" / "memcoai" / "memory" / "v1" / "memory.proto"
 # Python's generated client lives inside the package it ships in; Go and Node
 # keep theirs under <lang>/client/.
 PYTHON_ROOT = ROOT / "python"
-PYTHON_GENERATED = PYTHON_ROOT / "memco" / "memory"
-CONTRACT_PATH = "memco/memory/v1/memory.proto"
+PYTHON_GENERATED = PYTHON_ROOT / "memcoai" / "memory"
+CONTRACT_PATH = "memcoai/memory/v1/memory.proto"
 MANIFESTS = (
     "go/client/tools/tools.json",
     "nodejs/client/src/gen/tools.json",
-    "python/memco/memory/tools.json",
+    "python/memcoai/memory/tools.json",
 )
 """The tool manifest, one copy per language tree. They are generated from one
 source and must arrive byte-identical."""
@@ -118,7 +118,7 @@ def main() -> int:
 
     digest = hashlib.sha256(PROTO.read_bytes()).hexdigest()
     descriptors = sorted(
-        [*ROOT.glob("*/client/SDK_PROVENANCE.yaml"), *ROOT.glob("python/memco/SDK_PROVENANCE.yaml")]
+        [*ROOT.glob("*/client/SDK_PROVENANCE.yaml"), *ROOT.glob("python/memcoai/SDK_PROVENANCE.yaml")]
     )
     print(f"contract {PROTO.relative_to(ROOT)} sha256={digest[:16]}...")
 
@@ -150,7 +150,7 @@ def main() -> int:
     # a failed check, not an unhandled traceback that hides section 1's results.
     required = [
         PYTHON_ROOT / "requirements.txt",
-        PYTHON_ROOT / "memco" / "SDK_PROVENANCE.yaml",
+        PYTHON_ROOT / "memcoai" / "SDK_PROVENANCE.yaml",
         PYTHON_GENERATED / "v1" / "memory_pb2_grpc.py",
         PYTHON_GENERATED / "v1" / "memory_pb2.py",
     ]
@@ -163,7 +163,7 @@ def main() -> int:
 
     requirements = (PYTHON_ROOT / "requirements.txt").read_text(encoding="utf-8")
     descriptor_text = block(
-        (PYTHON_ROOT / "memco" / "SDK_PROVENANCE.yaml").read_text(encoding="utf-8"), "requires", "python"
+        (PYTHON_ROOT / "memcoai" / "SDK_PROVENANCE.yaml").read_text(encoding="utf-8"), "requires", "python"
     )
     pins: dict[str, str] = {}
     for line in requirements.splitlines():

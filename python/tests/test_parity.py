@@ -9,15 +9,15 @@ from __future__ import annotations
 import inspect
 from collections.abc import Set as AbstractSet
 
-import memco as package
-from memco import AsyncMemco, Memco, errors, operations, types
-from memco.operations import (
+import memcoai as package
+from memcoai import AsyncMemco, Memco, errors, operations, types
+from memcoai.operations import (
     AsyncMemoryOperations,
     AsyncSession,
     MemoryOperations,
     Session,
 )
-from memco.types import AsyncMemory, Memory
+from memcoai.types import AsyncMemory, Memory
 
 from .fake_server import Harness
 
@@ -102,7 +102,7 @@ def test_namespace_signatures_match():
 def test_every_operation_is_documented_with_an_example():
     # The docstrings are the source for generated docs, so an operation without
     # a worked example is a gap in the published documentation. They are also
-    # what memco.agent renders every tool description from, so a missing Args
+    # what memcoai.agent renders every tool description from, so a missing Args
     # entry costs a model its guidance on that argument.
     for sync_ns, async_ns in PAIRS:
         for cls in (sync_ns, async_ns):

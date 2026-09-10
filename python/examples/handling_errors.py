@@ -11,8 +11,8 @@ Run it with::
 
 import time
 
-from memco import Memco
-from memco.errors import (
+from memcoai import Memco
+from memcoai.errors import (
     MemcoAPIError,
     MemcoAuthenticationError,
     MemcoConfigError,

@@ -12,4 +12,4 @@
  * and the namespace is what keeps the wire shape and the public shape legibly
  * apart.
  */
-export * from '../../client/src/gen/memco/memory/v1/memory.js'
+export * from '../../client/src/gen/memcoai/memory/v1/memory.js'

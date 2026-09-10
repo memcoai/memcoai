@@ -107,7 +107,7 @@ class Reference:
     TypeDoc's markdown anchors are the slugs of its own headings, so a link to
     ``#connect`` lands where it says. sphinx-markdown-builder writes none at
     all while still emitting the HTML domain's ids as fragments, so a link to
-    ``errors.md#memco.errors.MemcoNotFoundError`` names a file that has never
+    ``errors.md#memcoai.errors.MemcoNotFoundError`` names a file that has never
     heard of it. Where that is so, a link between published markdown pages
     keeps the page and drops the fragment: the right page and no position
     beats a position that does not exist. The reader wanting the anchor has
@@ -386,8 +386,8 @@ def python_reference() -> Reference:
         for name in ["index", *toctree(root / "docs" / "index.rst")]
     )
     return Reference(
-        title=f"memco Python SDK {project['version']}",
-        summary=f"{project['description']} Install with `pip install memco`.",
+        title=f"memcoai Python SDK {project['version']}",
+        summary=f"{project['description']} Install with `pip install memcoai`.",
         html=root / "docs" / "_build" / "html",
         markdown=markdown,
         pages=pages,
@@ -446,7 +446,7 @@ def nodejs_reference() -> Reference:
             )
         )
     return Reference(
-        title=f"memco Node.js SDK {package['version']}",
+        title=f"memcoai Node.js SDK {package['version']}",
         summary=f"{package['description']} Install with `npm install {package['name']}`.",
         html=root / "docs" / "_build" / "html",
         markdown=markdown,

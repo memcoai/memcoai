@@ -36,6 +36,6 @@ jobs:
       # Standard library only, so neither of these needs a dependency install.
       - run: python scripts/verify_provenance.py
       # The tool copy an SDK hands a model is generated from the manifest: the
-      # docstrings memco.agent reads, and nodejs/src/gen/toolCopy.ts. Drift here
+      # docstrings memcoai.agent reads, and nodejs/src/gen/toolCopy.ts. Drift here
       # hands a model copy the service did not write.
       - run: python scripts/sync_tool_docs.py --check

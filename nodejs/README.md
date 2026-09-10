@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memco/main/assets/logo.svg" width="320">
+  <img alt="Memco" src="https://raw.githubusercontent.com/memcoai/memcoai/main/assets/logo.svg" width="320">
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/memcoai/memco/actions/workflows/ci_nodejs.yaml"><img alt="CI (Node.js)" src="https://github.com/memcoai/memco/actions/workflows/ci_nodejs.yaml/badge.svg?branch=main"></a>
+  <a href="https://github.com/memcoai/memcoai/actions/workflows/ci_nodejs.yaml"><img alt="CI (Node.js)" src="https://github.com/memcoai/memcoai/actions/workflows/ci_nodejs.yaml/badge.svg?branch=main"></a>
   <img alt="Node versions" src="https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-5fa04e"><br>
   <img alt="Coverage" src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
@@ -29,24 +29,24 @@ knowledge goes instead.
 ## Install
 
 ```bash
-npm install @memcoai/memco
+npm install @memcoai/memcoai
 ```
 
 Node 22 or newer. The package ships both ESM and CommonJS builds with full type
 declarations for each, so `import` and `require` both work.
 
 ```ts
-import { Memco } from '@memcoai/memco'
+import { Memco } from '@memcoai/memcoai'
 ```
 
 ```js
-const { Memco } = require('@memcoai/memco')
+const { Memco } = require('@memcoai/memcoai')
 ```
 
 ## Quick start
 
 ```ts
-import { Memco } from '@memcoai/memco'
+import { Memco } from '@memcoai/memcoai'
 
 await using client = await new Memco().connect() // reads MEMCO_API_TOKEN
 
@@ -104,7 +104,7 @@ try {
 ```
 
 Runnable programs are in
-[`examples/`](https://github.com/memcoai/memco/tree/main/nodejs/examples).
+[`examples/`](https://github.com/memcoai/memcoai/tree/main/nodejs/examples).
 
 ## Agents
 
@@ -112,7 +112,7 @@ A bound session carries the tools a model needs, described in the service's own
 words rather than each SDK's:
 
 ```ts
-import { briefing } from '@memcoai/memco'
+import { briefing } from '@memcoai/memcoai'
 import { createAgent } from 'langchain'
 
 await using client = await new Memco().connect()
@@ -284,16 +284,16 @@ if (reverted.outcome === RevertOutcome.EXPIRED) {
 Which version of the service contract this package was generated from:
 
 ```ts
-import { provenance } from '@memcoai/memco'
+import { provenance } from '@memcoai/memcoai'
 
 provenance().serverCommit // '93ec8030bac33afa1bf2aa376d5f5a406098d81a'
-provenance().protos[0].path // 'memco/memory/v1/memory.proto'
+provenance().protos[0].path // 'memcoai/memory/v1/memory.proto'
 ```
 
 ## Contributing
 
 See
-[CONTRIBUTING.md](https://github.com/memcoai/memco/blob/main/CONTRIBUTING.md#nodejs).
+[CONTRIBUTING.md](https://github.com/memcoai/memcoai/blob/main/CONTRIBUTING.md#nodejs).
 
 ```bash
 make -C nodejs install

@@ -8,7 +8,7 @@ Run it with::
 
 import asyncio
 
-from memco import AsyncMemco
+from memcoai import AsyncMemco
 
 
 async def main() -> None:

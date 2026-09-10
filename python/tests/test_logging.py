@@ -8,7 +8,7 @@ import logging
 
 import pytest
 
-from memco import AsyncMemco, Memco, _logging, errors
+from memcoai import AsyncMemco, Memco, _logging, errors
 
 
 def stream_handlers(logger: logging.Logger) -> list[logging.Handler]:
@@ -30,7 +30,7 @@ def test_the_default_is_info_on_stderr(env):
 
 def test_a_client_reports_connecting_and_closing_at_the_default_level(harness, caplog):
     with (
-        caplog.at_level(logging.INFO, logger="memco"),
+        caplog.at_level(logging.INFO, logger="memcoai"),
         Memco(token="test-token", host=harness.address, tls=False),
     ):
         pass
@@ -59,7 +59,7 @@ def test_the_value_tolerates_case_and_whitespace():
 def test_none_stops_every_record(capsys):
     logger = logging.getLogger(_logging.ROOT)
     _logging.configure({"MEMCO_LOG": "none"})
-    logging.getLogger("memco._sync").critical("this must not appear")
+    logging.getLogger("memcoai._sync").critical("this must not appear")
     assert logger.level > logging.CRITICAL
     assert stream_handlers(logger) == []
     assert capsys.readouterr().err == ""
@@ -82,11 +82,11 @@ def test_the_variable_is_read_from_the_real_environment(monkeypatch):
 
 def test_records_carry_the_module_and_reach_stderr_once(capsys):
     _logging.configure({"MEMCO_LOG": "debug"})
-    logging.getLogger("memco._sync").debug("dialling %s", "example:443")
+    logging.getLogger("memcoai._sync").debug("dialling %s", "example:443")
     err = capsys.readouterr().err
     assert err.count("dialling example:443") == 1
     # Which module spoke is the point of the tree, and of the format string.
-    assert "memco._sync" in err
+    assert "memcoai._sync" in err
 
 
 # --- set_level, and the clients' log_level argument ----------------------
@@ -131,7 +131,7 @@ async def test_the_async_client_takes_the_same_argument(harness, capsys):
     async with AsyncMemco(token="test-token", host=harness.address, tls=False, log_level="debug"):
         pass
     err = capsys.readouterr().err
-    assert "memco._aio" in err
+    assert "memcoai._aio" in err
     assert "test-token" not in err
 
 
@@ -158,7 +158,7 @@ def test_a_bad_client_argument_is_a_config_error(harness):
 
 def test_an_application_keeps_its_own_propagate_setting():
     # The SDK only undoes what the SDK did. Silencing removes no handler here,
-    # so an application that isolated the memco tree keeps that isolation.
+    # so an application that isolated the memcoai tree keeps that isolation.
     logger = logging.getLogger(_logging.ROOT)
     logger.propagate = False
     _logging.set_level("none")
@@ -188,11 +188,11 @@ def test_every_handler_this_module_installed_is_cleared():
 
 
 def test_the_handler_follows_a_later_stderr_redirect():
-    # The handler is built during `import memco`, long before a process that
+    # The handler is built during `import memcoai`, long before a process that
     # daemonizes or redirects has done so. Binding the stream then would send
     # every record to the original one, or to a closed descriptor.
     _logging.set_level("debug")
     captured = io.StringIO()
     with contextlib.redirect_stderr(captured):
-        logging.getLogger("memco._sync").debug("after the redirect")
+        logging.getLogger("memcoai._sync").debug("after the redirect")
     assert "after the redirect" in captured.getvalue()

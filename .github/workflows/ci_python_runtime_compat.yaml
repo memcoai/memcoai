@@ -49,7 +49,7 @@ jobs:
           version: ${{ inputs.uv-version }}
           enable-cache: true
       # The generated client lives inside the package now, so importing it
-      # runs memco/__init__.py and needs the package installed, not just its
+      # runs memcoai/__init__.py and needs the package installed, not just its
       # two generated-code dependencies.
       #
       # One resolution, so the versions under test are ones a resolver would
@@ -67,11 +67,11 @@ jobs:
           import google.protobuf
           import grpc
 
-          import memco
-          from memco.memory.v1 import memory_pb2 as pb
+          import memcoai
+          from memcoai.memory.v1 import memory_pb2 as pb
 
           print("protobuf", google.protobuf.__version__, "grpcio", grpc.__version__)
-          print("->", pb.DESCRIPTOR.name, "| client:", memco.Memco.__name__)
+          print("->", pb.DESCRIPTOR.name, "| client:", memcoai.Memco.__name__)
 
           # The import above cannot tell the two ends apart on its own: a cap
           # anywhere in the graph could quietly resolve both legs to the same

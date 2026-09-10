@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the service's agent-facing tool copy into the SDKs.
 
-``python/memco/memory/tools.json`` arrives with every export and carries the same
+``python/memcoai/memory/tools.json`` arrives with every export and carries the same
 copy the hosted MCP server publishes, so an agent built on this SDK and one
 connected over MCP are told the same things. This script is the whole of that
 seam: it is the only thing that reads the manifest, and no SDK opens it at
@@ -13,8 +13,8 @@ runtime.
 There are three targets, in two languages, because five of the tables below are
 shared and four copies across two runtimes could not be held to agreeing.
 
-``memco.agent`` builds a model's tool descriptions by reading the docstrings in
-``memco.operations`` back out with ``inspect.getdoc``, so for the Python targets
+``memcoai.agent`` builds a model's tool descriptions by reading the docstrings in
+``memcoai.operations`` back out with ``inspect.getdoc``, so for the Python targets
 the docstrings are where the copy lands and this script is a rewriter: it owns
 the leading prose of each operation's docstring and the description of every
 parameter the manifest names, and leaves Returns, Raises, Example and any
@@ -40,9 +40,9 @@ import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / "python" / "memco" / "memory" / "tools.json"
-OPERATIONS = ROOT / "python" / "memco" / "operations.py"
-TYPES = ROOT / "python" / "memco" / "types.py"
+MANIFEST = ROOT / "python" / "memcoai" / "memory" / "tools.json"
+OPERATIONS = ROOT / "python" / "memcoai" / "operations.py"
+TYPES = ROOT / "python" / "memcoai" / "types.py"
 NODE_COPY = ROOT / "nodejs" / "src" / "gen" / "toolCopy.ts"
 
 LINE_LENGTH = 100
@@ -58,7 +58,7 @@ line stays one file line however long it is.
 TOOL_PREFIX = "memco_"
 """Prepended to each operation's name, so the tools are recognisable as a set.
 
-The SDK's own copy of this is ``memco.agent._PREFIX``, and
+The SDK's own copy of this is ``memcoai.agent._PREFIX``, and
 ``python/tests/test_tool_copy.py`` holds the two together: a marker spelled with
 one prefix and a tool registered under another names nothing.
 """
@@ -73,14 +73,14 @@ OFFERED = (
 )
 """The operations offered to a model, in the order a task uses them.
 
-Mirrors ``memco.agent._OPERATIONS``. A marker naming one of these is spelled as
+Mirrors ``memcoai.agent._OPERATIONS``. A marker naming one of these is spelled as
 the name a model calls, because that is the only way it can reach the tool.
 """
 
 ANSWERED = ("list_domains", "start_session")
 """Operations the copy names that a bound session has already answered.
 
-Mirrors ``memco.agent._ANSWERED``. The service's copy is written for a caller
+Mirrors ``memcoai.agent._ANSWERED``. The service's copy is written for a caller
 who picks a domain and opens a session per call, so it points at both; bound to
 a session neither is a tool, and a prefixed name would send a model after one
 that does not exist.
@@ -124,7 +124,7 @@ wire's.
 The manifest describes what the MCP server accepts: ``tags`` as a list of XML
 strings, ``feedback`` as a list of ``<feedback ...>`` tags, ``source`` as the
 literal ``'user'`` or ``'agent'``. This SDK takes ``Tag``, ``FeedbackRating`` and
-``DataSource``, and ``memco.agent`` builds a model an object schema from those
+``DataSource``, and ``memcoai.agent`` builds a model an object schema from those
 types. Writing the wire copy onto them would describe an encoding the schema does
 not accept — the one case where the service's words are wrong for this surface.
 """
@@ -163,7 +163,7 @@ EXCLUDED = frozenset({"rpc", "title", "annotations"})
 
 ``rpc`` is already checked against the contract by
 ``scripts/verify_provenance.py``; ``annotations`` are MCP transport hints, which
-``memco.agent`` ignores too; ``title`` is a short label with no caller. The
+``memcoai.agent`` ignores too; ``title`` is a short label with no caller. The
 manifest's top-level ``instructions`` is left behind for a reason of its own:
 ``agent.briefing`` builds from the ``DomainEntry`` and ``Instructions`` the
 service returns, not from the manifest.
@@ -208,7 +208,7 @@ def resolver(tools: set[str], carried: set[str], qualifier: str):
     """Build the renderer that spells this class's ``${tool:...}`` markers.
 
     A marker becomes a Sphinx cross-reference, which serves both readers: Sphinx
-    renders a link for a developer, and ``memco.agent`` reduces the role to the
+    renders a link for a developer, and ``memcoai.agent`` reduces the role to the
     tool name for a model.
     """
 
@@ -219,7 +219,7 @@ def resolver(tools: set[str], carried: set[str], qualifier: str):
             raise Drift(f"unknown tool referenced in the manifest copy: {name}")
         if name in carried:
             return f":meth:`{name}`"
-        return f":meth:`~memco.operations.{qualifier}.{name}`"
+        return f":meth:`~memcoai.operations.{qualifier}.{name}`"
 
     def render(text: str) -> str:
         return substituted(text, spell)

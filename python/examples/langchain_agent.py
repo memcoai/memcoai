@@ -10,7 +10,7 @@ Run it with::
     export MEMCO_API_TOKEN=...
     export GOOGLE_API_KEY=...
 
-    pip install memco langchain langchain-google-genai ddgs
+    pip install memcoai langchain langchain-google-genai ddgs
     python examples/langchain_agent.py
 
 Any provider LangChain speaks works — set ``MEMCO_EXAMPLE_MODEL`` to
@@ -28,8 +28,8 @@ from ddgs import DDGS
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 
-from memco import Memco, agent
-from memco.types import DomainEntry
+from memcoai import Memco, agent
+from memcoai.types import DomainEntry
 
 DOMAIN = "coding"
 

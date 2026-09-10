@@ -1,5 +1,5 @@
-memco
-=====
+memcoai
+=======
 
 Python SDK for `Memco Shared Memory <https://memco.ai>`_.
 
@@ -13,11 +13,11 @@ You need an account and an API key to use this SDK. Create one at
 
 .. code-block:: bash
 
-   pip install memco
+   pip install memcoai
 
 .. code-block:: python
 
-   from memco import Memco
+   from memcoai import Memco
    with Memco() as client:                 # reads MEMCO_API_TOKEN
        session = client.memory.start_session("coding")
        result = session.search("how should a client authenticate against the memory API")
@@ -25,9 +25,9 @@ You need an account and an API key to use this SDK. Create one at
            for insight in memory.insights:
                print(insight.title, insight.updated)
 
-The memory operations live on :attr:`~memco.Memco.memory`.
+The memory operations live on :attr:`~memcoai.Memco.memory`.
 
-Every failure is a subclass of :class:`~memco.errors.MemcoError`, so no raw
+Every failure is a subclass of :class:`~memcoai.errors.MemcoError`, so no raw
 ``grpc.RpcError`` ever reaches a caller.
 
 See more at `docs.memco.ai <https://docs.memco.ai>`_.

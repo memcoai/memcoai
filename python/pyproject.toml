@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25", "hatch-requirements-txt>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
-name = "memco"
+name = "memcoai"
 version = "0.1.0"
 description = "Python SDK for Memco Shared Memory."
 authors = [{ name = "Memco Labs, Inc." }]
@@ -38,10 +38,10 @@ docs = [
 ]
 
 # One tree: the generated client lives inside the package it ships in, so there
-# is no namespace merge to arrange and `memco/__init__.py` can re-export the
+# is no namespace merge to arrange and `memcoai/__init__.py` can re-export the
 # clients the way every comparable SDK does.
 [tool.hatch.build.targets.wheel]
-packages = ["memco"]
+packages = ["memcoai"]
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt", "deps/sdk.txt"]
@@ -51,12 +51,12 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["memco"]
+source = ["memcoai"]
 branch = true
 # Generated code is the export's to cover, not ours — the same boundary ruff and
 # mypy draw. Counting it would report the SDK's coverage as whatever protoc
 # happened to emit.
-omit = ["memco/memory/*"]
+omit = ["memcoai/memory/*"]
 
 [tool.coverage.report]
 # Every line of hand-written code is either exercised or explicitly excused, so
@@ -76,7 +76,7 @@ target-version = "py310"
 # Generated code is the export's to lint, not ours. Anchored to the exact path:
 # an unanchored pattern matches any segment and would silently exclude
 # hand-written code that happens to share a directory name.
-extend-exclude = ["memco/memory/**"]
+extend-exclude = ["memcoai/memory/**"]
 
 [tool.ruff.lint]
 select = [
@@ -127,15 +127,15 @@ ignore = [
 # grpc ships no type information, so every signature this SDK exposes to it is
 # `Any` at the boundary: interceptor callbacks whose shape grpc fixes, stub
 # methods, and the channel type itself. Narrowing these would be a fiction.
-"memco/_auth.py" = ["ANN401"]
-"memco/_channel.py" = ["ANN401"]
+"memcoai/_auth.py" = ["ANN401"]
+"memcoai/_channel.py" = ["ANN401"]
 # D205: the operation summaries are the service's own copy, written in by
 # scripts/sync_tool_docs.py. The first sentence of most of them is longer than
 # one source line, and reflowing it to fit would fork the copy from the
 # manifest it is generated from.
-"memco/operations.py" = ["ANN401", "D205"]
-"memco/_aio.py" = ["ANN401"]
-"memco/_sync.py" = ["ANN401"]
+"memcoai/operations.py" = ["ANN401", "D205"]
+"memcoai/_aio.py" = ["ANN401"]
+"memcoai/_sync.py" = ["ANN401"]
 # Tests: names are the documentation, asserts are the point, reaching into a
 # private attribute is how several regressions are provoked, unused fixture
 # arguments are how fixtures are requested, and literal expectations are
@@ -164,13 +164,13 @@ strict = true
 # Everything hand-written. The generated tree is excluded below; listing
 # subdirectories here would silently drop a module that later moves out of
 # one, which is how types/errors/operations escaped checking once already.
-files = ["memco", "tests", "systemtest", "docs/conf.py"]
-exclude = "^memco/memory/"
+files = ["memcoai", "tests", "systemtest", "docs/conf.py"]
+exclude = "^memcoai/memory/"
 namespace_packages = true
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "grpc_health.*", "grpc_status.*", "google.rpc.*", "memco.memory.*"]
+module = ["grpc.*", "grpc_health.*", "grpc_status.*", "google.rpc.*", "memcoai.memory.*"]
 ignore_missing_imports = true
 
 # Test functions carry no annotations by convention; everything they call is

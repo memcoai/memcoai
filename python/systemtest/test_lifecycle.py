@@ -20,9 +20,9 @@ import time
 
 import pytest
 
-from memco import Memco
-from memco.errors import MemcoNotFoundError
-from memco.types import DataSource, FeedbackRating, Insight, Memory, RevertOutcome
+from memcoai import Memco
+from memcoai.errors import MemcoNotFoundError
+from memcoai.types import DataSource, FeedbackRating, Insight, Memory, RevertOutcome
 
 # A write is accepted asynchronously and only becomes searchable once ingestion
 # has run, so every assertion about a memory existing — or having stopped

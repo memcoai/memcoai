@@ -109,7 +109,7 @@ jobs:
     # a tag push becomes verify-everything, then wait for a human.
     environment:
       name: pypi
-      url: https://pypi.org/project/memco/${{ needs.gate.outputs.version }}
+      url: https://pypi.org/project/memcoai/${{ needs.gate.outputs.version }}
     steps:
       # Exactly the artefacts the build job verified.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4

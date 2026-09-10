@@ -114,7 +114,7 @@ jobs:
     # push becomes verify-everything, then wait for a human.
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@memcoai/memco/v/${{ needs.gate.outputs.version }}
+      url: https://www.npmjs.com/package/@memcoai/memcoai/v/${{ needs.gate.outputs.version }}
     steps:
       # Exactly the artifact the build job verified.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
@@ -155,7 +155,7 @@ jobs:
             || { echo "::error::expected one tarball, found $#: $*"; exit 1; }
           # npm has a dist-tag that PyPI has no equivalent of, and it defaults to
           # `latest`. A prerelease published without --tag would therefore become
-          # what a plain `npm install @memcoai/memco` resolves to, for everyone.
+          # what a plain `npm install @memcoai/memcoai` resolves to, for everyone.
           #
           # --access public because a *scoped* package publishes restricted by
           # default — a paid, org-only artefact nobody outside can install.
@@ -206,7 +206,7 @@ jobs:
           # `.tgz` and the documentation's in `.tar.gz`, so any glob loose
           # enough to catch both catches one of them twice, and any glob tight
           # enough to catch one silently drops the other.
-          npm_tarball="dist/memcoai-memco-$VERSION.tgz"
+          npm_tarball="dist/memcoai-memcoai-$VERSION.tgz"
           docs_tarball="memco-docs-nodejs-$VERSION.tar.gz"
           # Only the npm tarball is checked: it arrives from an artefact
           # download and can plausibly be absent or differently named, whereas

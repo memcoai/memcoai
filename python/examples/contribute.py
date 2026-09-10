@@ -6,8 +6,8 @@ Run it with::
     python examples/contribute.py
 """
 
-from memco import Memco
-from memco.types import RevertOutcome, Tag
+from memcoai import Memco
+from memcoai.types import RevertOutcome, Tag
 
 DOMAIN = "coding"
 

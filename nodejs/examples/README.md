@@ -20,7 +20,7 @@ time anything else here has passed.
 
 Each one imports `../src/index.js`, so it runs against the working tree rather
 than against whatever version happens to be installed. In your own code the
-import is `@memcoai/memco`; nothing else changes.
+import is `@memcoai/memcoai`; nothing else changes.
 
 | Example                                            | Shows                                                                                                                               |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |

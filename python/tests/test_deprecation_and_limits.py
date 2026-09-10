@@ -12,9 +12,9 @@ from google.protobuf import any_pb2
 from google.rpc import code_pb2, error_details_pb2, status_pb2
 from grpc_status import rpc_status
 
-from memco import AsyncMemco, Memco, MemcoDeprecationWarning, errors, types
-from memco._deprecation import reset_warnings
-from memco.memory.v1 import memory_pb2 as pb
+from memcoai import AsyncMemco, Memco, MemcoDeprecationWarning, errors, types
+from memcoai._deprecation import reset_warnings
+from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
 from .fake_server import Harness
@@ -408,7 +408,7 @@ def test_a_trim_is_reported_on_the_logger(client: Memco, harness: Harness, caplo
     # nothing in the result says so. A debug record is the only way to find out.
     limited(client, harness, max_tags=2)
     tags = [types.Tag(type="language", value=v) for v in ("python", "go", "rust")]
-    with caplog.at_level(logging.DEBUG, logger="memco"):
+    with caplog.at_level(logging.DEBUG, logger="memcoai"):
         client.memory.search("q", domain="coding", tags=tags)
     assert "tags trimmed from 3 to 2" in caplog.text
 
@@ -416,7 +416,7 @@ def test_a_trim_is_reported_on_the_logger(client: Memco, harness: Harness, caplo
 def test_nothing_is_reported_when_no_trim_happens(client: Memco, harness: Harness, caplog):
     limited(client, harness, max_tags=2)
     tags = [types.Tag(type="language", value="python")]
-    with caplog.at_level(logging.DEBUG, logger="memco"):
+    with caplog.at_level(logging.DEBUG, logger="memcoai"):
         client.memory.search("q", domain="coding", tags=tags)
     assert "trimmed" not in caplog.text
 

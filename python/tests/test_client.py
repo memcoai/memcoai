@@ -8,10 +8,10 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
-import memco
-from memco import Memco, errors, types
-from memco._auth import _merged
-from memco.memory.v1 import memory_pb2 as pb
+import memcoai
+from memcoai import Memco, errors, types
+from memcoai._auth import _merged
+from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
 from .fake_server import Harness
@@ -110,15 +110,15 @@ def test_a_bad_token_surfaces_at_construction(harness: Harness):
 def test_a_rejected_credential_is_logged(harness: Harness, caplog):
     # A client is often built deep inside a framework, where the traceback
     # reaches nobody, so the rejection is logged as well as raised. Capturing
-    # on the parent `memco` logger while the record comes from `memco._sync`
+    # on the parent `memcoai` logger while the record comes from `memcoai._sync`
     # is the point: configuring the one name governs the whole tree.
     harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid or insufficient credentials")
     with (
-        caplog.at_level(logging.ERROR, logger="memco"),
+        caplog.at_level(logging.ERROR, logger="memcoai"),
         pytest.raises(errors.MemcoAuthenticationError),
     ):
         Memco(token=TOKEN, host=harness.address, tls=False)
-    assert [record.name for record in caplog.records] == ["memco._sync"]
+    assert [record.name for record in caplog.records] == ["memcoai._sync"]
     # A credential must never reach a log.
     assert TOKEN not in caplog.text
 
@@ -313,7 +313,7 @@ def test_the_user_agent_names_the_sdk_and_its_version(client: Memco, harness: Ha
     sent = harness.memory.metadata[-1]["user-agent"]
     # A single stable product token: the service matches deprecation rules
     # against it, so a second term could break that match.
-    assert sent.startswith(f"memco-python/{memco.__version__} ")
+    assert sent.startswith(f"memco-python/{memcoai.__version__} ")
 
 
 def test_the_user_agent_prepends_rather_than_replaces(client: Memco, harness: Harness):

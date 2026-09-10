@@ -11,8 +11,8 @@ Run it with::
     python examples/import_memories.py
 """
 
-from memco import Memco
-from memco.types import ImportedInsight, ImportedMemory, ImportStatus, Tag
+from memcoai import Memco
+from memcoai.types import ImportedInsight, ImportedMemory, ImportStatus, Tag
 
 DOMAIN = "coding"
 

@@ -14,7 +14,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: &generated '^(proto/|[a-z]+/client/|python/memco/memory/|nodejs/src/gen/)'
+        exclude: &generated '^(proto/|[a-z]+/client/|python/memcoai/memory/|nodejs/src/gen/)'
       - id: end-of-file-fixer
         exclude: *generated
       - id: check-yaml
@@ -79,7 +79,7 @@ repos:
         entry: python3 scripts/verify_provenance.py
         language: system
         pass_filenames: false
-        files: '^(proto/|[a-z]+/client/|python/memco/memory/|python/memco/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'
+        files: '^(proto/|[a-z]+/client/|python/memcoai/memory/|python/memcoai/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'
 
       # The docstrings are where the service's tool copy lands, so they are a
       # generated artefact even though they are hand-editable. Fires on each
@@ -89,4 +89,4 @@ repos:
         entry: python3 scripts/sync_tool_docs.py --check
         language: system
         pass_filenames: false
-        files: '^(scripts/sync_tool_docs\.py|python/memco/(memory/tools\.json|operations\.py|types\.py)|nodejs/(client/src/gen/tools\.json|src/gen/toolCopy\.ts))$'
+        files: '^(scripts/sync_tool_docs\.py|python/memcoai/(memory/tools\.json|operations\.py|types\.py)|nodejs/(client/src/gen/tools\.json|src/gen/toolCopy\.ts))$'

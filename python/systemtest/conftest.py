@@ -14,7 +14,7 @@ from functools import cache
 
 import pytest
 
-from memco import Memco
+from memcoai import Memco
 
 TOKEN_ENV = "MEMCO_API_TOKEN"
 

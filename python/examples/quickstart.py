@@ -6,7 +6,7 @@ Run it with::
     python examples/quickstart.py
 """
 
-from memco import Memco
+from memcoai import Memco
 
 
 def main() -> None:

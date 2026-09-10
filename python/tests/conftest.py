@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import pytest
 
-from memco import AsyncMemco, Memco
+from memcoai import AsyncMemco, Memco
 
 from .fake_server import Harness
 
@@ -28,7 +28,7 @@ TOKEN = "test-token"
 
 @pytest.fixture(autouse=True)
 def neutral_memco_logger() -> Iterator[None]:
-    """Give each test a propagating ``memco`` logger, and put it back after.
+    """Give each test a propagating ``memcoai`` logger, and put it back after.
 
     The SDK configures itself at INFO on import, which sets ``propagate =
     False``. caplog captures through the root logger, so leaving that in place
@@ -36,7 +36,7 @@ def neutral_memco_logger() -> Iterator[None]:
     exactly what an application with its own logging is told to do, and
     restoring afterwards keeps one test's level from leaking into the next.
     """
-    logger = logging.getLogger("memco")
+    logger = logging.getLogger("memcoai")
     handlers = logger.handlers[:]
     level, propagate, disabled = logger.level, logger.propagate, logger.disabled
     logger.handlers[:] = [h for h in handlers if isinstance(h, logging.NullHandler)]

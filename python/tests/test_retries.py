@@ -12,10 +12,10 @@ from __future__ import annotations
 import grpc
 import pytest
 
-from memco import AsyncMemco, Memco, _channel
-from memco.errors import MemcoUnavailableError
-from memco.memory.v1 import memory_pb2
-from memco.types import FeedbackRating, ImportedInsight, ImportedMemory
+from memcoai import AsyncMemco, Memco, _channel
+from memcoai.errors import MemcoUnavailableError
+from memcoai.memory.v1 import memory_pb2
+from memcoai.types import FeedbackRating, ImportedInsight, ImportedMemory
 
 from .fake_server import Harness
 

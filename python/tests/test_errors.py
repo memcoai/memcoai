@@ -3,7 +3,7 @@
 import grpc
 import pytest
 
-from memco import errors
+from memcoai import errors
 
 
 class FakeRpcError(grpc.RpcError):  # type: ignore[misc]
