@@ -156,7 +156,13 @@ jobs:
           # --access public because a *scoped* package publishes restricted by
           # default — a paid, org-only artefact nobody outside can install.
           if [ "$PRERELEASE" = "true" ]; then dist_tag=next; else dist_tag=latest; fi
-          npm publish "$1" --access public --tag "$dist_tag"
+          # `./` is load-bearing: npm classifies a bare `dist/foo.tgz` as a
+          # possible GitHub shorthand (`owner/repo`) before ever checking
+          # whether it exists on disk, and tries to `git ls-remote` it —
+          # which fails as a bewildering SSH permission error, not a "file
+          # not found". A leading `./` is npm's own unambiguous local-path
+          # syntax and skips that heuristic entirely.
+          npm publish "./$1" --access public --tag "$dist_tag"
 
   release:
     name: Draft the GitHub release
