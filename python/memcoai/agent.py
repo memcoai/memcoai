@@ -480,6 +480,25 @@ class AsyncToolset(tuple[AsyncTool, ...]):
             return _reported(exc)
 
 
+def _available(session: Session | AsyncSession) -> frozenset[str]:
+    """Which offered operations the token behind this session's role permits.
+
+    Read from the catalog the session cached when it was opened
+    (:meth:`~memcoai.operations.MemoryOperations.list_tools`, fetched once by
+    ``start_session``) rather than fetched again here — see
+    :meth:`~memcoai.operations.Session.tools`.
+
+    Args:
+        session: The session the tools are being built for.
+
+    Returns:
+        The names of :data:`_OPERATIONS` the catalog marks ``available``. An
+        operation the catalog does not mention at all is excluded, the same as
+        one it marks unavailable.
+    """
+    return frozenset(tool.name for tool in session._tool_catalog if tool.available)  # noqa: SLF001
+
+
 def _tools(session: Session) -> Toolset:
     """Build every memory operation as a tool bound to one open session.
 
@@ -488,7 +507,7 @@ def _tools(session: Session) -> Toolset:
             under, as returned by ``client.memory.with_session(...)``.
 
     Returns:
-        One tool per operation the session scope carries.
+        One tool per operation the session's cached catalog marks available.
 
     Raises:
         TypeError: If given the other surface's session.
@@ -502,6 +521,7 @@ def _tools(session: Session) -> Toolset:
     """
     if not isinstance(session, Session):
         raise TypeError(f"tools() takes a Session; {type(session).__name__} has its own")
+    available = _available(session)
     return Toolset(
         Tool(
             name=_PREFIX + name,
@@ -510,6 +530,7 @@ def _tools(session: Session) -> Toolset:
             call=_sync_call(name, getattr(session, name), signature, parameters["required"]),
         )
         for name, description, parameters, signature in _specifications()
+        if name in available
     )
 
 
@@ -521,7 +542,7 @@ def _async_tools(session: AsyncSession) -> AsyncToolset:
             under, as returned by ``client.memory.with_session(...)``.
 
     Returns:
-        One tool per operation the session scope carries.
+        One tool per operation the session's cached catalog marks available.
 
     Raises:
         TypeError: If given the other surface's scope.
@@ -535,6 +556,7 @@ def _async_tools(session: AsyncSession) -> AsyncToolset:
     """
     if not isinstance(session, AsyncSession):
         raise TypeError(f"tools() takes an AsyncSession; {type(session).__name__} has its own")
+    available = _available(session)
     return AsyncToolset(
         AsyncTool(
             name=_PREFIX + name,
@@ -543,6 +565,7 @@ def _async_tools(session: AsyncSession) -> AsyncToolset:
             call=_async_call(name, getattr(session, name), signature, parameters["required"]),
         )
         for name, description, parameters, signature in _specifications()
+        if name in available
     )
 
 

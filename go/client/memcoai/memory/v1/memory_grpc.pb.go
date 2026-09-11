@@ -28,6 +28,7 @@ const (
 	MemoryService_ShareFeedback_FullMethodName  = "/memcoai.memory.v1.MemoryService/ShareFeedback"
 	MemoryService_RevertMemory_FullMethodName   = "/memcoai.memory.v1.MemoryService/RevertMemory"
 	MemoryService_ImportMemories_FullMethodName = "/memcoai.memory.v1.MemoryService/ImportMemories"
+	MemoryService_ListTools_FullMethodName      = "/memcoai.memory.v1.MemoryService/ListTools"
 )
 
 // MemoryServiceClient is the client API for MemoryService service.
@@ -83,6 +84,12 @@ type MemoryServiceClient interface {
 	// Naming a session records the batch against it, as CreateMemory and
 	// EnrichMemory do, and supplies the domain the memories are imported into.
 	ImportMemories(ctx context.Context, in *ImportMemoriesRequest, opts ...grpc.CallOption) (*ImportMemoriesResponse, error)
+	// ListTools returns every method this contract declares, and which of them
+	// the caller's role permits. The catalog itself never varies; only
+	// availability does. availability names a permission, not a guarantee: a
+	// method it marks available can still be refused for a reason unrelated to
+	// role, such as a memory domain with no network provisioned for it.
+	ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error)
 }
 
 type memoryServiceClient struct {
@@ -183,6 +190,16 @@ func (c *memoryServiceClient) ImportMemories(ctx context.Context, in *ImportMemo
 	return out, nil
 }
 
+func (c *memoryServiceClient) ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListToolsResponse)
+	err := c.cc.Invoke(ctx, MemoryService_ListTools_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MemoryServiceServer is the server API for MemoryService service.
 // All implementations must embed UnimplementedMemoryServiceServer
 // for forward compatibility.
@@ -236,6 +253,12 @@ type MemoryServiceServer interface {
 	// Naming a session records the batch against it, as CreateMemory and
 	// EnrichMemory do, and supplies the domain the memories are imported into.
 	ImportMemories(context.Context, *ImportMemoriesRequest) (*ImportMemoriesResponse, error)
+	// ListTools returns every method this contract declares, and which of them
+	// the caller's role permits. The catalog itself never varies; only
+	// availability does. availability names a permission, not a guarantee: a
+	// method it marks available can still be refused for a reason unrelated to
+	// role, such as a memory domain with no network provisioned for it.
+	ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error)
 	mustEmbedUnimplementedMemoryServiceServer()
 }
 
@@ -272,6 +295,9 @@ func (UnimplementedMemoryServiceServer) RevertMemory(context.Context, *RevertMem
 }
 func (UnimplementedMemoryServiceServer) ImportMemories(context.Context, *ImportMemoriesRequest) (*ImportMemoriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ImportMemories not implemented")
+}
+func (UnimplementedMemoryServiceServer) ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTools not implemented")
 }
 func (UnimplementedMemoryServiceServer) mustEmbedUnimplementedMemoryServiceServer() {}
 func (UnimplementedMemoryServiceServer) testEmbeddedByValue()                       {}
@@ -456,6 +482,24 @@ func _MemoryService_ImportMemories_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MemoryService_ListTools_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListToolsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoryServiceServer).ListTools(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoryService_ListTools_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoryServiceServer).ListTools(ctx, req.(*ListToolsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MemoryService_ServiceDesc is the grpc.ServiceDesc for MemoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -498,6 +542,10 @@ var MemoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImportMemories",
 			Handler:    _MemoryService_ImportMemories_Handler,
+		},
+		{
+			MethodName: "ListTools",
+			Handler:    _MemoryService_ListTools_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

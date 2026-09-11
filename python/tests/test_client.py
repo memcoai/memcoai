@@ -28,9 +28,9 @@ def test_auth_metadata_is_bearer_with_a_capital_b(client: Memco, harness: Harnes
 
 def test_auth_metadata_is_sent_on_every_method(client: Memco, harness: Harness):
     client.memory.list_domains()
-    client.memory.start_session("coding")
+    client.memory.start_session("coding")  # StartSession, then ListTools
     client.memory.get_memory("memory-a-1")
-    assert len(harness.memory.metadata) == 3
+    assert len(harness.memory.metadata) == 4
     for sent in harness.memory.metadata:
         assert sent["authorization"] == f"Bearer {TOKEN}"
 
@@ -189,6 +189,24 @@ def test_list_domains(client: Memco, harness: Harness):
     assert [d.slug for d in result.domains] == ["coding"]
 
 
+def test_list_tools(client: Memco, harness: Harness):
+    harness.memory.responses["ListTools"] = pb.ListToolsResponse(
+        tools=[pb.ToolDescriptor(name="search", description="Find things.", available=True)]
+    )
+    result = client.memory.list_tools()
+    assert result == (
+        types.ToolDescriptor(name="search", description="Find things.", available=True),
+    )
+
+
+def test_opening_a_session_fetches_the_tool_catalog(client: Memco, harness: Harness):
+    # Availability is checked once, at open, rather than on every tools() call --
+    # see Session.tools(), which reads it back from the cache rather than calling
+    # ListTools itself.
+    client.memory.start_session("coding")
+    assert harness.memory.calls == ["StartSession", "ListTools"]
+
+
 def test_start_session(client: Memco):
     assert client.memory.start_session("coding").id == "session-a"
 
@@ -326,10 +344,10 @@ def test_the_user_agent_prepends_rather_than_replaces(client: Memco, harness: Ha
 
 def test_the_user_agent_is_sent_on_every_method(client: Memco, harness: Harness):
     client.memory.list_domains()
-    client.memory.start_session("coding")
+    client.memory.start_session("coding")  # StartSession, then ListTools
     client.memory.get_memory("memory-a-1")
-    # Without the count, this cannot distinguish "all three carried it" from
+    # Without the count, this cannot distinguish "all four carried it" from
     # "nothing reached the wire at all".
-    assert len(harness.memory.metadata) == 3
+    assert len(harness.memory.metadata) == 4
     for sent in harness.memory.metadata:
         assert "memco-python/" in sent["user-agent"]

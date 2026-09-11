@@ -379,3 +379,23 @@ class ImportOutcome(_message.Message):
     status: ImportStatus
     errors: _containers.RepeatedScalarFieldContainer[str]
     def __init__(self, index: _Optional[int] = ..., status: _Optional[_Union[ImportStatus, str]] = ..., errors: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ListToolsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ToolDescriptor(_message.Message):
+    __slots__ = ("name", "description", "available")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    AVAILABLE_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    description: str
+    available: bool
+    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., available: bool = ...) -> None: ...
+
+class ListToolsResponse(_message.Message):
+    __slots__ = ("tools",)
+    TOOLS_FIELD_NUMBER: _ClassVar[int]
+    tools: _containers.RepeatedCompositeFieldContainer[ToolDescriptor]
+    def __init__(self, tools: _Optional[_Iterable[_Union[ToolDescriptor, _Mapping]]] = ...) -> None: ...

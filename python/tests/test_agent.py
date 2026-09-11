@@ -55,6 +55,83 @@ def test_the_offered_operations_are_exactly_what_the_scope_carries():
     assert set(agent._OPERATIONS) == carried - NOT_AN_OPERATION
 
 
+# -- access-set filtering --------------------------------------------------
+
+
+def _catalog(available: set[str]) -> pb.ListToolsResponse:
+    """A ListTools response naming every offered operation.
+
+    Marks only the given ones available.
+    """
+    return pb.ListToolsResponse(
+        tools=[
+            pb.ToolDescriptor(name=name, description="", available=name in available)
+            for name in agent._OPERATIONS
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("role", "available"),
+    [
+        ("creator", set(agent._OPERATIONS)),
+        ("reader", {"search", "share_feedback"}),
+        # An admin with no reader or creator content grant has no content
+        # access at all -- the SDK does not know this rule, it just relays
+        # what the service reports.
+        ("admin", set()),
+    ],
+)
+def test_tools_are_filtered_by_the_token_s_access_set(
+    client: Memco, harness: Harness, role: str, available: set[str]
+):
+    harness.memory.responses["ListTools"] = _catalog(available)
+    offered = {
+        tool.name.removeprefix(agent._PREFIX)
+        for tool in client.memory.with_session("coding").tools()
+    }
+    assert offered == available, role
+
+
+def test_an_operation_missing_from_the_catalog_is_not_offered(client: Memco, harness: Harness):
+    # Fail closed: absent from the catalog is not the same as available=False,
+    # but is treated the same way -- never as "available by default".
+    harness.memory.responses["ListTools"] = pb.ListToolsResponse(
+        tools=[pb.ToolDescriptor(name="search", description="", available=True)]
+    )
+    offered = {tool.name for tool in client.memory.with_session("coding").tools()}
+    assert offered == {"memco_search"}
+
+
+def test_the_catalog_is_fetched_once_per_session_not_once_per_tools_call(
+    client: Memco, harness: Harness
+):
+    session = client.memory.with_session("coding")
+    harness.memory.calls.clear()
+    session.tools()
+    session.tools()
+    assert "ListTools" not in harness.memory.calls
+
+
+async def test_the_async_catalog_is_fetched_once_per_session_not_once_per_tools_call(
+    async_client: AsyncMemco, harness: Harness
+):
+    session = await async_client.memory.with_session("coding")
+    harness.memory.calls.clear()
+    session.tools()
+    session.tools()
+    assert "ListTools" not in harness.memory.calls
+
+
+async def test_both_surfaces_filter_the_same_way(
+    async_client: AsyncMemco, client: Memco, harness: Harness
+):
+    harness.memory.responses["ListTools"] = _catalog({"search", "share_feedback"})
+    left = {tool.name for tool in client.memory.with_session("coding").tools()}
+    right = {tool.name for tool in (await async_client.memory.with_session("coding")).tools()}
+    assert left == right == {"memco_search", "memco_share_feedback"}
+
+
 def test_no_tool_lets_a_model_supply_what_the_caller_binds(client: Memco):
     # A model naming its own session would defeat the scope; one naming its own
     # source could claim a person wrote what it wrote.

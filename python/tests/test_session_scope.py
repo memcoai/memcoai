@@ -123,7 +123,7 @@ async def test_the_async_scope_opens_one_session_however_often_it_is_reached(
     first = await opener
     async with opener as second:
         assert second is first
-    assert harness.memory.calls == ["StartSession"]
+    assert harness.memory.calls == ["StartSession", "ListTools"]
 
 
 async def test_the_async_scope_sends_the_session_id_on_an_import(

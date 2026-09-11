@@ -89,6 +89,13 @@ class MemoryServiceStub:
     Naming a session records the batch against it, as CreateMemory and
     EnrichMemory do, and supplies the domain the memories are imported into.
     """
+    ListTools: _grpc.UnaryUnaryMultiCallable[_memory_pb2.ListToolsRequest, _memory_pb2.ListToolsResponse]
+    """ListTools returns every method this contract declares, and which of them
+    the caller's role permits. The catalog itself never varies; only
+    availability does. availability names a permission, not a guarantee: a
+    method it marks available can still be refused for a reason unrelated to
+    role, such as a memory domain with no network provisioned for it.
+    """
 
 @_typing.type_check_only
 class MemoryServiceAsyncStub(MemoryServiceStub):
@@ -150,6 +157,13 @@ class MemoryServiceAsyncStub(MemoryServiceStub):
 
     Naming a session records the batch against it, as CreateMemory and
     EnrichMemory do, and supplies the domain the memories are imported into.
+    """
+    ListTools: _aio.UnaryUnaryMultiCallable[_memory_pb2.ListToolsRequest, _memory_pb2.ListToolsResponse]  # type: ignore[assignment]
+    """ListTools returns every method this contract declares, and which of them
+    the caller's role permits. The catalog itself never varies; only
+    availability does. availability names a permission, not a guarantee: a
+    method it marks available can still be refused for a reason unrelated to
+    role, such as a memory domain with no network provisioned for it.
     """
 
 class MemoryServiceServicer(metaclass=_abc_1.ABCMeta):
@@ -263,6 +277,19 @@ class MemoryServiceServicer(metaclass=_abc_1.ABCMeta):
 
         Naming a session records the batch against it, as CreateMemory and
         EnrichMemory do, and supplies the domain the memories are imported into.
+        """
+
+    @_abc_1.abstractmethod
+    def ListTools(
+        self,
+        request: _memory_pb2.ListToolsRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_memory_pb2.ListToolsResponse, _abc.Awaitable[_memory_pb2.ListToolsResponse]]:
+        """ListTools returns every method this contract declares, and which of them
+        the caller's role permits. The catalog itself never varies; only
+        availability does. availability names a permission, not a guarantee: a
+        method it marks available can still be refused for a reason unrelated to
+        role, such as a memory domain with no network provisioned for it.
         """
 
 def add_MemoryServiceServicer_to_server(servicer: MemoryServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

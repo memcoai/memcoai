@@ -2271,6 +2271,157 @@ func (x *ImportOutcome) GetErrors() []string {
 	return nil
 }
 
+type ListToolsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListToolsRequest) Reset() {
+	*x = ListToolsRequest{}
+	mi := &file_memcoai_memory_v1_memory_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListToolsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListToolsRequest) ProtoMessage() {}
+
+func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_memcoai_memory_v1_memory_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListToolsRequest.ProtoReflect.Descriptor instead.
+func (*ListToolsRequest) Descriptor() ([]byte, []int) {
+	return file_memcoai_memory_v1_memory_proto_rawDescGZIP(), []int{29}
+}
+
+// ToolDescriptor describes one method this contract declares.
+type ToolDescriptor struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name is the method's operation name, the same canonical snake_case name
+	// this contract's other documents (such as the tool manifest) address it
+	// by — "create_memory", not "CreateMemory". The RPC serving it is that
+	// name's PascalCase form, which every generated client already derives its
+	// own method spelling from.
+	Name        string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	// available reports whether the caller's role permits this method. A
+	// caller told no is not told why here: the cause is a fact about their own
+	// account — a role they lack — not about the method itself. A caller told
+	// yes may still have the call refused for an unrelated reason, such as a
+	// memory domain with no network provisioned for it.
+	Available     bool `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolDescriptor) Reset() {
+	*x = ToolDescriptor{}
+	mi := &file_memcoai_memory_v1_memory_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolDescriptor) ProtoMessage() {}
+
+func (x *ToolDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_memcoai_memory_v1_memory_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolDescriptor.ProtoReflect.Descriptor instead.
+func (*ToolDescriptor) Descriptor() ([]byte, []int) {
+	return file_memcoai_memory_v1_memory_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ToolDescriptor) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ToolDescriptor) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ToolDescriptor) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+type ListToolsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tools         []*ToolDescriptor      `protobuf:"bytes,1,rep,name=tools,proto3" json:"tools,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListToolsResponse) Reset() {
+	*x = ListToolsResponse{}
+	mi := &file_memcoai_memory_v1_memory_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListToolsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListToolsResponse) ProtoMessage() {}
+
+func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_memcoai_memory_v1_memory_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListToolsResponse.ProtoReflect.Descriptor instead.
+func (*ListToolsResponse) Descriptor() ([]byte, []int) {
+	return file_memcoai_memory_v1_memory_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListToolsResponse) GetTools() []*ToolDescriptor {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
 var File_memcoai_memory_v1_memory_proto protoreflect.FileDescriptor
 
 const file_memcoai_memory_v1_memory_proto_rawDesc = "" +
@@ -2431,7 +2582,14 @@ const file_memcoai_memory_v1_memory_proto_rawDesc = "" +
 	"\rImportOutcome\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x05R\x05index\x127\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1f.memcoai.memory.v1.ImportStatusR\x06status\x12\x16\n" +
-	"\x06errors\x18\x03 \x03(\tR\x06errors*V\n" +
+	"\x06errors\x18\x03 \x03(\tR\x06errors\"\x12\n" +
+	"\x10ListToolsRequest\"d\n" +
+	"\x0eToolDescriptor\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1c\n" +
+	"\tavailable\x18\x03 \x01(\bR\tavailable\"L\n" +
+	"\x11ListToolsResponse\x127\n" +
+	"\x05tools\x18\x01 \x03(\v2!.memcoai.memory.v1.ToolDescriptorR\x05tools*V\n" +
 	"\n" +
 	"DataSource\x12\x1b\n" +
 	"\x17DATA_SOURCE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -2451,7 +2609,7 @@ const file_memcoai_memory_v1_memory_proto_rawDesc = "" +
 	"\x14IMPORT_STATUS_QUEUED\x10\x01\x12\x1a\n" +
 	"\x16IMPORT_STATUS_REJECTED\x10\x02\x12\x17\n" +
 	"\x13IMPORT_STATUS_ERROR\x10\x03\x12\x1b\n" +
-	"\x17IMPORT_STATUS_DUPLICATE\x10\x042\xe3\x06\n" +
+	"\x17IMPORT_STATUS_DUPLICATE\x10\x042\xbb\a\n" +
 	"\rMemoryService\x12\\\n" +
 	"\vListDomains\x12%.memcoai.memory.v1.ListDomainsRequest\x1a&.memcoai.memory.v1.ListDomainsResponse\x12_\n" +
 	"\fStartSession\x12&.memcoai.memory.v1.StartSessionRequest\x1a'.memcoai.memory.v1.StartSessionResponse\x12M\n" +
@@ -2461,7 +2619,8 @@ const file_memcoai_memory_v1_memory_proto_rawDesc = "" +
 	"\fEnrichMemory\x12&.memcoai.memory.v1.EnrichMemoryRequest\x1a'.memcoai.memory.v1.EnrichMemoryResponse\x12b\n" +
 	"\rShareFeedback\x12'.memcoai.memory.v1.ShareFeedbackRequest\x1a(.memcoai.memory.v1.ShareFeedbackResponse\x12_\n" +
 	"\fRevertMemory\x12&.memcoai.memory.v1.RevertMemoryRequest\x1a'.memcoai.memory.v1.RevertMemoryResponse\x12e\n" +
-	"\x0eImportMemories\x12(.memcoai.memory.v1.ImportMemoriesRequest\x1a).memcoai.memory.v1.ImportMemoriesResponseBAZ?github.com/memcoai/memcoai/go/client/memcoai/memory/v1;memoryv1b\x06proto3"
+	"\x0eImportMemories\x12(.memcoai.memory.v1.ImportMemoriesRequest\x1a).memcoai.memory.v1.ImportMemoriesResponse\x12V\n" +
+	"\tListTools\x12#.memcoai.memory.v1.ListToolsRequest\x1a$.memcoai.memory.v1.ListToolsResponseBAZ?github.com/memcoai/memcoai/go/client/memcoai/memory/v1;memoryv1b\x06proto3"
 
 var (
 	file_memcoai_memory_v1_memory_proto_rawDescOnce sync.Once
@@ -2476,7 +2635,7 @@ func file_memcoai_memory_v1_memory_proto_rawDescGZIP() []byte {
 }
 
 var file_memcoai_memory_v1_memory_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_memcoai_memory_v1_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_memcoai_memory_v1_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_memcoai_memory_v1_memory_proto_goTypes = []any{
 	(DataSource)(0),                // 0: memcoai.memory.v1.DataSource
 	(RevertOutcome)(0),             // 1: memcoai.memory.v1.RevertOutcome
@@ -2510,6 +2669,9 @@ var file_memcoai_memory_v1_memory_proto_goTypes = []any{
 	(*ImportedInsight)(nil),        // 29: memcoai.memory.v1.ImportedInsight
 	(*ImportMemoriesResponse)(nil), // 30: memcoai.memory.v1.ImportMemoriesResponse
 	(*ImportOutcome)(nil),          // 31: memcoai.memory.v1.ImportOutcome
+	(*ListToolsRequest)(nil),       // 32: memcoai.memory.v1.ListToolsRequest
+	(*ToolDescriptor)(nil),         // 33: memcoai.memory.v1.ToolDescriptor
+	(*ListToolsResponse)(nil),      // 34: memcoai.memory.v1.ListToolsResponse
 }
 var file_memcoai_memory_v1_memory_proto_depIdxs = []int32{
 	5,  // 0: memcoai.memory.v1.ListDomainsResponse.domains:type_name -> memcoai.memory.v1.DomainEntry
@@ -2538,29 +2700,32 @@ var file_memcoai_memory_v1_memory_proto_depIdxs = []int32{
 	31, // 23: memcoai.memory.v1.ImportMemoriesResponse.results:type_name -> memcoai.memory.v1.ImportOutcome
 	3,  // 24: memcoai.memory.v1.ImportMemoriesResponse.instructions:type_name -> memcoai.memory.v1.Instructions
 	2,  // 25: memcoai.memory.v1.ImportOutcome.status:type_name -> memcoai.memory.v1.ImportStatus
-	6,  // 26: memcoai.memory.v1.MemoryService.ListDomains:input_type -> memcoai.memory.v1.ListDomainsRequest
-	9,  // 27: memcoai.memory.v1.MemoryService.StartSession:input_type -> memcoai.memory.v1.StartSessionRequest
-	11, // 28: memcoai.memory.v1.MemoryService.Search:input_type -> memcoai.memory.v1.SearchRequest
-	15, // 29: memcoai.memory.v1.MemoryService.GetMemory:input_type -> memcoai.memory.v1.GetMemoryRequest
-	17, // 30: memcoai.memory.v1.MemoryService.CreateMemory:input_type -> memcoai.memory.v1.CreateMemoryRequest
-	19, // 31: memcoai.memory.v1.MemoryService.EnrichMemory:input_type -> memcoai.memory.v1.EnrichMemoryRequest
-	21, // 32: memcoai.memory.v1.MemoryService.ShareFeedback:input_type -> memcoai.memory.v1.ShareFeedbackRequest
-	25, // 33: memcoai.memory.v1.MemoryService.RevertMemory:input_type -> memcoai.memory.v1.RevertMemoryRequest
-	27, // 34: memcoai.memory.v1.MemoryService.ImportMemories:input_type -> memcoai.memory.v1.ImportMemoriesRequest
-	7,  // 35: memcoai.memory.v1.MemoryService.ListDomains:output_type -> memcoai.memory.v1.ListDomainsResponse
-	10, // 36: memcoai.memory.v1.MemoryService.StartSession:output_type -> memcoai.memory.v1.StartSessionResponse
-	12, // 37: memcoai.memory.v1.MemoryService.Search:output_type -> memcoai.memory.v1.SearchResponse
-	16, // 38: memcoai.memory.v1.MemoryService.GetMemory:output_type -> memcoai.memory.v1.GetMemoryResponse
-	18, // 39: memcoai.memory.v1.MemoryService.CreateMemory:output_type -> memcoai.memory.v1.CreateMemoryResponse
-	20, // 40: memcoai.memory.v1.MemoryService.EnrichMemory:output_type -> memcoai.memory.v1.EnrichMemoryResponse
-	23, // 41: memcoai.memory.v1.MemoryService.ShareFeedback:output_type -> memcoai.memory.v1.ShareFeedbackResponse
-	26, // 42: memcoai.memory.v1.MemoryService.RevertMemory:output_type -> memcoai.memory.v1.RevertMemoryResponse
-	30, // 43: memcoai.memory.v1.MemoryService.ImportMemories:output_type -> memcoai.memory.v1.ImportMemoriesResponse
-	35, // [35:44] is the sub-list for method output_type
-	26, // [26:35] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	33, // 26: memcoai.memory.v1.ListToolsResponse.tools:type_name -> memcoai.memory.v1.ToolDescriptor
+	6,  // 27: memcoai.memory.v1.MemoryService.ListDomains:input_type -> memcoai.memory.v1.ListDomainsRequest
+	9,  // 28: memcoai.memory.v1.MemoryService.StartSession:input_type -> memcoai.memory.v1.StartSessionRequest
+	11, // 29: memcoai.memory.v1.MemoryService.Search:input_type -> memcoai.memory.v1.SearchRequest
+	15, // 30: memcoai.memory.v1.MemoryService.GetMemory:input_type -> memcoai.memory.v1.GetMemoryRequest
+	17, // 31: memcoai.memory.v1.MemoryService.CreateMemory:input_type -> memcoai.memory.v1.CreateMemoryRequest
+	19, // 32: memcoai.memory.v1.MemoryService.EnrichMemory:input_type -> memcoai.memory.v1.EnrichMemoryRequest
+	21, // 33: memcoai.memory.v1.MemoryService.ShareFeedback:input_type -> memcoai.memory.v1.ShareFeedbackRequest
+	25, // 34: memcoai.memory.v1.MemoryService.RevertMemory:input_type -> memcoai.memory.v1.RevertMemoryRequest
+	27, // 35: memcoai.memory.v1.MemoryService.ImportMemories:input_type -> memcoai.memory.v1.ImportMemoriesRequest
+	32, // 36: memcoai.memory.v1.MemoryService.ListTools:input_type -> memcoai.memory.v1.ListToolsRequest
+	7,  // 37: memcoai.memory.v1.MemoryService.ListDomains:output_type -> memcoai.memory.v1.ListDomainsResponse
+	10, // 38: memcoai.memory.v1.MemoryService.StartSession:output_type -> memcoai.memory.v1.StartSessionResponse
+	12, // 39: memcoai.memory.v1.MemoryService.Search:output_type -> memcoai.memory.v1.SearchResponse
+	16, // 40: memcoai.memory.v1.MemoryService.GetMemory:output_type -> memcoai.memory.v1.GetMemoryResponse
+	18, // 41: memcoai.memory.v1.MemoryService.CreateMemory:output_type -> memcoai.memory.v1.CreateMemoryResponse
+	20, // 42: memcoai.memory.v1.MemoryService.EnrichMemory:output_type -> memcoai.memory.v1.EnrichMemoryResponse
+	23, // 43: memcoai.memory.v1.MemoryService.ShareFeedback:output_type -> memcoai.memory.v1.ShareFeedbackResponse
+	26, // 44: memcoai.memory.v1.MemoryService.RevertMemory:output_type -> memcoai.memory.v1.RevertMemoryResponse
+	30, // 45: memcoai.memory.v1.MemoryService.ImportMemories:output_type -> memcoai.memory.v1.ImportMemoriesResponse
+	34, // 46: memcoai.memory.v1.MemoryService.ListTools:output_type -> memcoai.memory.v1.ListToolsResponse
+	37, // [37:47] is the sub-list for method output_type
+	27, // [27:37] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_memcoai_memory_v1_memory_proto_init() }
@@ -2576,7 +2741,7 @@ func file_memcoai_memory_v1_memory_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_memcoai_memory_v1_memory_proto_rawDesc), len(file_memcoai_memory_v1_memory_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   29,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
