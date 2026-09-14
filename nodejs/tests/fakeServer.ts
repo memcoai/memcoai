@@ -46,7 +46,7 @@ export interface RichFailure extends Failure {
   domain: string
 }
 
-/** The nine methods the memory service publishes, in their grpc-js spelling. */
+/** The ten methods the memory service publishes, in their grpc-js spelling. */
 export type MemoryMethod =
   | 'listDomains'
   | 'startSession'
@@ -57,6 +57,27 @@ export type MemoryMethod =
   | 'shareFeedback'
   | 'revertMemory'
   | 'importMemories'
+  | 'listTools'
+
+/**
+ * Every method the contract declares, mirroring the real `ListTools` catalog.
+ *
+ * Used as the default `listTools` response — every method available — so the
+ * tests that do not care about access-set filtering keep seeing the full
+ * toolset without configuring one.
+ */
+const ALL_TOOLS = [
+  'list_domains',
+  'start_session',
+  'search',
+  'get_memory',
+  'create_memory',
+  'enrich_memory',
+  'share_feedback',
+  'revert_memory',
+  'import_memories',
+  'list_tools'
+] as const
 
 /**
  * The memory service, recording what it was asked and answering what it is told
@@ -191,6 +212,15 @@ export class FakeMemoryService {
               status: pb.ImportStatus.IMPORT_STATUS_QUEUED
             }))
           })
+      ),
+      listTools: on('listTools', () =>
+        pb.ListToolsResponse.fromPartial({
+          tools: ALL_TOOLS.map(name => ({
+            name,
+            description: `${name} tool`,
+            available: true
+          }))
+        })
       )
     } as UntypedServiceImplementation
   }

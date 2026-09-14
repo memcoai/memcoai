@@ -112,6 +112,51 @@ test('a write that mints no operation id reports that it cannot be undone', asyn
   })
 })
 
+test('listTools converts the catalog the service reports', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set(
+      'listTools',
+      pb.ListToolsResponse.fromPartial({
+        tools: [
+          { name: 'search', description: 'Find things.', available: true }
+        ]
+      })
+    )
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const catalog = await memco.memory.listTools()
+      assert.deepEqual(catalog, [
+        { name: 'search', description: 'Find things.', available: true }
+      ])
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+test('opening a session fetches the tool catalog', async () => {
+  await withHarness(async harness => {
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      harness.forget()
+      await memco.memory.startSession('coding')
+      // Availability is checked once, at open, rather than on every tools()
+      // call -- see Session.tools(), which reads it back from the cache
+      // rather than calling listTools itself. Sorted rather than an exact
+      // order: startSession runs the two calls concurrently, so which one
+      // the fake server sees first is not settled.
+      assert.deepEqual([...harness.memory.calls].sort(), [
+        'listTools',
+        'startSession'
+      ])
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
 test('a scope delegates every operation with its session already bound', async () => {
   await withHarness(async harness => {
     harness.memory.responses.set(

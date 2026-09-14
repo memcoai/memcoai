@@ -973,31 +973,59 @@ export class Toolset {
 }
 
 /**
+ * Which offered operations the token behind this session's role permits.
+ *
+ * Read from the catalog the session cached when it was opened
+ * ({@link MemoryOperations.listTools}, fetched once by `startSession`) rather
+ * than fetched again here — see {@link Session.tools}.
+ *
+ * @param session The session the tools are being built for.
+ * @returns The names of {@link OPERATIONS} the catalog marks available. An
+ *   operation the catalog does not mention at all is excluded, the same as one
+ *   it marks unavailable. When the catalog itself is `null` — the fetch
+ *   failed when the session was opened, and `startSession` already logged it
+ *   — every operation is returned instead of none, so that failure degrades
+ *   {@link Session.tools} to unfiltered rather than to empty.
+ */
+function availableOperationNames(session: Session): ReadonlySet<string> {
+  if (session.toolCatalog === null) {
+    return new Set(OPERATIONS.map(operation => operation.name))
+  }
+  return new Set(
+    session.toolCatalog.filter(tool => tool.available).map(tool => tool.name)
+  )
+}
+
+/**
  * Build every memory operation as a tool bound to one open session.
  *
  * @param session The open session every call through these tools is recorded
  *   under.
- * @returns One tool per offered operation.
+ * @returns One tool per operation the session's cached catalog marks
+ *   available.
  *
  * @internal Reached as {@link Session.tools}.
  */
 export function toolset(session: Session): Toolset {
+  const available = availableOperationNames(session)
   return new Toolset(
-    OPERATIONS.map(operation => ({
-      name: TOOL_PREFIX + operation.name,
-      description: TOOL_COPY[operation.name].description,
-      parameters: parametersFor(operation),
-      call: async (args: Record<string, unknown>): Promise<string> => {
-        try {
-          return render(
-            await operation.invoke(session, argumentsFor(operation, args))
-          )
-        } catch (error) {
-          if (recoverable(error)) return reported(error)
-          throw error
+    OPERATIONS.filter(operation => available.has(operation.name)).map(
+      operation => ({
+        name: TOOL_PREFIX + operation.name,
+        description: TOOL_COPY[operation.name].description,
+        parameters: parametersFor(operation),
+        call: async (args: Record<string, unknown>): Promise<string> => {
+          try {
+            return render(
+              await operation.invoke(session, argumentsFor(operation, args))
+            )
+          } catch (error) {
+            if (recoverable(error)) return reported(error)
+            throw error
+          }
         }
-      }
-    }))
+      })
+    )
   )
 }
 

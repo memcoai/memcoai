@@ -50,6 +50,7 @@ __all__ = [
     "RevertResult",
     "SearchResult",
     "Tag",
+    "ToolDescriptor",
     "WriteResult",
 ]
 
@@ -351,6 +352,27 @@ class DomainList:
     deprecation_message: str
     sunset_date: date | None
     server_commit: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDescriptor:
+    """One method the contract declares, and whether the caller's role permits it.
+
+    Attributes:
+        name: The method's operation name, such as ``"search"`` or
+            ``"create_memory"`` — the same canonical snake_case name
+            :meth:`~memcoai.operations.Session.tools` prefixes with ``memco_``
+            for a model.
+        description: What the method is for.
+        available: Whether the caller's role permits this method. ``False`` is
+            a fact about their own account, not about the method: a caller told
+            ``True`` may still have a call refused for an unrelated reason, such
+            as a memory domain with no network provisioned for it.
+    """
+
+    name: str
+    description: str
+    available: bool
 
 
 @dataclass(frozen=True, slots=True)

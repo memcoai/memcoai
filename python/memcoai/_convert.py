@@ -36,6 +36,7 @@ from .types import (
     RevertOutcome,
     RevertResult,
     SearchResult,
+    ToolDescriptor,
     WriteResult,
 )
 
@@ -52,6 +53,7 @@ __all__ = [
     "to_revert_result",
     "to_search_result",
     "to_session",
+    "to_tool_list",
     "to_write_result",
 ]
 
@@ -260,6 +262,34 @@ def to_domain_list(message: _pb.ListDomainsResponse) -> DomainList:
         sunset_date=_to_date(message.sunset_date),
         server_commit=message.server_commit,
     )
+
+
+def _to_tool_descriptor(message: _pb.ToolDescriptor) -> ToolDescriptor:
+    """Convert a ``ToolDescriptor`` message.
+
+    Args:
+        message: The generated message.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return ToolDescriptor(
+        name=message.name,
+        description=message.description,
+        available=message.available,
+    )
+
+
+def to_tool_list(message: _pb.ListToolsResponse) -> tuple[ToolDescriptor, ...]:
+    """Convert a ``ListToolsResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        One descriptor per method the contract declares.
+    """
+    return tuple(_to_tool_descriptor(tool) for tool in message.tools)
 
 
 def to_session(message: _pb.StartSessionResponse) -> tuple[str, Instructions]:

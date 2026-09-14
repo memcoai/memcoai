@@ -157,6 +157,114 @@ test('the offered operations are exactly what the scope carries', async () => {
   })
 })
 
+// -- access-set filtering --------------------------------------------------
+
+/**
+ * A ListTools response naming every offered operation, marking only the given
+ * ones available.
+ */
+function toolCatalog(available: ReadonlySet<string>): pb.ListToolsResponse {
+  return pb.ListToolsResponse.fromPartial({
+    tools: offered.map(name => ({
+      name,
+      description: '',
+      available: available.has(name)
+    }))
+  })
+}
+
+/** Open a session against `harness` and return the operation names it offers. */
+async function offeredNames(harness: Harness): Promise<string[]> {
+  const memco = new Memco({
+    token: 'test-token',
+    host: harness.address,
+    tls: false
+  })
+  try {
+    await memco.connect()
+    const session = await memco.memory.withSession('coding')
+    return session
+      .tools()
+      .tools.map(tool => tool.name)
+      .sort()
+  } finally {
+    await memco.close()
+  }
+}
+
+const ROLE_SCENARIOS: readonly (readonly [string, ReadonlySet<string>])[] = [
+  ['creator', new Set(offered)],
+  ['reader', new Set(['search', 'share_feedback'])],
+  // An admin with no reader or creator content grant has no content access at
+  // all -- the SDK does not know this rule, it just relays what the service
+  // reports.
+  ['admin', new Set()]
+]
+
+for (const [role, available] of ROLE_SCENARIOS) {
+  test(`tools are filtered by the token's access set [${role}]`, async () => {
+    await withHarness(async harness => {
+      harness.memory.responses.set('listTools', toolCatalog(available))
+      const names = await offeredNames(harness)
+      assert.deepEqual(
+        names,
+        [...available].map(name => TOOL_PREFIX + name).sort()
+      )
+    })
+  })
+}
+
+test('an operation missing from the catalog is not offered', async () => {
+  await withHarness(async harness => {
+    // Fail closed: absent from the catalog is not the same as available:
+    // false, but is treated the same way -- never as "available by default".
+    harness.memory.responses.set(
+      'listTools',
+      pb.ListToolsResponse.fromPartial({
+        tools: [{ name: 'search', description: '', available: true }]
+      })
+    )
+    assert.deepEqual(await offeredNames(harness), ['memco_search'])
+  })
+})
+
+test('the catalog is fetched once per session, not once per tools() call', async () => {
+  await withHarness(async harness => {
+    const memco = new Memco({
+      token: 'test-token',
+      host: harness.address,
+      tls: false
+    })
+    try {
+      await memco.connect()
+      const session = await memco.memory.withSession('coding')
+      harness.forget()
+      session.tools()
+      session.tools()
+      assert.deepEqual(harness.memory.calls, [])
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
+/** Three blips exhausts the retry policy's maxAttempts, so this is what a
+ * ListTools outage that outlasts the retries looks like, not just a blip that
+ * self-heals. */
+const LIST_TOOLS_BLIP = { code: status.UNAVAILABLE, details: 'try again' }
+
+test('a persistent listTools failure falls back to every tool available', async () => {
+  await withHarness(async harness => {
+    harness.memory.transientErrors.set('listTools', [
+      LIST_TOOLS_BLIP,
+      LIST_TOOLS_BLIP,
+      LIST_TOOLS_BLIP
+    ])
+    const names = await offeredNames(harness)
+    assert.deepEqual(names, offered.map(name => TOOL_PREFIX + name).sort())
+  })
+})
+
 test('a toolset iterates as the tools it holds', async () => {
   await withToolset(async toolset => {
     assert.deepEqual([...toolset], [...toolset.tools])
