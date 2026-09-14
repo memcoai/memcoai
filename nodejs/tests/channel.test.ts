@@ -95,6 +95,7 @@ test('the retry policy names only the calls a replay cannot change', () => {
   assert.deepEqual(entry.name, [
     { service: MEMORY_SERVICE, method: 'ListDomains' },
     { service: MEMORY_SERVICE, method: 'GetMemory' },
+    { service: MEMORY_SERVICE, method: 'ListTools' },
     { service: HEALTH_SERVICE, method: 'Check' }
   ])
   assert.deepEqual(entry.retryPolicy, {
@@ -106,7 +107,10 @@ test('the retry policy names only the calls a replay cannot change', () => {
     // RESOURCE_EXHAUSTED is a limit the caller handles by kind.
     retryableStatusCodes: ['UNAVAILABLE']
   })
-  assert.deepEqual([...RETRYABLE_METHODS], ['ListDomains', 'GetMemory'])
+  assert.deepEqual(
+    [...RETRYABLE_METHODS],
+    ['ListDomains', 'GetMemory', 'ListTools']
+  )
 })
 
 test('every retryable method is one the generated client declares', () => {

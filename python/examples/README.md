@@ -9,6 +9,10 @@ export MEMCO_API_TOKEN=...
 uv run --with memcoai python examples/quickstart.py
 ```
 
+Or run all of them in one go with `make run-examples` (from the repository
+root, or `make -C python run-examples`) — it needs the same environment, plus
+whatever `langchain_agent.py` additionally needs, below.
+
 `langchain_agent.py` needs three packages the SDK does not install — LangChain,
 a provider package for the model you run, and `ddgs` for its web-search tool —
 plus a model credential:

@@ -10,6 +10,10 @@ npm run build:test
 node build/js/examples/quickstart.js
 ```
 
+Or run all of them in one go with `make run-examples` (from the repository
+root, or `make -C nodejs run-examples`) — it needs the same environment, plus
+whatever `langchain_agent.ts` additionally needs, below.
+
 They are compiled rather than run from source. `node examples/quickstart.ts`
 does not work twice over: Node resolves the `../src/index.js` import literally,
 and there is no such file until something builds it, and its type stripping

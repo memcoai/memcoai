@@ -494,9 +494,16 @@ def _available(session: Session | AsyncSession) -> frozenset[str]:
     Returns:
         The names of :data:`_OPERATIONS` the catalog marks ``available``. An
         operation the catalog does not mention at all is excluded, the same as
-        one it marks unavailable.
+        one it marks unavailable. When the catalog itself is ``None`` — the
+        fetch failed when the session was opened, and ``start_session`` already
+        logged it — every operation is returned instead of none, so that
+        failure degrades :meth:`~memcoai.operations.Session.tools` to
+        unfiltered rather than to empty.
     """
-    return frozenset(tool.name for tool in session._tool_catalog if tool.available)  # noqa: SLF001
+    catalog = session._tool_catalog  # noqa: SLF001
+    if catalog is None:
+        return frozenset(_OPERATIONS)
+    return frozenset(tool.name for tool in catalog if tool.available)
 
 
 def _tools(session: Session) -> Toolset:

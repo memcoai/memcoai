@@ -22,10 +22,12 @@ import type {
 } from '@grpc/grpc-js'
 
 import { toolset, type Toolset } from './agent.js'
+import { MemcoAPIError } from './errors.js'
 import * as pb from './internal/gen.js'
 import { Known } from './internal/limits.js'
 import * as convert from './internal/convert.js'
 import * as deprecation from './internal/deprecation.js'
+import { ROOT, getLogger } from './internal/logging.js'
 import * as requests from './internal/requests.js'
 import {
   DataSource,
@@ -39,8 +41,11 @@ import {
   type RevertResult,
   type SearchResult,
   type Tag,
+  type ToolDescriptor,
   type WriteResult
 } from './types.js'
+
+const log = getLogger(`${ROOT}.operations`)
 
 /**
  * One unary method on the generated client, in the form the SDK calls it.
@@ -392,7 +397,49 @@ export class MemoryOperations {
   }
 
   /**
+   * Every method this contract declares, and which of them your token's role
+   * permits.
+   *
+   * The catalog itself never varies; only availability does. Availability
+   * names a permission, not a guarantee: a method reported available may still
+   * be refused for a reason unrelated to role, such as a memory domain with no
+   * network provisioned for it.
+   *
+   * {@link startSession} calls this once per session and caches the result,
+   * which is what {@link Session.tools} filters against — so calling this
+   * directly is for a caller that wants the catalog itself, not for shaping
+   * what a session offers.
+   *
+   * @param options Per-call deadline.
+   * @returns One descriptor per method the contract declares.
+   *
+   * @example
+   * ```ts
+   * const catalog = await client.memory.listTools()
+   * const names = catalog.filter(tool => tool.available).map(tool => tool.name)
+   * ```
+   */
+  async listTools(
+    options: TimeoutOptions = {}
+  ): Promise<readonly ToolDescriptor[]> {
+    const response = await this.call(
+      this.stub.listTools.bind(this.stub),
+      requests.listToolsRequest(),
+      options.timeout,
+      'ListTools'
+    )
+    return convert.toToolList(response)
+  }
+
+  /**
    * Open a session, so the searches made under it are recorded as one series.
+   *
+   * Also fetches the tools your token's role currently permits, which is what
+   * {@link Session.tools} filters against for the life of the session. That
+   * fetch is best-effort: if it fails after the retries `RETRYABLE_METHODS`
+   * already gives it, a warning is logged and every tool is treated as
+   * available rather than none, so a transient failure degrades
+   * {@link Session.tools} to unfiltered rather than to empty.
    *
    * @param domain The domain to work in.
    * @param options Per-call deadline.
@@ -404,14 +451,37 @@ export class MemoryOperations {
     domain: string,
     options: TimeoutOptions = {}
   ): Promise<Session> {
-    const response = await this.call(
-      this.stub.startSession.bind(this.stub),
-      requests.startSessionRequest(domain),
-      options.timeout,
-      'StartSession'
-    )
+    // Run concurrently: listToolsRequest() carries no fields and does not
+    // depend on the StartSession response, so there is nothing to gain from
+    // waiting for one before sending the other.
+    //
+    // The catalog fetch is best-effort, caught inline rather than through
+    // Promise.all: the session is already open by the time it fails, and
+    // refusing to hand it back over a second, unrelated call would either
+    // orphan it -- there is no call that closes one -- or invite a retry that
+    // opens yet another. If it fails after the retries RETRYABLE_METHODS
+    // already gives it, log it and treat every tool as available rather than
+    // none, so the failure degrades Session.tools() to unfiltered rather than
+    // to empty. A StartSession failure is unaffected: Promise.all still
+    // rejects with it, since only the listTools promise catches here.
+    const [response, toolCatalog] = await Promise.all([
+      this.call(
+        this.stub.startSession.bind(this.stub),
+        requests.startSessionRequest(domain),
+        options.timeout,
+        'StartSession'
+      ),
+      this.listTools(options).catch((error: unknown) => {
+        if (!(error instanceof MemcoAPIError)) throw error
+        log.warning(
+          'listTools failed while opening a session; treating every tool as available: %s',
+          error
+        )
+        return null
+      })
+    ])
     const fields = convert.toSessionFields(response)
-    return new Session(this, fields.id, fields.instructions)
+    return new Session(this, fields.id, fields.instructions, toolCatalog)
   }
 
   /**
@@ -688,6 +758,10 @@ export class Session {
    * @param operations The namespace this session's calls forward to.
    * @param id The session id that was opened.
    * @param instructions What the service said when the session was opened.
+   * @param toolCatalog What {@link MemoryOperations.listTools} reported when
+   *   this session was opened, which {@link tools} filters against. `null`
+   *   when that fetch failed -- every tool is then treated as available
+   *   rather than none.
    *
    * @internal Constructed by {@link MemoryOperations.startSession}, never by a
    *   caller.
@@ -695,7 +769,8 @@ export class Session {
   constructor(
     private readonly operations: MemoryOperations,
     readonly id: string,
-    readonly instructions: Instructions
+    readonly instructions: Instructions,
+    readonly toolCatalog: readonly ToolDescriptor[] | null
   ) {}
 
   /**
@@ -810,7 +885,12 @@ export class Session {
    * The toolset hands itself to a framework — `toLangChain()`,
    * `toAnthropic()`, `toOpenAI()` — or runs what a model named with `call()`.
    *
-   * @returns One tool per offered operation, as a {@link Toolset}.
+   * An operation is included only when your token's role permits it, as
+   * reported by {@link MemoryOperations.listTools} when this session was
+   * opened. This only shapes what is offered here — it does not gate calling a
+   * {@link Session} method directly.
+   *
+   * @returns One tool per operation your role permits, as a {@link Toolset}.
    *
    * @example
    * ```ts

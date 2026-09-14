@@ -66,7 +66,7 @@ test('awaiting an opener twice opens one session', async () => {
       const first = await opener
       const second = await opener
       assert.equal(first, second)
-      assert.deepEqual(harness.memory.calls, ['startSession'])
+      assert.deepEqual(harness.memory.calls, ['startSession', 'listTools'])
     } finally {
       await memco.close()
     }

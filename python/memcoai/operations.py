@@ -6,12 +6,15 @@ health gate; this module owns only the calls.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+import logging
 from collections.abc import Callable, Generator, Iterable
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from . import _convert, _deprecation, _limits, _requests
+from .errors import MemcoAPIError
 from .types import (
     AsyncMemory,
     DataSource,
@@ -39,6 +42,8 @@ __all__ = [
     "MemoryOperations",
     "Session",
 ]
+
+_log = logging.getLogger(__name__)
 
 
 class MemoryOperations:
@@ -130,7 +135,13 @@ class MemoryOperations:
         keep naming it.
 
         Also fetches the tools your token's role currently permits, which is what
-        :meth:`Session.tools` filters against for the life of the session.
+        :meth:`Session.tools` filters against for the life of the session. That fetch is
+        best-effort: the session itself is already open by then, and refusing to hand it back
+        over a second, unrelated call would either orphan it -- there is no call that closes one
+        -- or invite a retry that opens yet another. If it fails after the retries
+        :data:`~memcoai._channel.RETRYABLE_METHODS` already gives it, a warning is logged and
+        every tool is treated as available rather than none, so a transient failure degrades
+        :meth:`Session.tools` to unfiltered rather than to empty.
 
         Args:
             domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
@@ -153,7 +164,15 @@ class MemoryOperations:
         session_id, instructions = _convert.to_session(
             self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout)
         )
-        return Session(self, session_id, instructions, self.list_tools(timeout=timeout))
+        try:
+            tool_catalog = self.list_tools(timeout=timeout)
+        except MemcoAPIError as exc:
+            _log.warning(
+                "list_tools failed while opening a session; treating every tool as available: %s",
+                exc,
+            )
+            tool_catalog = None
+        return Session(self, session_id, instructions, tool_catalog)
 
     def with_session(self, domain: str, *, timeout: float | None = None) -> Session:
         """Open a session and apply it to every call made through the result.
@@ -675,10 +694,35 @@ class AsyncMemoryOperations:
         Example:
             >>> {tool.name for tool in await client.memory.list_tools() if tool.available}
         """
-        response = await self._call(
-            self._stub.ListTools, _requests.list_tools_request(), timeout
-        )
+        response = await self._call(self._stub.ListTools, _requests.list_tools_request(), timeout)
         return _convert.to_tool_list(response)
+
+    async def _best_effort_tool_catalog(
+        self, timeout: float | None
+    ) -> tuple[ToolDescriptor, ...] | None:
+        """Fetch the tool catalog for :meth:`start_session`, absorbing a failure.
+
+        A separate coroutine rather than a bare ``try`` around the ``await`` in
+        ``start_session`` because it also runs under :func:`asyncio.gather` there,
+        so its own failure must not surface as one -- only ``StartSession``'s should.
+
+        Args:
+            timeout: Per-call deadline in seconds, as given to ``start_session``.
+
+        Returns:
+            The catalog, or ``None`` if the fetch failed after the retries
+            :data:`~memcoai._channel.RETRYABLE_METHODS` already gives it -- logged
+            as a warning, since every tool is then treated as available rather
+            than none.
+        """
+        try:
+            return await self.list_tools(timeout=timeout)
+        except MemcoAPIError as exc:
+            _log.warning(
+                "list_tools failed while opening a session; treating every tool as available: %s",
+                exc,
+            )
+            return None
 
     async def start_session(self, domain: str, *, timeout: float | None = None) -> AsyncSession:
         """Start a session and get its id. A session groups the searches you make while working on
@@ -691,7 +735,16 @@ class AsyncMemoryOperations:
         keep naming it.
 
         Also fetches the tools your token's role currently permits, which is what
-        :meth:`AsyncSession.tools` filters against for the life of the session.
+        :meth:`AsyncSession.tools` filters against for the life of the session. Run
+        concurrently with opening the session itself: :meth:`list_tools` takes no domain or
+        session, so there is nothing to gain from waiting for one before sending the other. That
+        fetch is best-effort: the session itself is already open by then, and refusing to hand
+        it back over a second, unrelated call would either orphan it -- there is no call that
+        closes one -- or invite a retry that opens yet another. If it fails after the retries
+        :data:`~memcoai._channel.RETRYABLE_METHODS` already gives it, a warning is logged and
+        every tool is treated as available rather than none, so a transient failure degrades
+        :meth:`AsyncSession.tools` to unfiltered rather than to empty. A ``StartSession`` failure
+        is unaffected: it still raises normally, since only the catalog fetch absorbs its own.
 
         Args:
             domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
@@ -711,12 +764,12 @@ class AsyncMemoryOperations:
             >>> session.id
             'session-z2ye39'
         """
-        response = await self._call(
-            self._stub.StartSession, _requests.start_session_request(domain), timeout
+        response, tool_catalog = await asyncio.gather(
+            self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout),
+            self._best_effort_tool_catalog(timeout),
         )
         session_id, instructions = _convert.to_session(response)
-        catalog = await self.list_tools(timeout=timeout)
-        return AsyncSession(self, session_id, instructions, catalog)
+        return AsyncSession(self, session_id, instructions, tool_catalog)
 
     def with_session(self, domain: str, *, timeout: float | None = None) -> AsyncSessionOpener:
         """Open a session and apply it to every call made through the result.
@@ -1203,7 +1256,7 @@ class Session:
         operations: MemoryOperations,
         session_id: str,
         instructions: Instructions,
-        tool_catalog: tuple[ToolDescriptor, ...],
+        tool_catalog: tuple[ToolDescriptor, ...] | None,
     ) -> None:
         """Bind a session to a namespace.
 
@@ -1213,6 +1266,8 @@ class Session:
             instructions: What the service said when the session was opened.
             tool_catalog: What :meth:`MemoryOperations.list_tools` reported when
                 the session was opened, which :meth:`tools` filters against.
+                ``None`` when that fetch failed -- every tool is then treated
+                as available rather than none.
         """
         self._operations = operations
         self._id = session_id
@@ -1656,7 +1711,7 @@ class AsyncSession:
         operations: AsyncMemoryOperations,
         session_id: str,
         instructions: Instructions,
-        tool_catalog: tuple[ToolDescriptor, ...],
+        tool_catalog: tuple[ToolDescriptor, ...] | None,
     ) -> None:
         """Bind a session to a namespace.
 
@@ -1666,6 +1721,8 @@ class AsyncSession:
             instructions: What the service said when the session was opened.
             tool_catalog: What :meth:`AsyncMemoryOperations.list_tools` reported
                 when the session was opened, which :meth:`tools` filters against.
+                ``None`` when that fetch failed -- every tool is then treated
+                as available rather than none.
         """
         self._operations = operations
         self._id = session_id

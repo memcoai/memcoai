@@ -18,7 +18,7 @@ RUN := $(NPM) run --silent
 # and every line CI's matrix covers.
 NODE_VERSIONS := 22 24 26
 
-.PHONY: help install lint format typecheck test test-all system-test coverage docs docs-serve build clean
+.PHONY: help install lint format typecheck test test-all system-test run-examples coverage docs docs-serve build clean
 
 help:  ## Show this help
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
@@ -48,6 +48,20 @@ test:  ## Run the suite against a real in-process gRPC server
 # reachable service; without one it reports itself skipped rather than failing.
 system-test:  ## Run the live suite against the real service
 	$(RUN) system-test
+
+# Unlike system-test, this does not skip without a credential -- it assumes
+# MEMCO_API_TOKEN, and whatever langchain_agent.ts additionally needs, are
+# already in the environment (see examples/README.md). Compiled first, for the
+# same reason test is: Node's type stripping refuses the generated client's
+# `export enum`, so the examples cannot run from source either. Each one
+# guards its own entry point, so this is exactly what running it by hand would
+# do, once for every file build:test already produced.
+run-examples:  ## Run every example against the real service
+	@$(RUN) build:test
+	@for f in build/js/examples/*.js; do \
+		printf '\033[1m--- %s ---\033[0m\n' "$$f"; \
+		node --enable-source-maps "$$f" || exit 1; \
+	done
 
 # 95% of lines is the floor this SDK holds. Branches sit at 90 because V8
 # counts every implicit branch — optional chaining, `??`, default parameters,

@@ -123,6 +123,35 @@ async def test_the_async_catalog_is_fetched_once_per_session_not_once_per_tools_
     assert "ListTools" not in harness.memory.calls
 
 
+_LIST_TOOLS_BLIP = (grpc.StatusCode.UNAVAILABLE, "try again")
+
+
+def test_a_persistent_list_tools_failure_falls_back_to_every_tool_available(
+    client: Memco, harness: Harness, caplog
+):
+    # Three blips exhausts the retry policy's maxAttempts, so this is what a
+    # ListTools outage that outlasts the retries looks like, not just a blip
+    # that self-heals.
+    harness.memory.transient_errors["ListTools"] = [_LIST_TOOLS_BLIP] * 3
+    with caplog.at_level("WARNING", logger="memcoai"):
+        session = client.memory.with_session("coding")
+    offered = {tool.name for tool in session.tools()}
+    assert offered == {agent._PREFIX + name for name in agent._OPERATIONS}
+    assert "list_tools failed" in caplog.text
+    assert "every tool" in caplog.text
+
+
+async def test_a_persistent_list_tools_failure_falls_back_on_the_async_surface_too(
+    async_client: AsyncMemco, harness: Harness, caplog
+):
+    harness.memory.transient_errors["ListTools"] = [_LIST_TOOLS_BLIP] * 3
+    with caplog.at_level("WARNING", logger="memcoai"):
+        session = await async_client.memory.with_session("coding")
+    offered = {tool.name for tool in session.tools()}
+    assert offered == {agent._PREFIX + name for name in agent._OPERATIONS}
+    assert "list_tools failed" in caplog.text
+
+
 async def test_both_surfaces_filter_the_same_way(
     async_client: AsyncMemco, client: Memco, harness: Harness
 ):

@@ -43,7 +43,7 @@ Computed once so the synchronous and asynchronous builders cannot disagree.
 _MEMORY_SERVICE = memory_pb2.DESCRIPTOR.services_by_name["MemoryService"].full_name
 _HEALTH_SERVICE = health_pb2.DESCRIPTOR.services_by_name["Health"].full_name
 
-RETRYABLE_METHODS = ("ListDomains", "GetMemory")
+RETRYABLE_METHODS = ("ListDomains", "GetMemory", "ListTools")
 """The memory methods a lost connection may safely be replayed on.
 
 gRPC's configurable retries are at-least-once: a retry sent after the server
@@ -77,6 +77,11 @@ Deliberately absent, and why each one is worse than it looks:
 nothing else — a frequently served result is not thereby a correct one", so a
 duplicate moves a counter that carries no judgement, and the content it returns
 is the same either way. That is the whole of the cost, unlike the cases above.
+
+``ListTools`` mints nothing and moves no counter at all — the catalog is the
+same for every caller and only availability, a fact about the caller's own
+role, depends on who is asking — so a replay costs even less than
+``GetMemory``'s.
 
 The health probe is retried too, and is named separately below because it
 belongs to a service this SDK does not own.

@@ -303,6 +303,27 @@ export interface DomainList {
 }
 
 /**
+ * One method the contract declares, and whether the caller's role permits it.
+ *
+ * `name` is the same canonical snake_case operation name
+ * {@link MemoryOperations.listTools} and the rest of this SDK use elsewhere —
+ * `'search'`, `'create_memory'` — not the camelCase method this SDK calls it by.
+ *
+ * `available` is a fact about the caller's own account, not about the method:
+ * `false` is never explained further here, and `true` does not guarantee a call
+ * will succeed — it may still be refused for an unrelated reason, such as a
+ * memory domain with no network provisioned for it.
+ */
+export interface ToolDescriptor {
+  /** The method's operation name, such as `'search'` or `'create_memory'`. */
+  readonly name: string
+  /** What the method is for. */
+  readonly description: string
+  /** Whether the caller's role permits this method. */
+  readonly available: boolean
+}
+
+/**
  * One finding inside a memory.
  *
  * This is the knowledge itself: what you read, and what a rating moves. A
