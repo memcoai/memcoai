@@ -41,6 +41,9 @@ docs = [
     # scripts/build_llms_txt.py. In the docs extra rather than dev because CI's
     # docs job installs only this one.
     "sphinx-markdown-builder>=0.6.8",
+    # Lets docs/index.rst include the real README.md and have it render as
+    # Sphinx expects, since Sphinx itself only understands reStructuredText.
+    "myst-parser>=3",
 ]
 
 # One tree: the generated client lives inside the package it ships in, so there

@@ -323,20 +323,34 @@ def body(markdown: str) -> str:
     thing to see on the rendered page and noise at the top of a text file an
     agent is reading. Only leading blocks are dropped, so HTML further down —
     a table, an inline image beside prose — survives untouched.
+
+    A single leading heading is set aside first and restored afterwards
+    rather than read as part of the banner: it is the page's own title (an
+    included README rendered below one, as ``index.rst`` does), not noise to
+    drop — and banner blocks the title precedes still need to be recognised
+    as leading the rest of the page.
     """
     remaining = markdown.strip()
+    title = ""
+    head = blocks(remaining)[:1]
+    if head and re.match(r"^#{1,6}\s", head[0]):
+        title, remaining = head[0], remaining[len(head[0]) :].strip()
     while True:
         head = blocks(remaining)[:1]
         if not head or not (head[0].lstrip().startswith("<") or head[0].strip() == "---"):
-            return remaining
+            return f"{title}\n\n{remaining}" if title else remaining
         # `blocks` splits a stripped string on blank lines, so the first block
         # it returns is a prefix of it.
         remaining = remaining[len(head[0]) :].strip()
 
 
-NOT_PROSE = re.compile(r"[#>|]|```|[-*+] |\d+\. |<")
+NOT_PROSE = re.compile(r"[#>|]|```|[-*+] |\d+\. |<|^-{3,}$")
 """Openings that mean a block is structure rather than the page's first prose:
-a heading, a blockquote, a table row, a fence, a list item, raw HTML."""
+a heading, a blockquote, a table row, a fence, a list item, raw HTML, a
+thematic break. Without the last one, a page whose title is followed by a
+``---`` separator (an included README's own banner rule, once ``body()``'s
+leading-banner strip has already been defeated by that title coming first)
+has the rule itself picked up as the page's description."""
 
 
 def summarise(markdown: str, limit: int = 200) -> str:

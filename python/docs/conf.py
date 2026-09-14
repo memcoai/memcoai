@@ -25,6 +25,9 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
+    # Lets index.rst .. include:: the real README.md, so the reference
+    # overview stops being a second, hand-maintained copy of it.
+    "myst_parser",
 ]
 
 # The docstrings are Google style throughout.
@@ -50,6 +53,11 @@ autodoc_default_options = {
 add_module_names = False
 
 intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
+
+# README.md is included as a fragment (see index.rst), so it opens below the
+# page's own title rather than at H1 - which is exactly what myst.header warns
+# about. That is the point of including it, not a problem to fix.
+suppress_warnings = ["myst.header"]
 
 # Report every unresolved cross-reference. Without this, `-W` in CI catches
 # nothing: a broken :class: or :meth: in a docstring resolves to nothing
