@@ -324,17 +324,21 @@ def body(markdown: str) -> str:
     agent is reading. Only leading blocks are dropped, so HTML further down —
     a table, an inline image beside prose — survives untouched.
 
-    A single leading heading is set aside first and restored afterwards
-    rather than read as part of the banner: it is the page's own title (an
-    included README rendered below one, as ``index.rst`` does), not noise to
-    drop — and banner blocks the title precedes still need to be recognised
-    as leading the rest of the page.
+    A single leading heading *line* is set aside first and restored
+    afterwards rather than read as part of the banner: it is the page's own
+    title (an included README rendered below one, as ``index.rst`` does), not
+    noise to drop — and banner blocks the title precedes still need to be
+    recognised as leading the rest of the page. Only the line is taken, not
+    the block it opens: a title is not always its own blank-line-separated
+    block, and taking the whole block would carry off whatever prose follows
+    it on the same block with no blank line in between.
     """
     remaining = markdown.strip()
-    title = ""
-    head = blocks(remaining)[:1]
-    if head and re.match(r"^#{1,6}\s", head[0]):
-        title, remaining = head[0], remaining[len(head[0]) :].strip()
+    title, _, rest = remaining.partition("\n")
+    if re.match(r"^#{1,6}\s", title):
+        remaining = rest.strip()
+    else:
+        title = ""
     while True:
         head = blocks(remaining)[:1]
         if not head or not (head[0].lstrip().startswith("<") or head[0].strip() == "---"):
