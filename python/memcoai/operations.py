@@ -6,12 +6,15 @@ health gate; this module owns only the calls.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+import logging
 from collections.abc import Callable, Generator, Iterable
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from . import _convert, _deprecation, _limits, _requests
+from .errors import MemcoAPIError
 from .types import (
     AsyncMemory,
     DataSource,
@@ -25,6 +28,7 @@ from .types import (
     RevertResult,
     SearchResult,
     Tag,
+    ToolDescriptor,
     WriteResult,
 )
 
@@ -38,6 +42,8 @@ __all__ = [
     "MemoryOperations",
     "Session",
 ]
+
+_log = logging.getLogger(__name__)
 
 
 class MemoryOperations:
@@ -92,6 +98,32 @@ class MemoryOperations:
         _deprecation.warn_once(described.deprecation_message, described.sunset_date)
         return described
 
+    def list_tools(self, *, timeout: float | None = None) -> tuple[ToolDescriptor, ...]:
+        """Every method this contract declares, and which of them your token's role permits.
+
+        The catalog itself never varies; only availability does. Availability names a
+        permission, not a guarantee: a method reported available may still be refused for a
+        reason unrelated to role, such as a memory domain with no network provisioned for it.
+
+        :meth:`start_session` calls this once per session and caches the result, which is
+        what :meth:`Session.tools` filters against -- so calling this directly is for a
+        caller that wants the catalog itself, not for shaping what a session offers.
+
+        Args:
+            timeout: Per-call deadline in seconds. Defaults to the client's.
+
+        Returns:
+            One descriptor per method the contract declares.
+
+        Raises:
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> {tool.name for tool in client.memory.list_tools() if tool.available}
+        """
+        response = self._call(self._stub.ListTools, _requests.list_tools_request(), timeout)
+        return _convert.to_tool_list(response)
+
     def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
         """Start a session and get its id. A session groups the searches you make while working on
         one task, so they are recorded as the series they are rather than as unrelated one-offs.
@@ -123,7 +155,15 @@ class MemoryOperations:
         session_id, instructions = _convert.to_session(
             self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout)
         )
-        return Session(self, session_id, instructions)
+        try:
+            tool_catalog = self.list_tools(timeout=timeout)
+        except MemcoAPIError as exc:
+            _log.warning(
+                "list_tools failed while opening a session; treating every tool as available: %s",
+                exc,
+            )
+            tool_catalog = None
+        return Session(self, session_id, instructions, tool_catalog)
 
     def with_session(self, domain: str, *, timeout: float | None = None) -> Session:
         """Open a session and apply it to every call made through the result.
@@ -622,6 +662,59 @@ class AsyncMemoryOperations:
         _deprecation.warn_once(described.deprecation_message, described.sunset_date)
         return described
 
+    async def list_tools(self, *, timeout: float | None = None) -> tuple[ToolDescriptor, ...]:
+        """Every method this contract declares, and which of them your token's role permits.
+
+        The catalog itself never varies; only availability does. Availability names a
+        permission, not a guarantee: a method reported available may still be refused for a
+        reason unrelated to role, such as a memory domain with no network provisioned for it.
+
+        :meth:`start_session` calls this once per session and caches the result, which is
+        what :meth:`AsyncSession.tools` filters against -- so calling this directly is for a
+        caller that wants the catalog itself, not for shaping what a session offers.
+
+        Args:
+            timeout: Per-call deadline in seconds. Defaults to the client's.
+
+        Returns:
+            One descriptor per method the contract declares.
+
+        Raises:
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> {tool.name for tool in await client.memory.list_tools() if tool.available}
+        """
+        response = await self._call(self._stub.ListTools, _requests.list_tools_request(), timeout)
+        return _convert.to_tool_list(response)
+
+    async def _best_effort_tool_catalog(
+        self, timeout: float | None
+    ) -> tuple[ToolDescriptor, ...] | None:
+        """Fetch the tool catalog for :meth:`start_session`, absorbing a failure.
+
+        A separate coroutine rather than a bare ``try`` around the ``await`` in
+        ``start_session`` because it also runs under :func:`asyncio.gather` there,
+        so its own failure must not surface as one -- only ``StartSession``'s should.
+
+        Args:
+            timeout: Per-call deadline in seconds, as given to ``start_session``.
+
+        Returns:
+            The catalog, or ``None`` if the fetch failed after the retries
+            :data:`~memcoai._channel.RETRYABLE_METHODS` already gives it -- logged
+            as a warning, since every tool is then treated as available rather
+            than none.
+        """
+        try:
+            return await self.list_tools(timeout=timeout)
+        except MemcoAPIError as exc:
+            _log.warning(
+                "list_tools failed while opening a session; treating every tool as available: %s",
+                exc,
+            )
+            return None
+
     async def start_session(self, domain: str, *, timeout: float | None = None) -> AsyncSession:
         """Start a session and get its id. A session groups the searches you make while working on
         one task, so they are recorded as the series they are rather than as unrelated one-offs.
@@ -650,11 +743,12 @@ class AsyncMemoryOperations:
             >>> session.id
             'session-z2ye39'
         """
-        response = await self._call(
-            self._stub.StartSession, _requests.start_session_request(domain), timeout
+        response, tool_catalog = await asyncio.gather(
+            self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout),
+            self._best_effort_tool_catalog(timeout),
         )
         session_id, instructions = _convert.to_session(response)
-        return AsyncSession(self, session_id, instructions)
+        return AsyncSession(self, session_id, instructions, tool_catalog)
 
     def with_session(self, domain: str, *, timeout: float | None = None) -> AsyncSessionOpener:
         """Open a session and apply it to every call made through the result.
@@ -1137,7 +1231,11 @@ class Session:
     """
 
     def __init__(
-        self, operations: MemoryOperations, session_id: str, instructions: Instructions
+        self,
+        operations: MemoryOperations,
+        session_id: str,
+        instructions: Instructions,
+        tool_catalog: tuple[ToolDescriptor, ...] | None,
     ) -> None:
         """Bind a session to a namespace.
 
@@ -1145,10 +1243,15 @@ class Session:
             operations: The namespace to forward every call to.
             session_id: The session id that was opened.
             instructions: What the service said when the session was opened.
+            tool_catalog: What :meth:`MemoryOperations.list_tools` reported when
+                the session was opened, which :meth:`tools` filters against.
+                ``None`` when that fetch failed -- every tool is then treated
+                as available rather than none.
         """
         self._operations = operations
         self._id = session_id
         self._instructions = instructions
+        self._tool_catalog = tool_catalog
 
     @property
     def id(self) -> str:
@@ -1531,8 +1634,14 @@ class Session:
         ``to_anthropic()``, ``to_openai()`` — or runs what a model named with
         ``call()``. See :mod:`memcoai.agent`.
 
+        An operation is included only when your token's role permits it, as
+        reported by :meth:`~memcoai.operations.MemoryOperations.list_tools`
+        when this session was opened. This only shapes what is offered here —
+        it does not gate calling a :class:`Session` method directly.
+
         Returns:
-            One tool per operation, as a :class:`~memcoai.agent.Toolset`.
+            One tool per operation your role permits, as a
+            :class:`~memcoai.agent.Toolset`.
 
         Raises:
             MemcoConfigError: If this package's docstrings are unavailable,
@@ -1577,7 +1686,11 @@ class AsyncSession:
     """
 
     def __init__(
-        self, operations: AsyncMemoryOperations, session_id: str, instructions: Instructions
+        self,
+        operations: AsyncMemoryOperations,
+        session_id: str,
+        instructions: Instructions,
+        tool_catalog: tuple[ToolDescriptor, ...] | None,
     ) -> None:
         """Bind a session to a namespace.
 
@@ -1585,10 +1698,15 @@ class AsyncSession:
             operations: The namespace to forward every call to.
             session_id: The session id that was opened.
             instructions: What the service said when the session was opened.
+            tool_catalog: What :meth:`AsyncMemoryOperations.list_tools` reported
+                when the session was opened, which :meth:`tools` filters against.
+                ``None`` when that fetch failed -- every tool is then treated
+                as available rather than none.
         """
         self._operations = operations
         self._id = session_id
         self._instructions = instructions
+        self._tool_catalog = tool_catalog
 
     @property
     def id(self) -> str:
@@ -1974,8 +2092,14 @@ class AsyncSession:
         ``to_anthropic()``, ``to_openai()`` — or runs what a model named with
         ``call()``. See :mod:`memcoai.agent`.
 
+        An operation is included only when your token's role permits it, as
+        reported by :meth:`~memcoai.operations.AsyncMemoryOperations.list_tools`
+        when this session was opened. This only shapes what is offered here —
+        it does not gate calling an :class:`AsyncSession` method directly.
+
         Returns:
-            One tool per operation, as a :class:`~memcoai.agent.AsyncToolset`.
+            One tool per operation your role permits, as a
+            :class:`~memcoai.agent.AsyncToolset`.
 
         Raises:
             MemcoConfigError: If this package's docstrings are unavailable,

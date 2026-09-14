@@ -188,6 +188,16 @@ export function listDomainsRequest(): pb.ListDomainsRequest {
 }
 
 /**
+ * Build a `ListTools` request.
+ *
+ * @returns The request message. It carries no fields: the catalog is the same
+ *   for every caller, and only availability depends on who is asking.
+ */
+export function listToolsRequest(): pb.ListToolsRequest {
+  return {}
+}
+
+/**
  * Validate and build a `RevertMemory` request.
  *
  * @param operationId The operation id a create or an enrich returned.

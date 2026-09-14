@@ -36,6 +36,7 @@ import {
   type MemoryFeedback,
   type RevertResult,
   type SearchResult,
+  type ToolDescriptor,
   type WriteResult
 } from '../types.js'
 import * as pb from './gen.js'
@@ -284,6 +285,32 @@ export function toDomainList(message: pb.ListDomainsResponse): DomainList {
     sunsetDate: toDay(message.sunsetDate),
     serverCommit: message.serverCommit
   }
+}
+
+/**
+ * Convert a `ToolDescriptor` message.
+ *
+ * @param message The generated message.
+ * @returns The public equivalent.
+ */
+function toToolDescriptor(message: pb.ToolDescriptor): ToolDescriptor {
+  return {
+    name: message.name,
+    description: message.description,
+    available: message.available
+  }
+}
+
+/**
+ * Convert a `ListToolsResponse`.
+ *
+ * @param message The generated response.
+ * @returns One descriptor per method the contract declares.
+ */
+export function toToolList(
+  message: pb.ListToolsResponse
+): readonly ToolDescriptor[] {
+  return message.tools.map(toToolDescriptor)
 }
 
 /** The fields decoded off a `StartSessionResponse`, before `operations.ts` wraps them in a `Session`. */

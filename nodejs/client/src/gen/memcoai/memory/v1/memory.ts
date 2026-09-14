@@ -649,6 +649,34 @@ export interface ImportOutcome {
   errors: string[];
 }
 
+export interface ListToolsRequest {
+}
+
+/** ToolDescriptor describes one method this contract declares. */
+export interface ToolDescriptor {
+  /**
+   * name is the method's operation name, the same canonical snake_case name
+   * this contract's other documents (such as the tool manifest) address it
+   * by — "create_memory", not "CreateMemory". The RPC serving it is that
+   * name's PascalCase form, which every generated client already derives its
+   * own method spelling from.
+   */
+  name: string;
+  description: string;
+  /**
+   * available reports whether the caller's role permits this method. A
+   * caller told no is not told why here: the cause is a fact about their own
+   * account — a role they lack — not about the method itself. A caller told
+   * yes may still have the call refused for an unrelated reason, such as a
+   * memory domain with no network provisioned for it.
+   */
+  available: boolean;
+}
+
+export interface ListToolsResponse {
+  tools: ToolDescriptor[];
+}
+
 function createBaseInstructions(): Instructions {
   return { content: "", policy: "", adding: "", rating: "", next: "" };
 }
@@ -3717,6 +3745,201 @@ export const ImportOutcome: MessageFns<ImportOutcome> = {
   },
 };
 
+function createBaseListToolsRequest(): ListToolsRequest {
+  return {};
+}
+
+export const ListToolsRequest: MessageFns<ListToolsRequest> = {
+  encode(_: ListToolsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListToolsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListToolsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(_: any): ListToolsRequest {
+    return {};
+  },
+
+  toJSON(_: ListToolsRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListToolsRequest>, I>>(base?: I): ListToolsRequest {
+    return ListToolsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListToolsRequest>, I>>(_: I): ListToolsRequest {
+    const message = createBaseListToolsRequest();
+    return message;
+  },
+};
+
+function createBaseToolDescriptor(): ToolDescriptor {
+  return { name: "", description: "", available: false };
+}
+
+export const ToolDescriptor: MessageFns<ToolDescriptor> = {
+  encode(message: ToolDescriptor, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.name !== "") {
+      writer.uint32(10).string(message.name);
+    }
+    if (message.description !== "") {
+      writer.uint32(18).string(message.description);
+    }
+    if (message.available !== false) {
+      writer.uint32(24).bool(message.available);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ToolDescriptor {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseToolDescriptor();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.description = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.available = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ToolDescriptor {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      available: isSet(object.available) ? globalThis.Boolean(object.available) : false,
+    };
+  },
+
+  toJSON(message: ToolDescriptor): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.available !== false) {
+      obj.available = message.available;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ToolDescriptor>, I>>(base?: I): ToolDescriptor {
+    return ToolDescriptor.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ToolDescriptor>, I>>(object: I): ToolDescriptor {
+    const message = createBaseToolDescriptor();
+    message.name = object.name ?? "";
+    message.description = object.description ?? "";
+    message.available = object.available ?? false;
+    return message;
+  },
+};
+
+function createBaseListToolsResponse(): ListToolsResponse {
+  return { tools: [] };
+}
+
+export const ListToolsResponse: MessageFns<ListToolsResponse> = {
+  encode(message: ListToolsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.tools) {
+      ToolDescriptor.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListToolsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListToolsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.tools.push(ToolDescriptor.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListToolsResponse {
+    return {
+      tools: globalThis.Array.isArray(object?.tools) ? object.tools.map((e: any) => ToolDescriptor.fromJSON(e)) : [],
+    };
+  },
+
+  toJSON(message: ListToolsResponse): unknown {
+    const obj: any = {};
+    if (message.tools?.length) {
+      obj.tools = message.tools.map((e) => ToolDescriptor.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListToolsResponse>, I>>(base?: I): ListToolsResponse {
+    return ListToolsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListToolsResponse>, I>>(object: I): ListToolsResponse {
+    const message = createBaseListToolsResponse();
+    message.tools = object.tools?.map((e) => ToolDescriptor.fromPartial(e)) || [];
+    return message;
+  },
+};
+
 /**
  * MemoryService is the shared memory surface: the operations a client uses to
  * find knowledge, contribute to it, and rate what it was given.
@@ -3857,6 +4080,22 @@ export const MemoryServiceService = {
     responseSerialize: (value: ImportMemoriesResponse) => Buffer.from(ImportMemoriesResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer) => ImportMemoriesResponse.decode(value),
   },
+  /**
+   * ListTools returns every method this contract declares, and which of them
+   * the caller's role permits. The catalog itself never varies; only
+   * availability does. availability names a permission, not a guarantee: a
+   * method it marks available can still be refused for a reason unrelated to
+   * role, such as a memory domain with no network provisioned for it.
+   */
+  listTools: {
+    path: "/memcoai.memory.v1.MemoryService/ListTools",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: ListToolsRequest) => Buffer.from(ListToolsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ListToolsRequest.decode(value),
+    responseSerialize: (value: ListToolsResponse) => Buffer.from(ListToolsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ListToolsResponse.decode(value),
+  },
 } as const;
 
 export interface MemoryServiceServer extends UntypedServiceImplementation {
@@ -3917,6 +4156,14 @@ export interface MemoryServiceServer extends UntypedServiceImplementation {
    * EnrichMemory do, and supplies the domain the memories are imported into.
    */
   importMemories: handleUnaryCall<ImportMemoriesRequest, ImportMemoriesResponse>;
+  /**
+   * ListTools returns every method this contract declares, and which of them
+   * the caller's role permits. The catalog itself never varies; only
+   * availability does. availability names a permission, not a guarantee: a
+   * method it marks available can still be refused for a reason unrelated to
+   * role, such as a memory domain with no network provisioned for it.
+   */
+  listTools: handleUnaryCall<ListToolsRequest, ListToolsResponse>;
 }
 
 export interface MemoryServiceClient extends Client {
@@ -4102,6 +4349,28 @@ export interface MemoryServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: ImportMemoriesResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * ListTools returns every method this contract declares, and which of them
+   * the caller's role permits. The catalog itself never varies; only
+   * availability does. availability names a permission, not a guarantee: a
+   * method it marks available can still be refused for a reason unrelated to
+   * role, such as a memory domain with no network provisioned for it.
+   */
+  listTools(
+    request: ListToolsRequest,
+    callback: (error: ServiceError | null, response: ListToolsResponse) => void,
+  ): ClientUnaryCall;
+  listTools(
+    request: ListToolsRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListToolsResponse) => void,
+  ): ClientUnaryCall;
+  listTools(
+    request: ListToolsRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListToolsResponse) => void,
   ): ClientUnaryCall;
 }
 

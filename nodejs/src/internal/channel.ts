@@ -93,10 +93,19 @@ export const HEALTH_SERVICE = 'grpc.health.v1.Health'
  * returns is the same either way. That is the whole of the cost, unlike the
  * cases above.
  *
+ * `ListTools` mints nothing and moves no counter at all — the catalog is the
+ * same for every caller and only availability, a fact about the caller's own
+ * role, depends on who is asking — so a replay costs even less than
+ * `GetMemory`'s.
+ *
  * The health probe is retried too, and is named separately below because it
  * belongs to a service this SDK does not own.
  */
-export const RETRYABLE_METHODS = ['ListDomains', 'GetMemory'] as const
+export const RETRYABLE_METHODS = [
+  'ListDomains',
+  'GetMemory',
+  'ListTools'
+] as const
 
 const RETRY_POLICY = {
   maxAttempts: 3,

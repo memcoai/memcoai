@@ -123,7 +123,9 @@ async def test_the_async_scope_opens_one_session_however_often_it_is_reached(
     first = await opener
     async with opener as second:
         assert second is first
-    assert harness.memory.calls == ["StartSession"]
+    # Not an exact order: StartSession and ListTools run concurrently on the
+    # async surface, so which one the fake server sees first is not settled.
+    assert sorted(harness.memory.calls) == ["ListTools", "StartSession"]
 
 
 async def test_the_async_scope_sends_the_session_id_on_an_import(

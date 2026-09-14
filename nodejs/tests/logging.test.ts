@@ -11,6 +11,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { status } from '@grpc/grpc-js'
+
+import { Memco } from '../src/client.js'
 import { MemcoConfigError } from '../src/errors.js'
 import { buildTransport } from '../src/internal/channel.js'
 import { DEFAULT_HOST, DEFAULT_PORT, resolve } from '../src/internal/config.js'
@@ -376,5 +379,31 @@ test('no credential reaches a record, over a whole exchange at debug', () => {
     assert.ok(!written.includes(token), written)
     assert.ok(!written.includes('supersecret'), written)
     assert.ok(!written.includes('Bearer'), written)
+  })
+})
+
+test('a persistent listTools failure warns at the default level', async () => {
+  await withHarness(async harness => {
+    // Three blips exhausts the retry policy's maxAttempts, so this is what a
+    // ListTools outage that outlasts the retries looks like, not just a blip
+    // that self-heals.
+    const blip = { code: status.UNAVAILABLE, details: 'try again' }
+    harness.memory.transientErrors.set('listTools', [blip, blip, blip])
+    const memco = new Memco({
+      token: 'test-token',
+      host: harness.address,
+      tls: false
+    })
+    const written = await captureAsync(async () => {
+      setLevel(DEFAULT_LEVEL)
+      try {
+        await memco.connect()
+        await memco.memory.withSession('coding')
+      } finally {
+        await memco.close()
+      }
+    })
+    assert.ok(written.includes('listTools failed'), written)
+    assert.ok(written.includes('every tool as available'), written)
   })
 })

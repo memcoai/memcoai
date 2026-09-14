@@ -25,8 +25,8 @@ async def test_auth_metadata_is_bearer_with_a_capital_b(async_client: AsyncMemco
 
 async def test_auth_metadata_is_sent_on_every_method(async_client: AsyncMemco, harness: Harness):
     await async_client.memory.list_domains()
-    await async_client.memory.start_session("coding")
-    assert len(harness.memory.metadata) == 2
+    await async_client.memory.start_session("coding")  # StartSession, then ListTools
+    assert len(harness.memory.metadata) == 3
     for sent in harness.memory.metadata:
         assert sent["authorization"] == f"Bearer {TOKEN}"
 

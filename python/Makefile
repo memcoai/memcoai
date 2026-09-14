@@ -15,7 +15,7 @@ UV ?= uv
 EXTRAS := --extra dev --extra docs
 RUN := $(UV) run $(EXTRAS)
 
-.PHONY: help install lint format typecheck test test-all system-test coverage docs docs-serve build clean
+.PHONY: help install lint format typecheck test test-all system-test run-examples coverage docs docs-serve build clean
 
 help:  ## Show this help
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
@@ -47,6 +47,16 @@ coverage:  ## Run the suite and report coverage (fails below the floor)
 # reachable service; without one it reports itself skipped rather than failing.
 system-test:  ## Run the live suite against the real service
 	$(RUN) pytest -q systemtest
+
+# Unlike system-test, this does not skip without a credential -- it assumes
+# MEMCO_API_TOKEN, and whatever langchain_agent.py additionally needs, are
+# already in the environment (see examples/README.md). Each script guards its
+# own entry point, so this is exactly what running it by hand would do.
+run-examples:  ## Run every example against the real service
+	@for f in examples/*.py; do \
+		printf '\033[1m--- %s ---\033[0m\n' "$$f"; \
+		$(RUN) python "$$f" || exit 1; \
+	done
 
 test-all:  ## Run the suite on every supported interpreter
 	@for v in 3.10 3.11 3.12 3.13; do \

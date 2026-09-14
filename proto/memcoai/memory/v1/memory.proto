@@ -64,6 +64,13 @@ service MemoryService {
   // Naming a session records the batch against it, as CreateMemory and
   // EnrichMemory do, and supplies the domain the memories are imported into.
   rpc ImportMemories(ImportMemoriesRequest) returns (ImportMemoriesResponse);
+
+  // ListTools returns every method this contract declares, and which of them
+  // the caller's role permits. The catalog itself never varies; only
+  // availability does. availability names a permission, not a guarantee: a
+  // method it marks available can still be refused for a reason unrelated to
+  // role, such as a memory domain with no network provisioned for it.
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
 }
 
 // Instructions is the model-facing guidance accompanying a result, held apart
@@ -457,4 +464,27 @@ message ImportOutcome {
   // errors says what was wrong with an entry that was not queued, and is empty
   // for one that was.
   repeated string errors = 3;
+}
+
+message ListToolsRequest {}
+
+// ToolDescriptor describes one method this contract declares.
+message ToolDescriptor {
+  // name is the method's operation name, the same canonical snake_case name
+  // this contract's other documents (such as the tool manifest) address it
+  // by — "create_memory", not "CreateMemory". The RPC serving it is that
+  // name's PascalCase form, which every generated client already derives its
+  // own method spelling from.
+  string name = 1;
+  string description = 2;
+  // available reports whether the caller's role permits this method. A
+  // caller told no is not told why here: the cause is a fact about their own
+  // account — a role they lack — not about the method itself. A caller told
+  // yes may still have the call refused for an unrelated reason, such as a
+  // memory domain with no network provisioned for it.
+  bool available = 3;
+}
+
+message ListToolsResponse {
+  repeated ToolDescriptor tools = 1;
 }

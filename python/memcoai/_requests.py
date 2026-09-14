@@ -29,6 +29,7 @@ __all__ = [
     "get_memory_request",
     "import_memories_requests",
     "list_domains_request",
+    "list_tools_request",
     "require_memory",
     "revert_memory_request",
     "search_request",
@@ -144,6 +145,16 @@ def list_domains_request() -> _pb.ListDomainsRequest:
         "which domain?", so it takes no domain of its own.
     """
     return _pb.ListDomainsRequest()
+
+
+def list_tools_request() -> _pb.ListToolsRequest:
+    """Build a ``ListTools`` request.
+
+    Returns:
+        The request message. It carries no fields: the catalog is the same for
+        every caller, and only availability depends on who is asking.
+    """
+    return _pb.ListToolsRequest()
 
 
 def revert_memory_request(operation_id: str, known: Known | None = None) -> _pb.RevertMemoryRequest:

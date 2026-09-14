@@ -17,7 +17,7 @@ LANGUAGES := $(patsubst %/Makefile,%,$(wildcard */Makefile))
 
 # Targets every language Makefile is expected to implement, no-op where a
 # language has nothing to do for one.
-FANOUT := install lint format typecheck test test-all system-test docs build clean
+FANOUT := install lint format typecheck test test-all system-test run-examples docs build clean
 
 .PHONY: help provenance tool-docs tool-docs-check check $(FANOUT)
 
@@ -57,6 +57,14 @@ test-all:  ## Run the suites on every supported runtime
 # reports itself skipped without them.
 system-test:  ## Run the live suites against the real service
 	$(call fanout,system-test)
+
+# Also absent from `check`, and unlike system-test this does not skip without a
+# credential -- it assumes the caller's environment already has MEMCO_API_TOKEN
+# and whatever an individual example additionally needs (see each language's
+# examples/README.md). Running it writes to whatever domain and credential you
+# point it at.
+run-examples:  ## Run every example against the real service (needs MEMCO_API_TOKEN)
+	$(call fanout,run-examples)
 
 docs:  ## Build the reference documentation
 	$(call fanout,docs)

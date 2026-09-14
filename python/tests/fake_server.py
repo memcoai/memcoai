@@ -16,6 +16,25 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from memcoai.memory.v1 import memory_pb2 as pb
 from memcoai.memory.v1 import memory_pb2_grpc as pbg
 
+_ALL_TOOLS = (
+    "list_domains",
+    "start_session",
+    "search",
+    "get_memory",
+    "create_memory",
+    "enrich_memory",
+    "share_feedback",
+    "revert_memory",
+    "import_memories",
+    "list_tools",
+)
+"""Every method the contract declares, mirroring the real ``ListTools`` catalog.
+
+Used as the default ``ListTools`` response -- every method available -- so the
+tests that do not care about access-set filtering keep seeing the full toolset
+without configuring one.
+"""
+
 
 class FakeMemoryService(pbg.MemoryServiceServicer):
     """Records what it was called with and returns whatever it was told to.
@@ -65,6 +84,15 @@ class FakeMemoryService(pbg.MemoryServiceServicer):
 
     def ListDomains(self, request, context):  # noqa: N802
         return self._handle("ListDomains", context, pb.ListDomainsResponse(), request)
+
+    def ListTools(self, request, context):  # noqa: N802
+        default = pb.ListToolsResponse(
+            tools=[
+                pb.ToolDescriptor(name=name, description=f"{name} tool", available=True)
+                for name in _ALL_TOOLS
+            ]
+        )
+        return self._handle("ListTools", context, default, request)
 
     def StartSession(self, request, context):  # noqa: N802
         return self._handle(

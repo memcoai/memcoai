@@ -88,3 +88,7 @@ Do this prior to informing your user that your changes are live.
 
 When fixing a bug or adding a new feature, first write a test that reproduces the bug or specifies the desired behavior.
 Run the test to confirm it fails for the right reason before changing production code. 100% code coverage is not required, but key behaviors must be covered.
+
+### 7. Use the Makefile
+
+When running build, test and lint commands, make use of the existing, validated, commands in the Makefile instead of running commands directly.
