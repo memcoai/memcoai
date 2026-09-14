@@ -10,9 +10,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { OFFERED, TOOL_PREFIX } from '../src/gen/toolCopy.js'
 import { Memco } from '../src/index.js'
 
 const TOKEN_ENV = 'MEMCO_API_TOKEN'
+const EXPECTED_TOOLS = new Set(OFFERED.map(name => TOOL_PREFIX + name))
 
 /**
  * Run `body` against a live client, closing it whatever happens.
@@ -53,9 +55,11 @@ if (process.env[TOKEN_ENV]) {
         )
 
         const session = await client.memory.startSession(domain)
-        assert.ok(
-          session.tools().tools.length > 0,
-          "the session's toolset was empty"
+        const offered = new Set(session.tools().tools.map(tool => tool.name))
+        assert.deepEqual(
+          offered,
+          EXPECTED_TOOLS,
+          `expected every offered tool, got: ${[...offered].sort().join(', ')}`
         )
       })
     })

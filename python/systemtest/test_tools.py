@@ -10,6 +10,19 @@ from __future__ import annotations
 
 from memcoai import Memco
 
+# Written out rather than imported from memcoai.agent: agent._OPERATIONS is
+# private, and this system test verifies the SDK's public behaviour against an
+# independent expectation rather than against the implementation's own idea of
+# what it offers.
+EXPECTED_TOOLS = {
+    "memco_search",
+    "memco_get_memory",
+    "memco_create_memory",
+    "memco_enrich_memory",
+    "memco_share_feedback",
+    "memco_revert_memory",
+}
+
 
 def test_a_creator_credential_is_offered_every_tool(client: Memco, domain: str) -> None:
     """A creator credential sees every tool as available.
@@ -23,4 +36,4 @@ def test_a_creator_credential_is_offered_every_tool(client: Memco, domain: str) 
 
     session = client.memory.start_session(domain)
     offered = {tool.name for tool in session.tools()}
-    assert offered, "the session's toolset was empty"
+    assert offered == EXPECTED_TOOLS, f"expected every offered tool, got: {sorted(offered)}"
