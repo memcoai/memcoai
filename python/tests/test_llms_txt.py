@@ -209,6 +209,39 @@ def test_a_readmes_badge_banner_does_not_open_the_file_an_agent_reads(script):
     assert "<table>" in stripped
 
 
+def test_a_readmes_banner_still_strips_when_the_pages_own_title_precedes_it(script):
+    # docs/index.rst gives the page a real title above `.. include:: README.md`,
+    # so the banner is no longer the first block — the title is. The title has
+    # to be set aside before the loop looks for a banner to strip, or the loop
+    # sees the title first, is not a banner, and stops there.
+    markdown = (
+        "# memcoai\n"
+        "\n"
+        '<p align="center">\n  <img alt="Memco" src="logo.svg">\n</p>\n'
+        "\n"
+        "---\n"
+        "\n"
+        "Memco Shared Memory is a persistent memory.\n"
+    )
+    assert script.body(markdown) == "# memcoai\n\nMemco Shared Memory is a persistent memory."
+    assert script.summarise(markdown) == "Memco Shared Memory is a persistent memory."
+
+
+def test_a_title_sharing_a_block_with_the_banner_still_gets_it_stripped(script):
+    # A title is set aside as one *line*, not as the whole blank-line-separated
+    # block it happens to open. With no blank line between "# memcoai" and the
+    # banner's first line, both sit in one block — taking the whole block as
+    # the title would carry the banner past the loop meant to strip it.
+    markdown = (
+        '# memcoai\n<p align="center">\n  <img alt="Memco" src="logo.svg">\n</p>\n'
+        "\n"
+        "---\n"
+        "\n"
+        "Memco Shared Memory is a persistent memory.\n"
+    )
+    assert script.body(markdown) == "# memcoai\n\nMemco Shared Memory is a persistent memory."
+
+
 def test_a_page_that_opens_with_prose_is_left_exactly_as_it_is(script):
     markdown = "# Clients\n\nA client owns one connection.\n"
     assert script.body(markdown) == markdown.strip()
