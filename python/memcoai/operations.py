@@ -134,15 +134,6 @@ class MemoryOperations:
         :meth:`share_feedback` and :meth:`enrich_memory`. A session stays usable for as long as you
         keep naming it.
 
-        Also fetches the tools your token's role currently permits, which is what
-        :meth:`Session.tools` filters against for the life of the session. That fetch is
-        best-effort: the session itself is already open by then, and refusing to hand it back
-        over a second, unrelated call would either orphan it -- there is no call that closes one
-        -- or invite a retry that opens yet another. If it fails after the retries
-        :data:`~memcoai._channel.RETRYABLE_METHODS` already gives it, a warning is logged and
-        every tool is treated as available rather than none, so a transient failure degrades
-        :meth:`Session.tools` to unfiltered rather than to empty.
-
         Args:
             domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
                 domains available to you.
@@ -733,18 +724,6 @@ class AsyncMemoryOperations:
         :meth:`enrich_memory`. Pass the id as session_id to every search you make for it — and to
         :meth:`share_feedback` and :meth:`enrich_memory`. A session stays usable for as long as you
         keep naming it.
-
-        Also fetches the tools your token's role currently permits, which is what
-        :meth:`AsyncSession.tools` filters against for the life of the session. Run
-        concurrently with opening the session itself: :meth:`list_tools` takes no domain or
-        session, so there is nothing to gain from waiting for one before sending the other. That
-        fetch is best-effort: the session itself is already open by then, and refusing to hand
-        it back over a second, unrelated call would either orphan it -- there is no call that
-        closes one -- or invite a retry that opens yet another. If it fails after the retries
-        :data:`~memcoai._channel.RETRYABLE_METHODS` already gives it, a warning is logged and
-        every tool is treated as available rather than none, so a transient failure degrades
-        :meth:`AsyncSession.tools` to unfiltered rather than to empty. A ``StartSession`` failure
-        is unaffected: it still raises normally, since only the catalog fetch absorbs its own.
 
         Args:
             domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
