@@ -113,6 +113,7 @@ export type {
   RevertResult,
   SearchResult,
   Tag,
+  ToolDescriptor,
   WriteResult
 } from './types.js'
 
