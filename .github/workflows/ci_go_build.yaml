@@ -1,0 +1,149 @@
+name: Build (Go)
+
+# Called by ci_go.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: The Go toolchain to install. ci_go.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and consume
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: |
+            go/go.sum
+            go/examples/go.sum
+
+      # go.mod and go.sum are tidy, every downloaded module matches its
+      # checksum, and both modules build.
+      - run: make build
+
+      # There is no artefact to upload: a Go module is published by pushing its
+      # tag, and the proxy builds its zip from the repository. So this builds
+      # the same zip from this commit, with the library the go command itself
+      # uses, and holds it to what a consumer needs.
+      - name: Zip the module as the proxy would
+        env:
+          MODULE: github.com/memcoai/memcoai/go
+        run: |
+          version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' memcoai/version.go)
+          [ -n "$version" ] || { echo "::error::memcoai/version.go declares no const Version"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/zipper"
+          cd "$RUNNER_TEMP/zipper"
+          go mod init zipper > /dev/null
+          cat > main.go <<'GO'
+          // Command zipper writes the zip the Go module proxy would serve for a
+          // module in a subdirectory of a repository, at its HEAD.
+          package main
+
+          import (
+          	"log"
+          	"os"
+
+          	"golang.org/x/mod/module"
+          	"golang.org/x/mod/zip"
+          )
+
+          func main() {
+          	out, err := os.Create(os.Args[1])
+          	if err != nil {
+          		log.Fatal(err)
+          	}
+          	version := module.Version{Path: os.Args[2], Version: "v" + os.Args[3]}
+          	if err := zip.CreateFromVCS(out, version, os.Args[4], "HEAD", "go"); err != nil {
+          		log.Fatal(err)
+          	}
+          	if err := out.Close(); err != nil {
+          		log.Fatal(err)
+          	}
+          }
+          GO
+          go get golang.org/x/mod@v0.41.0
+          go run . "$RUNNER_TEMP/module.zip" "$MODULE" "$version" "$GITHUB_WORKSPACE"
+          mkdir -p "$RUNNER_TEMP/unzipped"
+          unzip -q "$RUNNER_TEMP/module.zip" -d "$RUNNER_TEMP/unzipped"
+          echo "MODULE_DIR=$RUNNER_TEMP/unzipped/$MODULE@v$version" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # Named one by one, then compared against the tree: the descriptor and
+      # the manifest are read at run time or by tooling and imported by nothing,
+      # so no build would notice them missing. examples/ is a module of its own
+      # and must not be in this one's zip.
+      - name: The zip carries what a consumer needs, and nothing of the examples
+        run: |
+          missing=0
+          for path in go.mod LICENSE README.md internal/client/SDK_PROVENANCE.yaml internal/client/tools/tools.json \
+              $(git ls-files internal/client); do
+            [ -f "$MODULE_DIR/$path" ] || { echo "::error::$path is absent from the module zip"; missing=1; }
+          done
+          [ -d "$MODULE_DIR/memcoai" ] || { echo "::error::the zip holds no memcoai package"; missing=1; }
+          if [ -e "$MODULE_DIR/examples" ]; then
+            echo "::error::examples/ reached the module zip"
+            missing=1
+          fi
+          exit "$missing"
+
+      - name: A fresh module builds against the zip
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir consumer && cd consumer
+          go mod init consumer > /dev/null
+          go mod edit -require="github.com/memcoai/memcoai/go@v$VERSION" -replace="github.com/memcoai/memcoai/go=$MODULE_DIR"
+          cat > main.go <<'GO'
+          package main
+
+          import (
+          	"fmt"
+          	"log"
+
+          	"github.com/memcoai/memcoai/go/memcoai"
+          )
+
+          func main() {
+          	provenance, err := memcoai.ReadProvenance()
+          	if err != nil {
+          		log.Fatal(err)
+          	}
+          	fmt.Println(memcoai.Version, provenance.ServerCommit)
+          }
+          GO
+          go mod tidy
+          out=$(go run .)
+          echo "$out"
+          [ "${out%% *}" = "$VERSION" ] || { echo "::error::the consumer saw version ${out%% *}, not $VERSION"; exit 1; }
+
+      # The generated client is internal on purpose: a consumer gets the SDK's
+      # types, and the contract can change underneath them. This is the check
+      # that the go command, not a convention, keeps it that way.
+      - name: A consumer cannot import the generated client
+        working-directory: ${{ runner.temp }}/consumer
+        run: |
+          mkdir internalcheck
+          cat > internalcheck/main.go <<'GO'
+          package main
+
+          import memoryv1 "github.com/memcoai/memcoai/go/internal/client/memcoai/memory/v1"
+
+          func main() { _ = memoryv1.MemoryService_ServiceDesc }
+          GO
+          # The default shell is `bash -e` without `pipefail`, so the pipe is
+          # what keeps the build's intended failure from failing the step; the
+          # grep is the actual assertion.
+          go build ./internalcheck 2>&1 | tee out.txt
+          grep -q "use of internal package .* not allowed" out.txt \
+            || { echo "::error::a consumer could import the generated client"; exit 1; }

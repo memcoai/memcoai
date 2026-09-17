@@ -1,0 +1,57 @@
+# golangci-lint v2 configuration for the Go SDK, covering both modules:
+# golangci-lint finds this file by walking up from go/examples too.
+# `make -C go lint` runs the linters and reports formatting drift;
+# `make -C go format` applies the formatters. The golangci-lint version is
+# pinned in go/Makefile, the only place it lives.
+version: "2"
+
+run:
+  # The live suite is otherwise compiled by nothing hermetic.
+  build-tags:
+    - systemtest
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    # Hostile Unicode in source: the SDK hands text to models.
+    - bidichk
+    # errors.As / errors.Is over == and type switches; the error hierarchy
+    # relies on unwrapping.
+    - errorlint
+    - misspell
+    # A suppression must name its linter and say why.
+    - nolintlint
+  settings:
+    staticcheck:
+      # Everything, including the doc-comment form checks (ST1000,
+      # ST1020-ST1022) that golangci-lint leaves off by default. Disable a
+      # check only with a comment here naming why.
+      checks: ["all"]
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    # Only the export's tree is skipped. internal/memory/toolcopy_gen.go is
+    # generated here, by scripts/sync_tool_docs.py, and is held to the same
+    # checks as any other file, as Node's toolCopy.ts is to prettier and tsc.
+    # Formatter findings pass through this step too, so `generated` must stay
+    # disabled here for `run` to report a mis-formatted generated file.
+    generated: disable
+    paths:
+      - internal/client/
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/memcoai/memcoai/go
+  exclusions:
+    generated: disable
+    paths:
+      - internal/client/

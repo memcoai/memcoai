@@ -16,10 +16,13 @@
   <img alt="Python versions" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3775a9"><br>
   <a href="https://github.com/memcoai/memcoai/actions/workflows/ci_nodejs.yaml"><img alt="CI (Node.js)" src="https://github.com/memcoai/memcoai/actions/workflows/ci_nodejs.yaml/badge.svg?branch=main"></a>
   <img alt="Node versions" src="https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-5fa04e"><br>
+  <a href="https://github.com/memcoai/memcoai/actions/workflows/ci_go.yaml"><img alt="CI (Go)" src="https://github.com/memcoai/memcoai/actions/workflows/ci_go.yaml/badge.svg?branch=main"></a>
+  <img alt="Go versions" src="https://img.shields.io/badge/go-1.25%20%7C%201.26%20%7C%201.27-00add8"><br>
   <!-- One coverage badge, not one per language: it is a claim about the
-       enforced floor, and both floors are 95% - `fail_under` in
+       enforced floor, and every floor is 95% - `fail_under` in
        python/pyproject.toml, `--test-coverage-lines=95` in the `coverage`
-       script in nodejs/package.json. Split it the day they diverge. -->
+       script in nodejs/package.json, COVERAGE_FLOOR in go/Makefile. Split it
+       the day they diverge. -->
   <img alt="Coverage" src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
 </p>
@@ -51,19 +54,17 @@ reliability signal built from what readers reported back about it.
 |---|---|---|
 | Python | [`memcoai`](python/) | `pip install memcoai` |
 | Node.js | [`@memco/memcoai`](nodejs/) | `npm install @memco/memcoai` |
-
-The generated gRPC client for [Go](go/) is also published here and can be used
-directly against the API.
+| Go | [`github.com/memcoai/memcoai/go/memcoai`](go/) | `go get github.com/memcoai/memcoai/go/memcoai` |
 
 Each language tree also carries `tools.json`, a byte-identical manifest of the
 agent-facing tool definitions — the same copy the hosted MCP server publishes, so
 an agent built on an SDK is steered by the service's words rather than each SDK's
-own. Go ships an accessor for it at `go/client/tools`; the Python SDK writes it
-into the docstrings its `session.tools()` is built from; the Node.js SDK compiles
-it into `nodejs/src/gen/toolCopy.ts`. Tool names in it are canonical snake_case
-and a tool referenced in the prose is a `${tool:...}` marker, because the three
-generators disagree on method casing — resolve the markers to the spelling your
-client exposes rather than shipping them to a model.
+own. The Python SDK writes it into the docstrings its `session.tools()` is built
+from; the Node.js SDK compiles it into `nodejs/src/gen/toolCopy.ts`, and the Go
+SDK into `go/internal/memory/toolcopy_gen.go`. Tool names in it are canonical
+snake_case and a tool referenced in the prose is a `${tool:...}` marker, because
+the three generators disagree on method casing — resolve the markers to the
+spelling your client exposes rather than shipping them to a model.
 
 ## Other languages
 
@@ -136,6 +137,38 @@ for (const memory of result.memories) {
 See [`nodejs/README.md`](nodejs/README.md) for the full guide and
 [`nodejs/examples/`](nodejs/examples/) for runnable programs.
 
+### Go
+
+```go
+ctx := context.Background()
+client, err := memcoai.NewClient(memcoai.Options{}) // reads MEMCO_API_TOKEN
+if err != nil {
+	log.Fatal(err)
+}
+defer client.Close(ctx)
+if err := client.Connect(ctx); err != nil {
+	log.Fatal(err)
+}
+session, err := client.Memory.StartSession(ctx, "coding")
+if err != nil {
+	log.Fatal(err)
+}
+
+result, err := session.Search(ctx, "how should a client authenticate against the memory API",
+	memcoai.ScopedSearchParams{})
+if err != nil {
+	log.Fatal(err)
+}
+for _, memory := range result.Memories {
+	for _, insight := range memory.Insights {
+		fmt.Println(insight.Title, insight.Updated)
+	}
+}
+```
+
+See [`go/README.md`](go/README.md) for the full guide and
+[`go/examples/`](go/examples/) for runnable programs.
+
 **See more → [docs.memco.ai](https://docs.memco.ai)**
 
 ## Repository layout
@@ -148,13 +181,16 @@ python/           the Python SDK
 nodejs/           the Node.js SDK
   src/              hand-written SDK
   client/           generated gRPC client, and the tool manifest
-go/               generated gRPC client, and the tool manifest
+go/               the Go SDK
+  memcoai/          hand-written SDK
+  internal/client/  generated gRPC client, and the tool manifest
 scripts/          repository checks, standard library only
 ```
 
 Generated code is replaced wholesale each time it is regenerated, so please do
 not edit it by hand — see [CONTRIBUTING.md](CONTRIBUTING.md). For Python that is
-`python/memcoai/memory/`; for Go and Node it is `<language>/client/`.
+`python/memcoai/memory/`; for Node it is `nodejs/client/`; for Go it is
+`go/internal/client/`.
 
 ## Contributing
 
@@ -162,8 +198,8 @@ Bug reports and pull requests are welcome, and you do not need access to Memco's
 servers to work on this — the test suites run in-process, so everything passes
 offline. [CONTRIBUTING.md](CONTRIBUTING.md) covers which files are generated and
 must not be edited, what a change needs before it can be merged, and the
-per-language setup (the [Python](CONTRIBUTING.md#python) and
-[Node.js](CONTRIBUTING.md#nodejs) sections).
+per-language setup (the [Python](CONTRIBUTING.md#python),
+[Node.js](CONTRIBUTING.md#nodejs) and [Go](CONTRIBUTING.md#go) sections).
 
 ```bash
 make install   # set up every development environment

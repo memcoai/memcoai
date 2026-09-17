@@ -1,0 +1,34 @@
+name: Typecheck (Go)
+
+# Called by ci_go.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: The Go toolchain to install. ci_go.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
+        with:
+          go-version: ${{ inputs.go-version }}
+          # Both modules: the examples resolve dependencies the SDK does not.
+          cache-dependency-path: |
+            go/go.sum
+            go/examples/go.sum
+      # go vet with -tags systemtest, so the live suite, which nothing hermetic
+      # runs, is at least compiled on every push.
+      - run: make typecheck

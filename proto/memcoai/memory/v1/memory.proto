@@ -5,7 +5,7 @@ package memcoai.memory.v1;
 // go_package names the published SDK module, not the repository this contract
 // is generated in: the option travels inside the serialized descriptor and so
 // reaches every client, which must never be told the server's own repository.
-option go_package = "github.com/memcoai/memcoai/go/client/memcoai/memory/v1;memoryv1";
+option go_package = "github.com/memcoai/memcoai/go/internal/client/memcoai/memory/v1;memoryv1";
 
 // MemoryService is the shared memory surface: the operations a client uses to
 // find knowledge, contribute to it, and rate what it was given.

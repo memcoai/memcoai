@@ -6,11 +6,13 @@ docstrings ``memcoai.agent`` reads. Nothing at runtime opens the manifest, so
 these tests are what holds the two ends together: they read it directly and
 assert the copy survived the round trip into a tool definition.
 
-The same script emits ``nodejs/src/gen/toolCopy.ts``, which has no docstrings to
-read back and so states its copy outright. What that target can be held to from
-here is what only Python can see — that the script and ``memcoai.agent`` still
-agree on the tables both steer by, and that the emitter's own rules hold.
-``nodejs/tests/toolCopy.test.ts`` checks the module against the manifest.
+The same script emits ``nodejs/src/gen/toolCopy.ts`` and
+``go/internal/memory/toolcopy_gen.go``, which have no docstrings to read back
+and so state their copy outright. What those targets can be held to from here is
+what only Python can see — that the script and ``memcoai.agent`` still agree on
+the tables all three steer by, and that the emitters' own rules hold.
+``nodejs/tests/toolCopy.test.ts`` and ``go/internal/memory/toolcopy_test.go``
+check the modules against the manifest.
 
 A failure here means the docstrings have drifted from the manifest. Run
 ``python3 scripts/sync_tool_docs.py`` and commit the result.
@@ -34,11 +36,6 @@ from memcoai.memory.v1 import memory_pb2 as pb
 
 MANIFEST = Path(__file__).resolve().parents[1] / "memcoai" / "memory" / "tools.json"
 MARKER = re.compile(r"\$\{tool:([a-z_]+)\}")
-
-# The manifest describes what the MCP server accepts; these three take a
-# different shape here, so `scripts/sync_tool_docs.py` leaves their copy
-# hand-written. Kept in step with SDK_SHAPED there.
-SDK_SHAPED = frozenset({"tags", "feedback", "source"})
 
 # The one manifest key the SDK spells differently. Kept in step with
 # PARAMETER_ALIASES in the generator.
@@ -98,8 +95,6 @@ def test_every_parameter_the_manifest_names_carries_its_copy(tools, manifest):
             # SDK calls it operation_id, and looking it up by the manifest's own
             # spelling silently compared nothing for revert_memory.
             parameter = ALIASES.get(key, key)
-            if parameter in SDK_SHAPED:
-                continue
             schema = tool.parameters["properties"].get(parameter)
             if schema is None:
                 continue  # Bound by the scope, so never shown to a model.
@@ -110,24 +105,40 @@ def test_every_parameter_the_manifest_names_carries_its_copy(tools, manifest):
     assert compared == {
         "create_memory.content",
         "create_memory.query",
+        "create_memory.tags",
         "create_memory.title",
         "enrich_memory.content",
         "enrich_memory.memory_idx",
         "enrich_memory.sources",
+        "enrich_memory.tags",
         "enrich_memory.title",
         "get_memory.idx",
         "revert_memory.operation_id",
         "search.query",
+        "search.tags",
+        "share_feedback.feedback",
     }
 
 
-def test_a_parameter_the_sdk_shapes_differently_keeps_its_own_copy(tools):
-    # The manifest describes tags as a list of XML strings. This SDK takes Tag,
-    # and the model is handed an object schema built from it, so the wire copy
-    # would describe an encoding the schema rejects.
-    described = tools["search"].parameters["properties"]["tags"]["description"]
-    assert "<tag" not in described
-    assert tools["search"].parameters["properties"]["tags"]["type"] == "array"
+def test_no_tag_or_rating_copy_describes_the_mcp_wire_encoding(manifest):
+    # Every SDK hands a model object schemas for tags and ratings, and takes the
+    # manifest's copy for both as it stands. Copy written for the MCP server's
+    # XML strings would contradict those schemas, and nothing else would notice.
+    checked = set()
+    for name, tool in manifest.items():
+        for key, text in tool["parameters"].items():
+            if key.rsplit(".", 1)[-1] in {"tags", "feedback"}:
+                assert "<tag" not in text, f"{name}.{key}"
+                assert "<feedback" not in text, f"{name}.{key}"
+                checked.add(f"{name}.{key}")
+    # Pinned, because the filter above is silent.
+    assert checked == {
+        "create_memory.tags",
+        "enrich_memory.tags",
+        "import_memories.memories[].tags",
+        "search.tags",
+        "share_feedback.feedback",
+    }
 
 
 def test_no_marker_ever_reaches_a_model(tools):
@@ -162,18 +173,91 @@ def test_a_tool_named_in_the_copy_is_named_as_a_model_would_call_it(tools, manif
     assert named, "no cross-reference was exercised, so this proved nothing"
 
 
+ENTRY_FIELDS = {
+    ("Tag", "type"),
+    ("Tag", "value"),
+    ("Tag", "version"),
+    ("FeedbackRating", "idx"),
+    ("FeedbackRating", "relevant"),
+    ("FeedbackRating", "correct"),
+    ("FeedbackRating", "comment"),
+}
+"""The fields of a list parameter's entries the manifest describes, by the type
+an entry is. Pinned, because every loop over them skips everything else."""
+
+
+def test_every_entry_field_the_manifest_names_carries_its_copy(tools, manifest):
+    # tags[].type and its like describe the fields of each object a model sends
+    # in a list; the schema built from the type has to carry the same words.
+    compared = set()
+    for name, tool in tools.items():
+        for key, described in manifest[name]["parameters"].items():
+            head, _, field = key.partition("[].")
+            if not field or "." in head:
+                continue  # Not an entry field, or one of a tool no model is offered.
+            schema = tool.parameters["properties"][head]["items"]["properties"][field]
+            assert same(schema["description"], spelled(described)), f"{name}.{key}"
+            compared.add(f"{name}.{key}")
+    assert compared == {
+        f"{name}.{key}"
+        for name in ("search", "create_memory", "enrich_memory")
+        for key in ("tags[].type", "tags[].value", "tags[].version")
+    } | {
+        f"share_feedback.feedback[].{field}" for field in ("idx", "relevant", "correct", "comment")
+    }
+
+
+def test_the_entry_copy_reaches_the_types_that_carry_it(manifest):
+    script = sync_tool_docs()
+    render = script.resolver(set(manifest), set(), "MemoryOperations")
+    compared = set()
+    for tool in manifest.values():
+        for key, described in tool["parameters"].items():
+            found = script.entry_field(key)
+            if found is None:
+                continue
+            class_name, field = found
+            documented = agent._documented(
+                (inspect.getdoc(getattr(types, class_name)) or "").splitlines(), "Attributes"
+            )
+            assert same(" ".join(documented[field]), render(described)), key
+            compared.add(found)
+    assert compared == ENTRY_FIELDS
+
+
+def test_an_entry_field_described_two_ways_is_refused(published):
+    # The same field is published under every list that takes it. Two wordings
+    # leave no copy to prefer, so neither is written.
+    script = sync_tool_docs()
+    published["search"]["parameters"]["tags[].type"] = "Something else."
+    with pytest.raises(script.Drift, match="described two ways"):
+        script.entry_copy(published)
+
+
+def test_a_type_whose_fields_are_described_only_in_part_is_refused(published):
+    # Writing the fields that are described and leaving the rest hand-written
+    # would hand a model two voices on one object.
+    script = sync_tool_docs()
+    for tool in published.values():
+        for key in [key for key in tool["parameters"] if key.endswith("tags[].version")]:
+            del tool["parameters"][key]
+    with pytest.raises(script.Drift, match="Tag"):
+        script.sync_types(types_source(), published)
+
+
 def test_the_nested_copy_reaches_the_dataclasses_that_carry_it(manifest):
     # The manifest states nested request fields as paths. Nothing else checks
     # that they landed, and the reference is what a developer reads.
     script = sync_tool_docs()
     published = manifest["import_memories"]["parameters"]
+    # A dataclass carries no operation, so a marker in its copy is spelled
+    # against the namespace that does, as the generator spells it.
+    render = script.resolver(set(manifest), set(), "MemoryOperations")
     for path, (class_name, attribute) in script.NESTED.items():
-        if attribute in SDK_SHAPED:
-            continue
         documented = agent._documented(
             (inspect.getdoc(getattr(types, class_name)) or "").splitlines(), "Attributes"
         )
-        assert same(" ".join(documented[attribute]), published[path]), path
+        assert same(" ".join(documented[attribute]), render(published[path])), path
 
 
 def sync_tool_docs() -> ModuleType:
@@ -204,10 +288,6 @@ def test_the_generator_refuses_copy_a_docstring_would_eat():
     assert script.checked("plain text", "where") == "plain text"
     with pytest.raises(script.Drift, match="backslash"):
         script.checked(r"a \"quoted\" example", "where")
-
-
-def test_the_generator_and_this_suite_agree_on_what_it_leaves_alone():
-    assert sync_tool_docs().SDK_SHAPED == SDK_SHAPED
 
 
 def test_every_operation_the_copy_names_is_a_tool_or_is_answered(tools, manifest):
@@ -246,6 +326,10 @@ def test_the_briefing_says_which_operations_are_not_tools():
 def published(manifest) -> dict[str, dict[str, Any]]:
     """The manifest, deep-copied so a test can spoil a copy of it."""
     return copy.deepcopy(manifest)
+
+
+def types_source() -> str:
+    return (Path(__file__).resolve().parents[1] / "memcoai" / "types.py").read_text("utf-8")
 
 
 def operations_source() -> str:
@@ -307,10 +391,10 @@ def test_the_generator_is_idempotent(manifest):
 
 
 def test_the_generator_and_the_sdk_agree_on_how_a_tool_is_named():
-    # The Node target spells the manifest's markers itself, so it carries its
-    # own copy of the three tables agent.py steers by. Two spellings of the
-    # prefix, or a list that has gained an operation on one side only, put a
-    # name in front of a model that answers to no tool.
+    # The Node and Go targets spell the manifest's markers themselves, so the
+    # script carries its own copy of the three tables agent.py steers by. Two
+    # spellings of the prefix, or a list that has gained an operation on one
+    # side only, put a name in front of a model that answers to no tool.
     script = sync_tool_docs()
     assert script.TOOL_PREFIX == agent._PREFIX
     assert script.OFFERED == agent._OPERATIONS
@@ -365,34 +449,6 @@ def test_no_marker_reaches_the_copy_the_node_module_states(manifest):
     assert "${" not in module[module.index("export const TOOL_COPY") :]
 
 
-def test_the_node_target_leaves_out_the_parameters_this_sdk_shapes_differently(manifest):
-    # Asserted on the key and on the copy itself rather than on a phrase from
-    # it: a fragment of the service's prose is something the next export can
-    # reword, which would leave this passing while checking nothing.
-    script = sync_tool_docs()
-    module = script.tool_copy_module(manifest)
-    left_out = set()
-    for name, tool in manifest.items():
-        for key, described in tool["parameters"].items():
-            field = key.rsplit(".", 1)[-1]
-            if ALIASES.get(field, field) not in SDK_SHAPED:
-                continue
-            spelled_key = script.key_of(key if "[" in key else script.node_parameter(key))
-            assert f"{spelled_key}: `" not in module, key
-            assert script.substituted(described, script.node_spelling) not in module, key
-            left_out.add(f"{name}.{key}")
-    # Pinned, because the skip above is silent.
-    assert left_out == {
-        "create_memory.source",
-        "create_memory.tags",
-        "enrich_memory.source",
-        "enrich_memory.tags",
-        "import_memories.memories[].tags",
-        "search.tags",
-        "share_feedback.feedback",
-    }
-
-
 def test_the_node_target_carries_the_nested_copy_by_its_manifest_path(manifest):
     script = sync_tool_docs()
     module = script.tool_copy_module(manifest)
@@ -401,7 +457,7 @@ def test_the_node_target_carries_the_nested_copy_by_its_manifest_path(manifest):
     for path in manifest["import_memories"]["parameters"]:
         if "[" not in path:
             continue
-        if path.rsplit(".", 1)[-1] in SDK_SHAPED:
+        if script.entry_field(path):
             assert f"'{path}'" not in module, path
             continue
         # At NESTED_COPY's own indentation, so a path landing among a tool's
@@ -415,7 +471,26 @@ def test_the_node_target_carries_the_nested_copy_by_its_manifest_path(manifest):
         "memories[].insights",
         "memories[].insights[].title",
         "memories[].insights[].content",
+        "memories[].tags",
     }
+
+
+def test_the_node_target_carries_each_entry_field_once_by_its_type(manifest):
+    script = sync_tool_docs()
+    module = script.tool_copy_module(manifest)
+    table = module[module.index("export const ENTRY_COPY = {") :]
+    carried = set()
+    for class_name, fields in script.entry_copy(manifest).items():
+        start = table.index(f"\n  {class_name}: {{\n")
+        entry = table[start : table.index("\n  }", start)]
+        for field, described in fields.items():
+            body = script.substituted(described, script.node_spelling)
+            assert entry.count(f"\n    {field}: `{body}`") == 1, f"{class_name}.{field}"
+            carried.add((class_name, field))
+    assert carried == ENTRY_FIELDS
+    # Never a tool parameter or a nested path as well.
+    assert "tags[]." not in module
+    assert "feedback[]." not in module
 
 
 def test_the_node_target_refuses_a_marker_it_cannot_spell(published):
@@ -466,3 +541,200 @@ def test_the_generator_names_every_top_level_field_the_manifest_publishes():
     # A new key is a decision: carry it, or name it as left behind.
     document = json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert set(document) == sync_tool_docs().DOCUMENT
+
+
+# -- the Go target --------------------------------------------------------
+#
+# `go/internal/memory/toolcopy_gen.go` is emitted whole, like the Node module,
+# as positional literals and raw strings so gofmt has nothing to realign.
+# `go/internal/memory/toolcopy_test.go` checks it against the manifest and holds
+# it to gofmt; these cover the emitter's own rules.
+
+GO_CARRIED = {
+    "create_memory.content",
+    "create_memory.domain",
+    "create_memory.query",
+    "create_memory.session_id",
+    "create_memory.source",
+    "create_memory.tags",
+    "create_memory.title",
+    "enrich_memory.content",
+    "enrich_memory.memory_idx",
+    "enrich_memory.session_id",
+    "enrich_memory.source",
+    "enrich_memory.sources",
+    "enrich_memory.tags",
+    "enrich_memory.title",
+    "get_memory.idx",
+    "import_memories.domain",
+    "import_memories.memories",
+    "import_memories.session_id",
+    "revert_memory.operation_id",
+    "search.domain",
+    "search.query",
+    "search.session_id",
+    "search.tags",
+    "share_feedback.feedback",
+    "share_feedback.session_id",
+    "start_session.domain",
+}
+"""What the Go module must carry, pinned because the loops below skip in silence."""
+
+
+def go_entry(module: str, name: str) -> str:
+    """One tool's entry in the Go module, so a parameter is found under its own tool."""
+    start = module.index(f'\n\t{{\n\t\t"{name}",\n')
+    return module[start : module.index("\n\t},", start)]
+
+
+def test_the_go_target_keys_parameters_as_the_request_message_does():
+    # Aliased and nothing else: the Go agent layer names arguments in
+    # snake_case, as the manifest and the MCP server do.
+    script = sync_tool_docs()
+    assert script.go_parameter("op_id") == "operation_id"
+    assert script.go_parameter("memory_idx") == "memory_idx"
+    assert script.go_parameter("session_id") == "session_id"
+
+
+def test_the_go_target_refuses_copy_a_raw_string_would_change():
+    script = sync_tool_docs()
+    assert script.go_raw("plain text", "where") == "`plain text`"
+    spoiled = {
+        "a `quoted` example": "backtick",
+        "a line \nand another": "trailing whitespace",
+        # The compiler drops a carriage return from a raw string, and refuses
+        # NUL and a byte order mark in source outright.
+        "a line\r\nand another": "carriage return",
+        "a\x00b": "NUL",
+        "\ufeffcopy": "byte order mark",
+    }
+    for copy_text, reason in spoiled.items():
+        with pytest.raises(script.Drift, match=reason):
+            script.go_raw(copy_text, "where")
+
+
+def test_the_go_target_refuses_a_name_a_string_cannot_spell():
+    script = sync_tool_docs()
+    assert script.go_string("memories[].insights[].title") == '"memories[].insights[].title"'
+    for name in ('a"b', "o'brien", "a\\b"):
+        with pytest.raises(script.Drift, match="a key cannot spell"):
+            script.go_string(name)
+
+
+def test_the_generated_go_file_announces_itself_as_generated(manifest):
+    module = sync_tool_docs().go_tool_copy_module(manifest)
+    # The exact form go/ast.IsGenerated and every Go linter recognise.
+    assert re.fullmatch(r"// Code generated .* DO NOT EDIT\.", module.split("\n", 1)[0])
+    assert "\n\npackage memory\n\n" in module
+
+
+def test_the_go_target_emits_the_tables_the_sdk_steers_by(manifest):
+    script = sync_tool_docs()
+    module = script.go_tool_copy_module(manifest)
+    assert f'\nconst ToolPrefix = "{script.TOOL_PREFIX}"\n' in module
+    assert (
+        '\nvar OfferedTools = []string{"search", "get_memory", "create_memory", '
+        '"enrich_memory", "share_feedback", "revert_memory"}\n'
+    ) in module
+    assert '\nvar AnsweredTools = []string{"list_domains", "start_session"}\n' in module
+    assert script.go_strings(script.OFFERED) in module
+
+
+def test_no_marker_reaches_the_copy_the_go_module_states(manifest):
+    module = sync_tool_docs().go_tool_copy_module(manifest)
+    assert "${" not in module[module.index("var ToolCopies") :]
+
+
+def test_the_go_target_carries_every_parameter_the_manifest_names(manifest):
+    script = sync_tool_docs()
+    module = script.go_tool_copy_module(manifest)
+    carried = set()
+    for name, tool in manifest.items():
+        for key, described in tool["parameters"].items():
+            if "[" in key:
+                continue
+            body = script.go_raw(script.substituted(described, script.node_spelling), key)
+            pair = "\n".join(script.go_pair(script.go_parameter(key), body, "\t\t\t"))
+            assert pair in go_entry(module, name), f"{name}.{key}"
+            carried.add(f"{name}.{script.go_parameter(key)}")
+    assert carried == GO_CARRIED
+
+
+def test_the_go_target_carries_the_nested_copy_by_its_manifest_path(manifest):
+    script = sync_tool_docs()
+    module = script.go_tool_copy_module(manifest)
+    assert "\nvar NestedCopy = []ParameterCopy{\n" in module
+    carried = set()
+    for path in manifest["import_memories"]["parameters"]:
+        if "[" not in path:
+            continue
+        if script.entry_field(path):
+            assert f'"{path}"' not in module, path
+            continue
+        # At NestedCopy's own indentation, so a path landing among a tool's
+        # parameters instead does not satisfy this.
+        assert f'\n\t{{"{path}", `' in module, path
+        carried.add(path)
+    assert carried == {
+        "memories[].queries",
+        "memories[].insights",
+        "memories[].insights[].title",
+        "memories[].insights[].content",
+        "memories[].tags",
+    }
+
+
+def test_the_go_target_carries_each_entry_field_once_by_its_type(manifest):
+    script = sync_tool_docs()
+    module = script.go_tool_copy_module(manifest)
+    table = module[module.index("\nvar EntryCopies = []EntryCopy{\n") :]
+    carried = set()
+    for class_name, fields in script.entry_copy(manifest).items():
+        start = table.index(f'\n\t\t"{class_name}",\n')
+        entry = table[start : table.index("\n\t},", start)]
+        for field, described in fields.items():
+            body = script.go_raw(script.substituted(described, script.node_spelling), field)
+            pair = "\n".join(script.go_pair(field, body, "\t\t\t"))
+            assert entry.count(pair) == 1, f"{class_name}.{field}"
+            carried.add((class_name, field))
+    assert carried == ENTRY_FIELDS
+    assert "tags[]." not in module
+    assert "feedback[]." not in module
+
+
+def test_the_go_target_writes_an_empty_table_as_gofmt_does(published):
+    # gofmt keeps `T{}` on one line, so braces around nothing would have no
+    # fixed point.
+    script = sync_tool_docs()
+    for key in [key for key in published["import_memories"]["parameters"] if "[" in key]:
+        del published["import_memories"]["parameters"][key]
+    module = script.go_tool_copy_module(published)
+    assert "\nvar NestedCopy = []ParameterCopy{}\n" in module
+    assert '\t\t"list_domains",\n' in module
+    assert "\t\tnil,\n" in go_entry(module, "list_domains") + "\n"
+
+
+def test_the_go_target_refuses_a_marker_it_cannot_spell(published):
+    script = sync_tool_docs()
+    published["search"]["description"] = "Search things. See ${tool:teleport}."
+    with pytest.raises(script.Drift, match="unknown tool"):
+        script.go_tool_copy_module(published)
+
+
+def test_the_go_target_refuses_a_marker_it_cannot_parse(published):
+    script = sync_tool_docs()
+    published["search"]["description"] = "Search things. See ${tool:Search}."
+    with pytest.raises(script.Drift, match="not a tool reference"):
+        script.go_tool_copy_module(published)
+
+
+def test_the_go_target_refuses_a_field_it_neither_writes_nor_names(published):
+    script = sync_tool_docs()
+    published["search"]["outputSchema"] = "something new"
+    with pytest.raises(script.Drift, match="neither writes nor names"):
+        script.go_tool_copy_module(published)
+
+
+def test_the_committed_go_module_is_what_the_generator_writes(manifest):
+    script = sync_tool_docs()
+    assert script.go_tool_copy_module(manifest) == script.GO_COPY.read_text(encoding="utf-8")

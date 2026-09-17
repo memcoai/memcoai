@@ -1,7 +1,7 @@
 name: Release (Python)
 
-# The tag prefix scopes a release to one SDK: `go/` and `nodejs/` take `go-v*`
-# and `nodejs-v*` once they have build tooling of their own.
+# The tag prefix scopes a release to one SDK: `nodejs-v*` is the Node.js
+# pipeline, and `go-v*` the Go one.
 on:
   push:
     tags: ["python-v*"]

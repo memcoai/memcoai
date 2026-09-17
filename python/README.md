@@ -141,11 +141,10 @@ arrives with every export as `memcoai/memory/tools.json` — the same copy the h
 MCP server publishes — and is written into the docstrings the toolset is built
 from, so a change of wording reaches you with a release rather than silently.
 
-Three parameters keep their own wording: `tags`, `feedback` and `source` are
-typed objects here and XML strings over MCP, so the service's copy would
-describe an encoding these schemas reject. The session and its domain are bound,
-so there is no `list_domains` or `start_session` tool either — `agent.briefing()`
-says so, since the service's copy mentions both.
+That includes the fields of each tag and rating a model sends, which are
+written into the `Tag` and `FeedbackRating` docstrings. The session and its
+domain are bound, so there is no `list_domains` or `start_session` tool
+either — `agent.briefing()` says so, since the service's copy mentions both.
 
 Every tool is bound to the session it was built from, so nothing a model sends
 can change which session a call is recorded under, and arguments are validated

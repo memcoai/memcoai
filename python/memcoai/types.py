@@ -189,11 +189,10 @@ class Tag:
     per-domain; :meth:`~memcoai.operations.MemoryOperations.list_domains` describes them.
 
     Attributes:
-        type: The tag's category, such as ``"language"`` or ``"framework"``.
-        value: The value within that category, such as ``"python"``.
-        version: Version of the thing named, where its type carries one. A
-            version on a type that does not carry one is dropped by the service.
-            Most tag types carry no version, so this is usually ``None``.
+        type: (Required) The tag's type, one of the tag types this domain uses.
+        value: (Required) The tag's value within its type.
+        version: The version of what the tag names. Set it only on a tag type that takes a version,
+            as :meth:`~memcoai.operations.MemoryOperations.list_domains` states.
 
     Example:
         >>> from memcoai.types import Tag
@@ -625,12 +624,12 @@ class FeedbackRating:
     """One rating to give a search result.
 
     Attributes:
-        idx: Handle copied exactly from a search result. An insight's handle
-            rates that insight; a memory's own handle rates every insight under
-            it. It cannot be constructed by hand.
-        relevant: Whether the result was a good match for the query.
-        correct: Whether its content was accurate.
-        comment: An optional note about this result.
+        idx: (Required) The idx of the result to rate, copied exactly as it appears in the search
+            response; it cannot be constructed by hand. Use an insight's idx for a specific insight,
+            or a memory's own idx to apply the rating to every insight under it.
+        relevant: Set to true if the result was a good match for the query.
+        correct: Set to true if the result's content was accurate.
+        comment: An optional comment on the result, at most 5000 characters.
 
     Example:
         >>> from memcoai.types import FeedbackRating
@@ -752,7 +751,9 @@ class ImportedMemory:
         queries: (Required) The queries someone would search to find this memory, such as questions
             or problem statements. At least one, at most 20.
         insights: (Required) The findings this memory holds. At least one, at most 10.
-        tags: Tags describing the subject and context.
+        tags: Tags describing the subject and context, narrowing what this memory applies to. Call
+            :meth:`~memcoai.operations.MemoryOperations.list_domains` for the tag types this domain
+            uses.
 
     Example:
         >>> from memcoai.types import ImportedInsight, ImportedMemory, Tag

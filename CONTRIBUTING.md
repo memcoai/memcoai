@@ -9,10 +9,11 @@ runs against an in-process server, so `make check` passes offline.
 Everything down to [Making a change](#making-a-change) applies whichever SDK you
 are touching. After that the document splits, and each language repeats the same
 seven headings — Prerequisites, Setting up, Running the checks, Layout, Tests,
-Documentation, Style — so the two can be read side by side:
+Documentation, Style — so the three can be read side by side:
 
 - [Python](#python) — published to PyPI as `memcoai`
 - [Node.js](#nodejs) — published to npm as `@memco/memcoai`
+- [Go](#go) — published through the Go module proxy as `github.com/memcoai/memcoai/go`
 
 ## Reporting a bug
 
@@ -44,7 +45,7 @@ will be silently discarded:
 ```
 proto/                    the service contract
 python/memcoai/memory/    generated Python client, and the tool manifest
-go/client/                generated Go client, and the tool manifest
+go/internal/client/       generated Go client, and the tool manifest
 nodejs/client/            generated Node client, and the tool manifest
 ```
 
@@ -55,8 +56,9 @@ If you believe the generated code or the contract itself is wrong, open an issue
 describing the problem rather than editing the output. `make provenance` checks
 that the contract's checksum matches what each descriptor records, that they
 agree on one server commit, that the declared dependency floors match what the
-generated modules assert at import, and that every language ships the same
-non-empty tool manifest. It does not verify the generated code itself byte for
+generated modules assert at import, that `go/go.mod` requires at least what the
+Go descriptor declares, and that every language ships the same non-empty tool
+manifest. It does not verify the generated code itself byte for
 byte. If it fails on a clean checkout, that is worth an issue on
 its own.
 
@@ -74,18 +76,18 @@ reviewable in a diff rather than loaded from a data file:
 |---|---|
 | Python | docstrings in `memcoai/operations.py` and `memcoai/types.py`, which `memcoai.agent` reads back at run time |
 | Node.js | `nodejs/src/gen/toolCopy.ts` — TypeScript keeps no doc comments at run time, so the copy is compiled in |
-| Go | not compiled in; `go/client/tools` publishes the manifest as it ships, markers and all |
+| Go | `go/internal/memory/toolcopy_gen.go` — Go keeps no doc comments at run time either, so the copy is compiled in |
 
 Regenerating is a maintainer step, but it concerns you in one way:
 `make tool-docs-check` and a pre-commit hook fail if any of those has drifted
 from the manifest, so hand-editing the generated copy will not pass.
 
-Three parameters are deliberately left alone, listed as `SDK_SHAPED` in that
-script: the manifest describes `tags`, `feedback` and `source` as the MCP server
-accepts them — XML strings and bare literals — while the SDKs take their own
-`Tag`, `FeedbackRating` and `DataSource` types and hand a model an object schema
-built from those. Writing the wire copy onto them would describe an encoding the
-schema rejects.
+The manifest also describes the fields of each entry a `tags` or `feedback`
+list takes — `tags[].version`, `feedback[].idx` — under every tool that takes
+one. The script writes each field once, on its type: into the `Tag` and
+`FeedbackRating` docstrings for Python, and into `ENTRY_COPY` and `EntryCopies`
+for Node.js and Go. It refuses a field described two ways, and a type whose
+fields are described only in part.
 
 ## Development setup
 
@@ -95,8 +97,9 @@ You need `make`, plus the toolchain for whichever SDK you are working on:
 |---|---|---|
 | Python | [uv](https://docs.astral.sh/uv/) | Fetches the interpreters itself; `python/.python-version` pins the supported floor |
 | Node.js | a Node runtime | Nothing fetches it for you; `nodejs/.nvmrc` pins **24**, the version to develop against |
+| Go | a Go toolchain ≥ 1.21, and a C compiler | Fetches the toolchain `go/go.mod` names itself; `-race` needs cgo |
 
-You only need both if you are changing both. The root `make` targets fan out to
+You only need more than one if you are changing more than one. The root `make` targets fan out to
 every language present and skip nothing, so a partial toolchain will fail on the
 language you have not installed.
 
@@ -121,6 +124,7 @@ targets. For anything language-specific, address one directly:
 ```bash
 make -C python help
 make -C nodejs help
+make -C go help
 ```
 
 ## Making a change
@@ -137,8 +141,9 @@ make -C nodejs help
    issue.
 
 Do not bump a version or edit a changelog in a pull request. Releases are cut
-separately, from a tag on `main`, and a version bump in a change would collide
-with that.
+separately, from a tag on `main` — `python-v<version>`, `nodejs-v<version>` or
+`go-v<version>`, each starting that SDK's release pipeline — and a version bump
+in a change would collide with that.
 
 ### What review will ask for
 
@@ -165,7 +170,8 @@ pre-commit install
 # Python
 
 The Python SDK is in [`python/`](python/) and is published to PyPI as
-[`memcoai`](https://pypi.org/project/memcoai/).
+[`memcoai`](https://pypi.org/project/memcoai/). A `python-v<version>` tag
+releases it.
 
 ## Prerequisites
 
@@ -206,9 +212,12 @@ make -C python typecheck    # mypy, strict, over the SDK and the tests
 make -C python test         # the suite, on the floor version
 make -C python test-all     # the suite on 3.10, 3.11, 3.12 and 3.13
 make -C python system-test  # the live suite; skipped without a credential
+make -C python coverage     # the suite with coverage; fails below the floor
+make -C python run-examples # every example, against the real service
 make -C python docs         # build the reference; warnings are errors
 make -C python docs-serve   # build it and serve it on :8000
 make -C python build        # build the sdist and the wheel
+make -C python clean        # remove build and cache artefacts
 ```
 
 `make check` from the root runs the same set plus the provenance check.
@@ -253,28 +262,30 @@ Conventions the suite already follows:
   comment naming what went wrong.
 - **Async tests need no decorator** — `asyncio_mode = "auto"` is set.
 
+[`tests/test_examples.py`](python/tests/test_examples.py) imports every program
+in `examples/`, so an example naming a symbol that no longer exists fails the
+suite.
+
 ### The system test
 
 [`python/systemtest/`](python/systemtest/) is the one suite that is **not**
 hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
-enrich, revert, confirm the memory is gone — against the real service, once per
-domain the credential can reach, and CI runs it on every pull request.
+enrich, revert both writes, confirm the memory is gone — against the real
+service, once per domain the credential can reach, and checks that a creator
+credential is offered every tool. CI runs it on every pull request.
 
-**One step writes permanently.** `import_memories` mints no operation id, so the
-service offers no way to revert a batch. That step therefore imports a **fixed**
-payload carrying no run marker, into **one** domain rather than every domain: an
-import is written under an identity derived from its own content, so it lands
-once and every run after that is reported `DUPLICATE`. Treat that payload as
-knowledge you are publishing, because it stays, and nothing in this repository
-can correct it once it has. Everything else the suite writes it reverts before
-it finishes.
+It leaves nothing behind. It reverts every write it makes and asserts on the
+outcome, and the `written` fixture reverts them again on the way out, so a run
+that fails part-way still cleans up. It imports nothing: an import mints no
+operation id, so nothing could undo it.
 
-It is not collected by `make test`: `testpaths` names `tests/` only, so `make -C
-python system-test` is the only way to reach it. Without `MEMCO_API_TOKEN` it
-reports itself skipped rather than failing, so you can run it, and `make check`,
-with no server access at all. In CI a missing credential is a skip only on a
-pull request; anywhere else — a push to main, or a release — it fails, because a
-publish that silently never reached the service is worse than a red build.
+It is not collected by `make test`: `testpaths` names `tests/` only, so
+`make -C python system-test` is the only way to reach it. Without
+`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
+it, and `make check`, with no server access at all. In CI a missing credential
+is a skip only on a pull request; anywhere else — a push to main, or a release —
+it fails, because a publish that silently never reached the service is worse
+than a red build.
 
 Two more things to know before changing it. A write is accepted
 **asynchronously**, so the create returns an operation id rather than a memory
@@ -282,9 +293,9 @@ and the memory is not addressable until ingestion has run — every existence
 assertion is a poll, not a single call. And the content it writes is real prose
 about this SDK on purpose: a write is evaluated on the way in and can be
 rejected downstream, and filler would be dropped and look exactly like a broken
-search path. Keep it distinct from what the other SDK's suite writes, too — the
-two run concurrently against the same organisation, and near-identical content
-is deduplicated.
+search path. Keep it distinct from what the other SDKs' suites write, too — the
+three run concurrently against the same organisation, and near-identical
+content is deduplicated.
 
 ## Documentation
 
@@ -297,9 +308,6 @@ The operations are the exception: the leading prose and the `Args` descriptions
 of everything the tool manifest names are generated, so edit `tools.json`
 upstream rather than the docstring. `Returns`, `Raises`, `Example` and any
 parameter the manifest does not name — `timeout`, for one — are yours.
-
-Programs in `examples/` are imported by the test suite, so an example naming a
-symbol that no longer exists fails the build.
 
 `make docs` builds the reference twice: once as HTML for a person, and once as
 markdown for [`scripts/build_llms_txt.py`](scripts/build_llms_txt.py), which
@@ -332,7 +340,8 @@ signatures genuinely are `Any`. Say why in the comment.
 # Node.js
 
 The Node.js SDK is in [`nodejs/`](nodejs/) and is published to npm as
-[`@memco/memcoai`](https://www.npmjs.com/package/@memco/memcoai).
+[`@memco/memcoai`](https://www.npmjs.com/package/@memco/memcoai). A
+`nodejs-v<version>` tag releases it.
 
 ## Prerequisites
 
@@ -377,6 +386,7 @@ make -C nodejs test         # the suite, on the version .nvmrc pins
 make -C nodejs test-all     # the suite on every supported runtime installed
 make -C nodejs system-test  # the live suite; skipped without a credential
 make -C nodejs coverage     # the suite with coverage; fails below the floor
+make -C nodejs run-examples # every example, against the real service
 make -C nodejs docs         # build the reference; warnings are errors
 make -C nodejs docs-serve   # build it and serve it on :8000
 make -C nodejs build        # build both distributables and the npm tarball
@@ -435,21 +445,22 @@ frames back on `src/*.ts`.
 Conventions match the Python suite: name a test after the behaviour it pins, not
 the function it calls, and assert what is observable.
 
+[`tests/examples.test.ts`](nodejs/tests/examples.test.ts) imports every program
+in `examples/`, and asserts that importing one runs nothing, so an example that
+stopped resolving fails the suite.
+
 ### The system test
 
 [`nodejs/systemtest/`](nodejs/systemtest/) is the one suite that is **not**
 hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
-enrich, revert, confirm the memory is gone — against the real service, once per
-domain the credential can reach, and CI runs it on every pull request.
+enrich, revert both writes, confirm the memory is gone — against the real
+service, once per domain the credential can reach, and checks that a creator
+credential is offered every tool. CI runs it on every pull request.
 
-**One step writes permanently.** `importMemories` mints no operation id, so the
-service offers no way to revert a batch. That step therefore imports a **fixed**
-payload carrying no run marker, into **one** domain rather than every domain: an
-import is written under an identity derived from its own content, so it lands
-once and every run after that is reported `DUPLICATE`. Treat that payload as
-knowledge you are publishing, because it stays, and nothing in this repository
-can correct it once it has. Everything else the suite writes it reverts before
-it finishes.
+It leaves nothing behind. It reverts every write it makes and asserts on the
+outcome, and a `finally` reverts them again, so a run that fails part-way still
+cleans up. It imports nothing: an import mints no operation id, so nothing
+could undo it.
 
 `npm test` runs the glob `build/js/tests/**`, so it never matches this suite;
 `make -C nodejs system-test` is the only way to reach it. Without
@@ -465,9 +476,9 @@ and the memory is not addressable until ingestion has run — every existence
 assertion is a poll, not a single call. And the content it writes is real prose
 about this SDK on purpose: a write is evaluated on the way in and can be
 rejected downstream, and filler would be dropped and look exactly like a broken
-search path. Keep it distinct from what the other SDK's suite writes, too — the
-two run concurrently against the same organisation, and near-identical content
-is deduplicated.
+search path. Keep it distinct from what the other SDKs' suites write, too — the
+three run concurrently against the same organisation, and near-identical
+content is deduplicated.
 
 ## Documentation
 
@@ -496,6 +507,9 @@ assembler repairs that for Python only, and `Reference.rubrics` is where a
 generator says whether it needs it. Applying the repair to TypeDoc's output
 pushes a section under the sibling before it.
 
+Building it is as far as a pull request goes — `make check` does that already.
+Publishing is a release step, done from the release pipeline.
+
 ## Style
 
 [Prettier](https://prettier.io/) only, configured in `nodejs/.prettierrc.json`.
@@ -510,12 +524,218 @@ underlying problem is fixed. Say why in the comment.
 
 ---
 
+# Go
+
+The Go SDK is in [`go/`](go/) and is published through the Go module proxy as
+the module `github.com/memcoai/memcoai/go`, whose one importable package is
+[`github.com/memcoai/memcoai/go/memcoai`](https://pkg.go.dev/github.com/memcoai/memcoai/go/memcoai).
+A `go-v<version>` tag releases it. The go command itself reads only a tag named
+`go/v<version>` for a module in `go/`, and the module proxy keeps whatever that
+tag first names for good, so the release pipeline creates it once every check
+has passed. Never push a `go/v*` tag yourself.
+
+## Prerequisites
+
+A Go toolchain, `make`, and a C compiler: the hermetic suites run with the race
+detector, which needs cgo. Any Go from 1.21 on will do. `go/go.mod` declares
+**go 1.25.0**, the floor grpc-go v1.83.1 forces, and an older installed
+toolchain fetches that one by itself. CI pins **1.26** for its single-version
+jobs and sweeps **1.25** and **1.27**; `make -C go test-all` runs both modules'
+suites on go1.25.13, go1.26.8 and go1.27.0, fetching each on first use.
+
+golangci-lint v2.13.2 needs a 1.26 toolchain to build, so `make -C go lint`
+runs it under `LINT_TOOLCHAIN` (default `go1.26.8`). Pass `LINT_TOOLCHAIN=local`
+when the installed toolchain is already 1.26 or later, or
+`GOLANGCI_LINT=golangci-lint` to use an installed binary of the same version.
+The Makefile sets `GOWORK=off`, so a `go.work` of your own cannot change what is
+built.
+
+## Setting up
+
+```bash
+make -C go install          # or `make install` from the repository root
+```
+
+That downloads both modules' dependencies and the three pinned tools —
+golangci-lint, doc2go and gomarkdoc. The Makefile runs each with
+`go run tool@version`, so nothing is installed globally and each version is
+written in one place. The first run needs network access; after that the module
+cache serves them.
+
+## Running the checks
+
+```bash
+make -C go lint             # golangci-lint: format check, lint and static analysis
+make -C go format           # apply gofmt (simplify) and goimports
+make -C go typecheck        # go vet over both modules, the live suite included
+make -C go test             # both suites, with the race detector
+make -C go test-all         # both suites on 1.25, 1.26 and 1.27
+make -C go system-test      # the live suite; skipped without a credential
+make -C go coverage         # the suites with coverage; fails below the floor
+make -C go run-examples     # every example, against the real service
+make -C go docs             # build the reference and its llms.txt pair
+make -C go docs-serve       # build it and serve it on :8000
+make -C go build            # check both modules are tidy, verify downloads, build
+make -C go clean            # remove build and cache artefacts
+```
+
+`make check` from the root runs the same set plus the provenance check.
+
+## Layout
+
+```
+go/
+  memcoai/              the public package
+  internal/
+    client/             GENERATED — do not edit
+    descriptor.go       embeds client/SDK_PROVENANCE.yaml
+    config/             credential and endpoint resolution
+    transport/          the channel: TLS, auth, retries, health
+    fault/              the one internal error type
+    logging/ warn/      the SDK's own logger, and once-only warnings
+    provenance/         the descriptor's parser
+    memory/             the memory service: checks, limits, agent tables
+      toolcopy_gen.go   GENERATED — the service's tool copy
+    testserver/         the in-process fake service the suites run against
+  examples/             runnable programs; a module of its own
+  systemtest/           the live suite (build tag systemtest)
+  docs/                 doc2go's and gomarkdoc's output; nothing in it is hand-written
+```
+
+`memcoai/` exposes what the Python SDK exposes without a leading underscore —
+the client, its operations and sessions, the data types, the errors and the
+agent tools — and nothing else. Every helper lives under `internal/`, the Go
+counterpart of Python's `_*.py` modules, where the go command itself stops a
+consumer importing it. Internal packages never import `memcoai`: they work on
+the generated wire messages and return `*fault.Error`. What stays unexported in
+`memcoai` is what has to work on its public types: copying fields between wire
+and public types, mapping a fault to its public error type, the call accounting
+behind `Close`, and rendering and dispatching for the agent tools.
+
+`config`, `transport`, `fault`, `logging`, `warn` and `provenance` know nothing
+about memory. A second service joins with a package of its own beside
+`memory/`, its generated client beside the memory one, and a field on `Client`.
+
+The generated client is internal on purpose: a consumer gets the SDK's own
+types, so a contract change reaches them as a reviewed change here rather than
+as a different generated struct. CI builds a consumer that imports it and fails
+if the go command allows that. `internal/descriptor.go` exists because
+`go:embed` cannot reach into a parent directory; it sits above `client/`, so the
+provenance descriptor ships as the export wrote it, with no copy to keep in
+step.
+
+`examples/` is a module of its own, with a `replace` line pointing at `..`, so
+the SDK module never depends on the Anthropic SDK one example uses. One
+`go/.golangci.yml` covers both modules, because golangci-lint looks for its
+configuration in parent directories.
+
+## Tests
+
+The suites run against a **real in-process gRPC server**
+([`go/internal/testserver`](go/internal/testserver/testserver.go)) on a loopback
+port, exactly as the Python suite does. Nothing about gRPC is mocked, so
+interceptors, metadata, status codes and channel teardown are all exercised for
+real. They need no network access and no API key, and always run with `-race`.
+
+They use the standard library's `testing` package with **no test
+dependencies** — no assertion library, no mocking framework, no goroutine-leak
+checker. Keep it that way.
+
+Unit tests sit beside the internal package they pin; behaviour tests go through
+a real client in `memcoai/`. Conventions match the Python suite: name a test
+after the behaviour it pins, not the function it calls, assert what is
+observable, and put a regression in
+[`memcoai/regressions_test.go`](go/memcoai/regressions_test.go) with a comment
+naming what went wrong.
+
+Each program in `examples/` does its work in a `run` function that its own
+`main_test.go` drives against the fake service (and, for `anthropic_agent`, a
+fake Messages API), and `examples/examples_test.go` checks that none does
+anything before `main`, so an example that stopped working fails the suite.
+
+### The system test
+
+[`go/systemtest/`](go/systemtest/) is the one suite that is **not** hermetic. It
+runs the whole command lifecycle — create, search, rate, fetch, enrich, revert
+both writes, confirm the memory is gone — against the real service, once per
+domain the credential can reach, and checks that a creator credential is
+offered every tool. CI runs it on every pull request.
+
+It leaves nothing behind. It reverts every write it makes and asserts on the
+outcome, and `t.Cleanup` reverts them again, so a run that fails part-way still
+cleans up. It imports nothing: an import mints no operation id, so nothing
+could undo it. `go test -timeout` kills a test without running its cleanups, so
+the suite stops polling two minutes before that deadline and fails in time to
+clean up.
+
+Its files carry `//go:build systemtest`, so `go test ./...` never compiles
+them; `make -C go system-test` is the only way to reach it, and
+`make -C go typecheck` vets it so it cannot rot unbuilt. Without
+`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
+it, and `make check`, with no server access at all. In CI a missing credential
+is a skip only on a pull request; anywhere else — a push to main, or a release —
+it fails, because a publish that silently never reached the service is worse
+than a red build.
+
+Two more things to know before changing it. A write is accepted
+**asynchronously**, so the create returns an operation id rather than a memory
+and the memory is not addressable until ingestion has run — every existence
+assertion is a poll, each bounded by a context deadline. And the content it
+writes is real prose about this SDK on purpose: a write is evaluated on the way
+in and can be rejected downstream, and filler would be dropped and look exactly
+like a broken search path. Keep it distinct from what the other SDKs' suites
+write, too — the three run concurrently against the same organisation, and
+near-identical content is deduplicated.
+
+## Documentation
+
+Only `memcoai/` is documented, and its doc comments are the reference. Every
+exported identifier and exported struct field has one. Every exported function
+and method that takes parameters describes each under `Parameters:` and says
+what it returns; one that returns an error lists the typed errors under
+`Errors:`. Every method of the client, the operations, the session, the
+toolset and the tools has an `Example…` function in `memcoai/example_test.go`,
+compiled on every test run, as do `NewClient`, `ReadProvenance`, `SetLevel`,
+`Render`, `Briefing` and `Memory.Feedback`. Methods an interface defines — `Error`, `Unwrap`,
+`String`, `Format`, `LogValue` — need only one line. Link other symbols with
+`[Name]`. `memcoai/docs_test.go` checks the comments, the `Parameters:` and
+`Errors:` sections and the examples, and staticcheck, which `go/.golangci.yml`
+enables in full, checks each comment's form. Internal
+packages are not documented: a short comment where the name is not enough, and
+none where it is.
+
+`make -C go docs` builds the HTML with [doc2go](https://abhinav.github.io/doc2go/)
+and a markdown twin with [gomarkdoc](https://github.com/princjef/gomarkdoc),
+from the same package, then runs
+[`scripts/build_llms_txt.py`](scripts/build_llms_txt.py) — the assembler the
+other SDKs use — to publish every page as markdown beside its HTML, plus
+`llms.txt` and `llms-full.txt`. Neither generator is given `internal/`, and a
+test fails if an exported value is spelled through an internal package, which
+would put that package's name in the reference.
+
+Building it is as far as a pull request goes — `make check` does that already.
+Publishing is a release step, done from the release pipeline.
+
+## Style
+
+[`go/.golangci.yml`](go/.golangci.yml) is the whole style guide.
+`make -C go format` applies gofmt (with `-s`) and goimports, and
+`make -C go lint` runs golangci-lint's standard linters, staticcheck with every
+check on, errorlint, misspell, bidichk and nolintlint. The generated client is
+excluded; `toolcopy_gen.go`, though generated, is held to the same checks as
+everything else. If `make check` is green, the style is right.
+
+A suppression is written `//nolint:<linter> // <reason>`; nolintlint rejects one
+that does not name its linter or give a reason.
+
+---
+
 ## Licence
 
 This repository is licensed under the [MIT licence](LICENSE), © Memco Labs, Inc.
 By contributing you agree that your contributions will be released under the
 same licence.
 
-`python/LICENSE` and `nodejs/LICENSE` are copies of that file, because a
-published package has to carry its own licence text. Each language's suite fails
-if its copy has drifted from the root, so update all three together.
+`python/LICENSE`, `nodejs/LICENSE` and `go/LICENSE` are copies of that file,
+because a published package has to carry its own licence text. Each language's
+suite fails if its copy has drifted from the root, so update all four together.
