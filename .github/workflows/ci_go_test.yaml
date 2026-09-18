@@ -1,0 +1,119 @@
+name: Test (Go)
+
+# Called by ci_go.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: The Go toolchain to install. ci_go.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ inputs.go-version }})
+    # Pinned by ci_go.yaml. Leaving it to the matrix would mean whichever
+    # toolchain happened to run last produced the coverage numbers.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: |
+            go/go.sum
+            go/examples/go.sum
+      # Coverage runs on this job only: the matrix jobs prove the suites pass on
+      # every supported toolchain, and measuring the same lines three times
+      # would say nothing new. COVERAGE_FLOOR in go/Makefile is the gate: this
+      # step fails the build below it, so the badge cannot go stale. Both
+      # modules' suites run here, with the race detector.
+      - run: make coverage
+      - name: Report coverage
+        if: always()
+        run: |
+          cat > "$RUNNER_TEMP/report.go" <<'GO'
+          // Command report summarises a Go coverage profile as markdown.
+          package main
+
+          import (
+          	"bufio"
+          	"cmp"
+          	"fmt"
+          	"os"
+          	"slices"
+          	"strconv"
+          	"strings"
+          )
+
+          type tally struct{ statements, covered int }
+
+          func (t tally) rate() float64 {
+          	if t.statements == 0 {
+          		return 100
+          	}
+          	return 100 * float64(t.covered) / float64(t.statements)
+          }
+
+          func main() {
+          	profile, err := os.Open(os.Args[1])
+          	if err != nil {
+          		fmt.Print("### Coverage\n\nNo report produced — the suite did not finish.\n")
+          		return
+          	}
+          	// With -coverpkg every test binary writes every block, so one block
+          	// appears once per package; it is covered if any of them ran it.
+          	statements := map[string]int{}
+          	covered := map[string]bool{}
+          	lines := bufio.NewScanner(profile)
+          	for lines.Scan() {
+          		fields := strings.Fields(lines.Text())
+          		if len(fields) != 3 || strings.HasPrefix(fields[0], "mode:") {
+          			continue
+          		}
+          		n, _ := strconv.Atoi(fields[1])
+          		count, _ := strconv.Atoi(fields[2])
+          		statements[fields[0]] = n
+          		covered[fields[0]] = covered[fields[0]] || count > 0
+          	}
+          	files := map[string]tally{}
+          	var total tally
+          	for block, n := range statements {
+          		name := block[:strings.LastIndex(block, ":")]
+          		file := files[name]
+          		file.statements += n
+          		total.statements += n
+          		if covered[block] {
+          			file.covered += n
+          			total.covered += n
+          		}
+          		files[name] = file
+          	}
+          	fmt.Printf("### Coverage\n\n**%.1f%%** of statements.\n\n| File | Statements |\n|---|---|\n", total.rate())
+          	names := make([]string, 0, len(files))
+          	for name := range files {
+          		names = append(names, name)
+          	}
+          	slices.SortFunc(names, func(a, b string) int {
+          		return cmp.Or(cmp.Compare(files[a].rate(), files[b].rate()), cmp.Compare(a, b))
+          	})
+          	for _, name := range names {
+          		fmt.Printf("| `%s` | %.0f%% |\n", name, files[name].rate())
+          	}
+          }
+          GO
+          go run "$RUNNER_TEMP/report.go" coverage/coverage.out >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: coverage-go
+          # Relative to the workspace, not to defaults.run.working-directory.
+          path: go/coverage/coverage.out
+          retention-days: 14

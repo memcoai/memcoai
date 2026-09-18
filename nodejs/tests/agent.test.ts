@@ -25,8 +25,8 @@ import {
 import { Memco } from '../src/client.js'
 import { MemcoAuthenticationError } from '../src/errors.js'
 import {
+  ENTRY_COPY,
   OFFERED,
-  SDK_SHAPED,
   TOOL_COPY,
   TOOL_PREFIX,
   type ToolCopy
@@ -47,7 +47,6 @@ import { withHarness, type Harness } from './fakeServer.js'
 const copies: Readonly<Record<string, ToolCopy>> = TOOL_COPY
 const offered: readonly string[] = OFFERED
 const bound: readonly string[] = BOUND
-const shaped: readonly string[] = SDK_SHAPED
 
 /** Run `body` against a connected client and a bound session's toolset. */
 async function withToolset(
@@ -384,23 +383,61 @@ test('a structured argument is described from this SDK own type', async () => {
 
 // -- the schema table and the generated copy ------------------------------
 
-test('every declared parameter takes its copy from exactly one source', async () => {
+test('every declared parameter takes its copy from the manifest', async () => {
   // The schemas are hand-written here and the copy is generated from the
   // manifest, so nothing but this holds the two together: a parameter the
   // manifest stopped describing would otherwise reach a model undescribed.
   await withToolset(async toolset => {
     for (const [at, name] of offered.entries()) {
       const tool = toolset.tools[at]!
-      const published = Object.keys(copies[name]!.parameters)
-      for (const parameter of Object.keys(tool.parameters.properties)) {
+      for (const [parameter, schema] of Object.entries(
+        tool.parameters.properties
+      )) {
+        const described = copies[name]!.parameters[parameter]
+        assert.ok(
+          described,
+          `${name}.${parameter} is not described by the manifest`
+        )
         assert.equal(
-          published.includes(parameter) !== shaped.includes(parameter),
-          true,
-          `${name}.${parameter} is described by both the manifest and this SDK, or by neither`
+          (schema as Record<string, unknown>).description,
+          described,
+          `${name}.${parameter}`
         )
       }
     }
   })
+})
+
+test('every field of an object argument takes its copy from the manifest', async () => {
+  // The fields of a tag and a rating are hand-declared too, and described by
+  // the copy the manifest publishes for each entry type.
+  const entries: Readonly<Record<string, Readonly<Record<string, string>>>> =
+    ENTRY_COPY
+  const types: Readonly<Record<string, string>> = {
+    tags: 'Tag',
+    feedback: 'FeedbackRating'
+  }
+  const compared: string[] = []
+  await withToolset(async toolset => {
+    for (const tool of toolset.tools) {
+      for (const [argument, schema] of Object.entries(
+        tool.parameters.properties
+      )) {
+        const items = (schema as { items?: { properties?: object } }).items
+        if (items?.properties === undefined) continue
+        for (const [field, fieldSchema] of Object.entries(items.properties)) {
+          assert.equal(
+            (fieldSchema as { description: string }).description,
+            entries[types[argument]!]?.[field],
+            `${tool.name}.${argument}.${field}`
+          )
+          compared.push(`${tool.name}.${argument}.${field}`)
+        }
+      }
+    }
+  })
+  // Pinned, because the skip above is silent.
+  assert.equal(compared.length, 3 * 3 + 4)
 })
 
 test('a parameter the manifest names is offered or bound, never dropped', async () => {
@@ -416,21 +453,6 @@ test('a parameter the manifest names is offered or bound, never dropped', async 
         )
       }
     }
-  })
-})
-
-test('the parameters this SDK reshapes are either offered or bound', async () => {
-  // SDK_SHAPED is the generator's list of what it refused to copy. Every entry
-  // has to be accounted for here, or the hand-written copy has gone stale.
-  await withToolset(async toolset => {
-    const declared = new Set(
-      toolset.tools.flatMap(one => Object.keys(one.parameters.properties))
-    )
-    for (const parameter of shaped) {
-      assert.ok(declared.has(parameter) || bound.includes(parameter), parameter)
-    }
-    assert.ok(declared.has('tags') && declared.has('feedback'))
-    assert.ok(bound.includes('source'))
   })
 })
 

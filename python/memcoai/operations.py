@@ -235,9 +235,9 @@ class MemoryOperations:
                 :meth:`start_session` or a previous search. The search runs in that session's memory
                 domain, so the domain argument is not needed and is ignored. Omit this to start a
                 new session, in which case a domain is required.
-            tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`list_domains` describes
-                them.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
+                determine for the best results.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -275,11 +275,11 @@ class MemoryOperations:
         The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
         constructed by hand — and nothing else is needed to name the result.
 
-        When a result shows a ref instead of content, ask by the value in its own idx, never the
-        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
-        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
-        ask for. Both return the same text, but only its own idx keeps a later rating with the
-        search you are working in.
+        When a result carries a reference instead of content, ask by the value in its own idx, never
+        the value in its reference. A result with idx "memory-THIS-1" and reference
+        "memory-EARLIER-1" is fetched with "memory-THIS-1": the reference says where the content was
+        delivered, not what to ask for. Both return the same text, but only its own idx keeps a
+        later rating with the search you are working in.
 
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
@@ -353,9 +353,11 @@ class MemoryOperations:
                 :meth:`start_session` or a previous search. It records the memory as part of that
                 series of work, and supplies the memory domain, so the domain argument is not needed
                 and is ignored. Omit it to save a standalone memory.
-            tags: Tags describing the subject and context.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
+                determine for the best results.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -423,11 +425,13 @@ class MemoryOperations:
             content: (Required) The knowledge you want to add. Use markdown formatting for
                 readability. Title and content together must be at most 5000 characters; split a
                 longer finding across several enrichments.
-            tags: Tags describing the addition.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
+                determine for the best results.
             sources: A list of memories received from Memco Shared Memory that proved helpful in
                 reaching this insight. Up to 20 sources can be included.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -475,9 +479,8 @@ class MemoryOperations:
         Args:
             session_id: (Required) The session you are providing feedback for. The ID was included
                 in the response from :meth:`search`.
-            feedback: One rating per result. Each handle must be copied exactly
-                from a search result; a memory's own handle rates every insight
-                under it.
+            feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
+                ratings can be included in each call.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -825,9 +828,9 @@ class AsyncMemoryOperations:
                 :meth:`start_session` or a previous search. The search runs in that session's memory
                 domain, so the domain argument is not needed and is ignored. Omit this to start a
                 new session, in which case a domain is required.
-            tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`list_domains` describes
-                them.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
+                determine for the best results.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -865,11 +868,11 @@ class AsyncMemoryOperations:
         The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
         constructed by hand — and nothing else is needed to name the result.
 
-        When a result shows a ref instead of content, ask by the value in its own idx, never the
-        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
-        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
-        ask for. Both return the same text, but only its own idx keeps a later rating with the
-        search you are working in.
+        When a result carries a reference instead of content, ask by the value in its own idx, never
+        the value in its reference. A result with idx "memory-THIS-1" and reference
+        "memory-EARLIER-1" is fetched with "memory-THIS-1": the reference says where the content was
+        delivered, not what to ask for. Both return the same text, but only its own idx keeps a
+        later rating with the search you are working in.
 
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
@@ -943,9 +946,11 @@ class AsyncMemoryOperations:
                 :meth:`start_session` or a previous search. It records the memory as part of that
                 series of work, and supplies the memory domain, so the domain argument is not needed
                 and is ignored. Omit it to save a standalone memory.
-            tags: Tags describing the subject and context.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
+                determine for the best results.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1015,9 +1020,11 @@ class AsyncMemoryOperations:
                 longer finding across several enrichments.
             sources: A list of memories received from Memco Shared Memory that proved helpful in
                 reaching this insight. Up to 20 sources can be included.
-            tags: Tags describing the addition.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
+                determine for the best results.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1065,9 +1072,8 @@ class AsyncMemoryOperations:
         Args:
             session_id: (Required) The session you are providing feedback for. The ID was included
                 in the response from :meth:`search`.
-            feedback: One rating per result. Each handle must be copied exactly
-                from a search result; a memory's own handle rates every insight
-                under it.
+            feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
+                ratings can be included in each call.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1317,9 +1323,9 @@ class Session:
             query: (Required) A task-based query from the user such as a question, statement, or
                 task description. To ensure readability, use markdown formatting. At most 1000
                 characters.
-            tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain; :meth:`MemoryOperations.list_domains`
-                describes them.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`~memcoai.operations.MemoryOperations.list_domains` for the tag types this
+                domain uses. Supply as many as you can determine for the best results.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1347,11 +1353,11 @@ class Session:
         The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
         constructed by hand — and nothing else is needed to name the result.
 
-        When a result shows a ref instead of content, ask by the value in its own idx, never the
-        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
-        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
-        ask for. Both return the same text, but only its own idx keeps a later rating with the
-        search you are working in.
+        When a result carries a reference instead of content, ask by the value in its own idx, never
+        the value in its reference. A result with idx "memory-THIS-1" and reference
+        "memory-EARLIER-1" is fetched with "memory-THIS-1": the reference says where the content was
+        delivered, not what to ask for. Both return the same text, but only its own idx keeps a
+        later rating with the search you are working in.
 
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
@@ -1412,9 +1418,11 @@ class Session:
             content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
                 others can learn from. Supports markdown formatting. Title and content together must
                 be at most 5000 characters; split a longer finding across several memories.
-            tags: Tags describing the subject and context.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`~memcoai.operations.MemoryOperations.list_domains` for the tag types this
+                domain uses. Supply as many as you can determine for the best results.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1472,11 +1480,13 @@ class Session:
             content: (Required) The knowledge you want to add. Use markdown formatting for
                 readability. Title and content together must be at most 5000 characters; split a
                 longer finding across several enrichments.
-            tags: Tags describing the addition.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`~memcoai.operations.MemoryOperations.list_domains` for the tag types this
+                domain uses. Supply as many as you can determine for the best results.
             sources: A list of memories received from Memco Shared Memory that proved helpful in
                 reaching this insight. Up to 20 sources can be included.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1519,9 +1529,8 @@ class Session:
         The feedback is recorded against the domain the search session ran in; you do not name one.
 
         Args:
-            feedback: One rating per result. Each handle must be copied exactly
-                from a search result; a memory's own handle rates every insight
-                under it.
+            feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
+                ratings can be included in each call.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1773,9 +1782,9 @@ class AsyncSession:
             query: (Required) A task-based query from the user such as a question, statement, or
                 task description. To ensure readability, use markdown formatting. At most 1000
                 characters.
-            tags: Tags narrowing or boosting the results. Which types narrow
-                rather than boost is per-domain;
-                :meth:`AsyncMemoryOperations.list_domains` describes them.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`~memcoai.operations.AsyncMemoryOperations.list_domains` for the tag types
+                this domain uses. Supply as many as you can determine for the best results.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1803,11 +1812,11 @@ class AsyncSession:
         The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be
         constructed by hand — and nothing else is needed to name the result.
 
-        When a result shows a ref instead of content, ask by the value in its own idx, never the
-        value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1">
-        is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to
-        ask for. Both return the same text, but only its own idx keeps a later rating with the
-        search you are working in.
+        When a result carries a reference instead of content, ask by the value in its own idx, never
+        the value in its reference. A result with idx "memory-THIS-1" and reference
+        "memory-EARLIER-1" is fetched with "memory-THIS-1": the reference says where the content was
+        delivered, not what to ask for. Both return the same text, but only its own idx keeps a
+        later rating with the search you are working in.
 
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
@@ -1868,9 +1877,11 @@ class AsyncSession:
             content: (Required) The knowledge to save. Should be a concise, non-trivial finding that
                 others can learn from. Supports markdown formatting. Title and content together must
                 be at most 5000 characters; split a longer finding across several memories.
-            tags: Tags describing the subject and context.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`~memcoai.operations.AsyncMemoryOperations.list_domains` for the tag types
+                this domain uses. Supply as many as you can determine for the best results.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1928,11 +1939,13 @@ class AsyncSession:
             content: (Required) The knowledge you want to add. Use markdown formatting for
                 readability. Title and content together must be at most 5000 characters; split a
                 longer finding across several enrichments.
-            tags: Tags describing the addition.
+            tags: Tags describing the subject and context, narrowing what this applies to. Call
+                :meth:`~memcoai.operations.AsyncMemoryOperations.list_domains` for the tag types
+                this domain uses. Supply as many as you can determine for the best results.
             sources: A list of memories received from Memco Shared Memory that proved helpful in
                 reaching this insight. Up to 20 sources can be included.
-            source: Who produced the content. Defaults to
-                :attr:`~memcoai.types.DataSource.AGENT`.
+            source: The source of the content: user for human-corrected information, or agent for
+                self-discovered insights without human correction. Unset is read as agent.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:
@@ -1975,9 +1988,8 @@ class AsyncSession:
         The feedback is recorded against the domain the search session ran in; you do not name one.
 
         Args:
-            feedback: One rating per result. Each handle must be copied exactly
-                from a search result; a memory's own handle rates every insight
-                under it.
+            feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
+                ratings can be included in each call.
             timeout: Per-call deadline in seconds. Defaults to the client's.
 
         Returns:

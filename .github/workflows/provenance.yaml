@@ -14,8 +14,8 @@ name: Provenance
 #     which is the failure this check exists to catch in the first place.
 #
 # So it is `workflow_call` only, and every language's CI calls it. The cost is
-# that it runs twice on a pull request; that is the price of each language's CI
-# being self-sufficient. Nesting is release_* -> ci_* -> provenance, three deep,
+# that it runs three times on a pull request; that is the price of each
+# language's CI being self-sufficient. Nesting is release_* -> ci_* -> provenance, three deep,
 # under GitHub's limit of four.
 
 on:
@@ -36,6 +36,7 @@ jobs:
       # Standard library only, so neither of these needs a dependency install.
       - run: python scripts/verify_provenance.py
       # The tool copy an SDK hands a model is generated from the manifest: the
-      # docstrings memcoai.agent reads, and nodejs/src/gen/toolCopy.ts. Drift here
-      # hands a model copy the service did not write.
+      # docstrings memcoai.agent reads, nodejs/src/gen/toolCopy.ts and
+      # go/internal/memory/toolcopy_gen.go. Drift here hands a model copy the
+      # service did not write.
       - run: python scripts/sync_tool_docs.py --check

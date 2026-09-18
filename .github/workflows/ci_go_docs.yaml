@@ -1,0 +1,48 @@
+name: Docs (Go)
+
+# Called by ci_go.yaml, which decides when this runs; only the steps live
+# here.
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: The Go toolchain to install. ci_go.yaml holds the pin.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: |
+            go/go.sum
+            go/examples/go.sum
+      # The assembler make docs ends with is standard library only, but it
+      # needs a declared interpreter rather than whatever the runner image
+      # ships. Same pin as provenance.yaml.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      # doc2go for the HTML and gomarkdoc for its markdown twin, both at the
+      # versions go/Makefile pins, then the llms.txt pair. Only the public
+      # package is documented: internal/ never reaches either generator. The
+      # assembler fails if a page the build published is not reachable from
+      # llms.txt.
+      - run: make docs
+      # Named per language: artifact names are unique within a run, and the
+      # release pipeline downloads this one by name.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: docs-go
+          path: go/docs/_build/html

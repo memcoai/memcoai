@@ -26,12 +26,14 @@ each page, as markdown
 
 Both are built from a markdown rendering of the *same* sources as the HTML —
 ``sphinx-build -b markdown`` for Python, ``typedoc-plugin-markdown`` for
-Node — so what is published cannot describe a different API from the HTML.
+Node, gomarkdoc beside doc2go for Go — so what is published cannot describe a
+different API from the HTML.
 
 Each language's page order comes from whatever that generator already treats as
 the site's own table of contents — the ``toctree`` in ``index.rst``, the
-``globals.md`` index TypeDoc emits — rather than from a list kept here, which
-would be one more thing to update when a page is added. What is checked here is
+``globals.md`` index TypeDoc emits, the tree of package pages gomarkdoc
+writes — rather than from a list kept here, which would be one more thing to
+update when a page is added. What is checked here is
 coverage: every HTML page the build produced must be reachable from
 ``llms.txt``, so a page that stops being indexed fails the build rather than
 quietly disappearing from what an agent can find; and every link written into
@@ -44,6 +46,7 @@ Usage::
 
     python3 scripts/build_llms_txt.py python
     python3 scripts/build_llms_txt.py nodejs
+    python3 scripts/build_llms_txt.py go
 """
 
 from __future__ import annotations
@@ -479,13 +482,81 @@ def nodejs_reference() -> Reference:
     )
 
 
-LANGUAGES = {"python": python_reference, "nodejs": nodejs_reference}
+GO_PACKAGE = "github.com/memcoai/memcoai/go/memcoai"
+"""The import path a Go program uses, and what ``go get`` is given."""
+
+
+def go_version(path: Path) -> str:
+    """Read ``const Version``, the value the release gate compares a tag to."""
+    match = re.search(r'^const Version = "([^"\n]+)"$', read(path), re.M)
+    if match is None:
+        fail(f"{shown(path)} declares no const Version")
+    return match.group(1)
+
+
+def go_packages(markdown: Path) -> list[str]:
+    """List gomarkdoc's package pages, the root package first.
+
+    gomarkdoc writes one ``index.md`` per package, in a tree that mirrors the
+    module's, and that tree is all the table of contents a Go reference has.
+    """
+    found = sorted(path.relative_to(markdown).as_posix() for path in markdown.rglob("index.md"))
+    if "index.md" not in found:
+        fail(f"{shown(markdown / 'index.md')} does not exist; the root package has no page")
+    found.remove("index.md")
+    return ["index.md", *found]
+
+
+def go_reference() -> Reference:
+    """Describe the Go SDK's reference as doc2go and gomarkdoc built it."""
+    root = ROOT / "go"
+    markdown = root / "docs" / "_build" / "markdown"
+    pages = tuple(
+        Page(
+            title=heading(body(read(markdown / source))) or posixpath.dirname(source),
+            group="Packages",
+            href=f"{source.removesuffix('.md')}.html",
+            source=source,
+        )
+        for source in go_packages(markdown)
+    )
+    return Reference(
+        title=f"memcoai Go SDK {go_version(root / 'memcoai' / 'version.go')}",
+        summary=f"Go SDK for Memco Shared Memory. Install with `go get {GO_PACKAGE}`.",
+        html=root / "docs" / "_build" / "html",
+        markdown=markdown,
+        pages=pages,
+        # gomarkdoc anchors every symbol with the id doc2go gives it, and emits
+        # every heading at its true depth.
+        markdown_anchors=True,
+        rubric_level=0,
+        rubrics=frozenset(),
+        # doc2go's stylesheet, scripts and icons.
+        unlisted=frozenset({"_/"}),
+    )
+
+
+LANGUAGES = {"python": python_reference, "nodejs": nodejs_reference, "go": go_reference}
 
 
 # ---- assembling ---------------------------------------------------------
 
 
 LINK = re.compile(r"\]\(([^()\s]+)\)")
+
+ANGLED = re.compile(r"\]\(<([^<>()\s]+)>\)")
+"""A link destination in angle brackets, which gomarkdoc writes for every link.
+
+Only one that :data:`LINK` could read once unwrapped: a destination holding a
+space or a parenthesis needs its brackets to stay a link at all.
+"""
+
+
+def unangled(markdown: str) -> str:
+    """Unwrap angle-bracketed link destinations in prose, so they can be read."""
+    return "\n".join(
+        ANGLED.sub(r"](\1)", line) if prose else line for line, prose in prose_lines(markdown)
+    ) + ("\n" if markdown.endswith("\n") else "")
 
 
 def toward(target: str, base: str) -> str:
@@ -676,7 +747,7 @@ def rendered(
     reference: Reference, page: Page, published: dict[str, str], here: str, *, anchors: bool = True
 ) -> str:
     """One page as it is published, with its links resolved for ``here``."""
-    source = body(read(reference.markdown / page.source))
+    source = unangled(body(read(reference.markdown / page.source)))
     text = relink(source, page, published, here, anchors=anchors)
     # After relink: unescaping a bracket first could turn text the page
     # deliberately escaped into a link for the rewriter to follow.

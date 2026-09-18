@@ -17,9 +17,9 @@ import { test } from 'node:test'
 
 import {
   ANSWERED,
+  ENTRY_COPY,
   NESTED_COPY,
   OFFERED,
-  SDK_SHAPED,
   TOOL_COPY,
   TOOL_PREFIX,
   type ToolCopy
@@ -44,7 +44,6 @@ const copies: Readonly<Record<string, ToolCopy>> = TOOL_COPY
 const nested: Readonly<Record<string, string>> = NESTED_COPY
 const offered: readonly string[] = OFFERED
 const answered: readonly string[] = ANSWERED
-const shaped: ReadonlySet<string> = new Set<string>(SDK_SHAPED)
 
 /**
  * The manifest's cross-reference marker.
@@ -73,11 +72,15 @@ const COMPARED = [
   'create_memory.domain',
   'create_memory.query',
   'create_memory.sessionId',
+  'create_memory.source',
+  'create_memory.tags',
   'create_memory.title',
   'enrich_memory.content',
   'enrich_memory.memoryIdx',
   'enrich_memory.sessionId',
+  'enrich_memory.source',
   'enrich_memory.sources',
+  'enrich_memory.tags',
   'enrich_memory.title',
   'get_memory.idx',
   'import_memories.domain',
@@ -87,8 +90,31 @@ const COMPARED = [
   'search.domain',
   'search.query',
   'search.sessionId',
+  'search.tags',
+  'share_feedback.feedback',
   'share_feedback.sessionId',
   'start_session.domain'
+]
+
+/**
+ * The type and field a manifest key describes, when it names a field of the
+ * entries a `tags` or `feedback` list takes, as the generator reads it.
+ */
+function entryField(key: string): [string, string] | undefined {
+  const match = /(?:^|\.)(tags|feedback)\[\]\.(\w+)$/.exec(key)
+  if (match === null) return undefined
+  return [match[1] === 'tags' ? 'Tag' : 'FeedbackRating', match[2]!]
+}
+
+/** The entry fields `ENTRY_COPY` must carry, pinned for the same reason. */
+const ENTRY_COMPARED = [
+  'FeedbackRating.comment',
+  'FeedbackRating.correct',
+  'FeedbackRating.idx',
+  'FeedbackRating.relevant',
+  'Tag.type',
+  'Tag.value',
+  'Tag.version'
 ]
 
 /** The nested paths `NESTED_COPY` must carry, pinned for the same reason. */
@@ -96,7 +122,8 @@ const NESTED_COMPARED = [
   'memories[].insights',
   'memories[].insights[].content',
   'memories[].insights[].title',
-  'memories[].queries'
+  'memories[].queries',
+  'memories[].tags'
 ]
 
 /** The manifest's entry for one tool, failing rather than returning nothing. */
@@ -153,7 +180,6 @@ test('every parameter the manifest names carries its copy', () => {
       // calls it operationId, and camelising the manifest's own spelling would
       // look for an opId that no method takes.
       const field = ALIASES[key] ?? key
-      if (shaped.has(field)) continue // Hand-written where the schema is built.
       const parameter = camelised(field)
       const where = `${name}.${parameter}`
       assert.equal(copy.parameters[parameter], spelled(text), where)
@@ -162,9 +188,8 @@ test('every parameter the manifest names carries its copy', () => {
   }
   assert.deepEqual(compared.sort(), [...COMPARED].sort())
   // The same set from the module's side. Without it the loop above proves only
-  // that nothing was dropped, and a parameter the module invented — or one of
-  // SDK_SHAPED leaking back in with the wire copy on it, which is the case the
-  // omission exists to prevent — is never looked at.
+  // that nothing was dropped, and a parameter the module invented is never
+  // looked at.
   assert.deepEqual(carried.sort(), [...COMPARED].sort())
 })
 
@@ -173,16 +198,35 @@ test('every nested field the manifest names carries its copy', () => {
   for (const [path, text] of Object.entries(
     publishedAs('import_memories').parameters
   )) {
-    if (!path.includes('[')) continue
-    // A nested path is judged by its last segment, which is the field it
-    // describes: memories[].tags is the same tags as the flat one.
-    if (shaped.has(path.slice(path.lastIndexOf('.') + 1))) continue
+    if (!path.includes('[') || entryField(path)) continue
     assert.equal(nested[path], spelled(text), path)
     compared.push(path)
   }
   assert.deepEqual(compared.sort(), [...NESTED_COMPARED].sort())
   // Nothing invented either, so the module states the manifest and no more.
   assert.deepEqual(Object.keys(nested).sort(), [...NESTED_COMPARED].sort())
+})
+
+test('every entry field the manifest names carries its copy, once per type', () => {
+  // The same field is published under every list that takes it; the module
+  // states it once, on the type an entry is.
+  const entries: Readonly<Record<string, Readonly<Record<string, string>>>> =
+    ENTRY_COPY
+  const compared = new Set<string>()
+  for (const tool of published.values()) {
+    for (const [key, text] of Object.entries(tool.parameters)) {
+      const found = entryField(key)
+      if (found === undefined) continue
+      const [type, field] = found
+      assert.equal(entries[type]?.[field], spelled(text), `${tool.name}.${key}`)
+      compared.add(`${type}.${field}`)
+    }
+  }
+  assert.deepEqual([...compared].sort(), ENTRY_COMPARED)
+  const carried = Object.entries(entries).flatMap(([type, fields]) =>
+    Object.keys(fields).map(field => `${type}.${field}`)
+  )
+  assert.deepEqual(carried.sort(), ENTRY_COMPARED)
 })
 
 test('no marker ever reaches a model', () => {

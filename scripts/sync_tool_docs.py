@@ -10,8 +10,8 @@ runtime.
     python3 scripts/sync_tool_docs.py           # write every target
     python3 scripts/sync_tool_docs.py --check   # fail if any has drifted
 
-There are three targets, in two languages, because five of the tables below are
-shared and four copies across two runtimes could not be held to agreeing.
+There are four targets, in three languages, because four of the tables below
+are shared and a copy per runtime could not be held to agreeing.
 
 ``memcoai.agent`` builds a model's tool descriptions by reading the docstrings in
 ``memcoai.operations`` back out with ``inspect.getdoc``, so for the Python targets
@@ -24,6 +24,10 @@ TypeScript keeps no doc comments at runtime, so the Node SDK cannot read its
 copy back out of anything. Its target is a checked-in module,
 ``nodejs/src/gen/toolCopy.ts``, emitted whole rather than rewritten — which
 makes its drift check plain string inequality.
+
+Go keeps no doc comments at runtime either, so the Go SDK's target is
+``go/internal/memory/toolcopy_gen.go``, also emitted whole. It is written as
+positional literals and raw strings, which gofmt has nothing to realign.
 
 Standard library only, so it runs in CI with nothing installed.
 """
@@ -44,6 +48,7 @@ MANIFEST = ROOT / "python" / "memcoai" / "memory" / "tools.json"
 OPERATIONS = ROOT / "python" / "memcoai" / "operations.py"
 TYPES = ROOT / "python" / "memcoai" / "types.py"
 NODE_COPY = ROOT / "nodejs" / "src" / "gen" / "toolCopy.ts"
+GO_COPY = ROOT / "go" / "internal" / "memory" / "toolcopy_gen.go"
 
 LINE_LENGTH = 100
 """Matches ruff's line-length, so the result needs no reformatting."""
@@ -117,18 +122,6 @@ PARAMETER_ALIASES = {"op_id": "operation_id"}
 here: ``RevertMemoryRequest.op_id`` is taken as ``operation_id``, which is what
 the response calls the same handle."""
 
-SDK_SHAPED = frozenset({"tags", "feedback", "source"})
-"""Parameters whose copy stays hand-written, because this SDK's shape is not the
-wire's.
-
-The manifest describes what the MCP server accepts: ``tags`` as a list of XML
-strings, ``feedback`` as a list of ``<feedback ...>`` tags, ``source`` as the
-literal ``'user'`` or ``'agent'``. This SDK takes ``Tag``, ``FeedbackRating`` and
-``DataSource``, and ``memcoai.agent`` builds a model an object schema from those
-types. Writing the wire copy onto them would describe an encoding the schema does
-not accept — the one case where the service's words are wrong for this surface.
-"""
-
 NESTED = {
     "memories[].queries": ("ImportedMemory", "queries"),
     "memories[].insights": ("ImportedMemory", "insights"),
@@ -145,8 +138,20 @@ through the Sphinx reference, not a model: ``import_memories`` is not an offered
 tool, so nothing here is built into a tool schema.
 """
 
+ENTRY_TYPES = {"tags": "Tag", "feedback": "FeedbackRating"}
+"""The list parameters whose entries are one of the SDKs' own types, by the name
+the list goes under.
+
+The manifest describes an entry's fields under every list that takes one —
+``tags[].type`` under search, create_memory and enrich_memory, and
+``memories[].tags[].type`` under import_memories — so each field is written
+once, on the type, and copy that describes one field two ways is refused.
+"""
+
+ENTRY_FIELD = re.compile(r"(?:^|\.)(\w+)\[\]\.(\w+)$")
+
 CARRIED = frozenset({"name", "description", "parameters"})
-"""What the Node module takes out of each of the manifest's tool entries."""
+"""What the Node and Go modules take out of each of the manifest's tool entries."""
 
 DOCUMENT = frozenset({"version", "service", "instructions", "tools"})
 """The manifest's own top-level keys.
@@ -174,7 +179,7 @@ ENTRY = re.compile(r"^ {4}(\w+): (.*)$")
 MARKER = re.compile(r"\$\{tool:([a-z_]+)\}")
 IDENTIFIER = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
 KEY = re.compile(r"^[A-Za-z0-9_$.\[\]]+$")
-"""What a key the Node module is written with may be made of.
+"""What a key the Node and Go modules are written with may be made of.
 
 Every description goes through :func:`checked`; a key is written straight into
 source, so a name carrying a quote, a backslash or a newline would close the
@@ -227,8 +232,34 @@ def resolver(tools: set[str], carried: set[str], qualifier: str):
     return render
 
 
+def entry_field(key: str) -> tuple[str, str] | None:
+    """The type and field a manifest key describes, if it names an entry's field."""
+    match = ENTRY_FIELD.search(key)
+    if match is None or match.group(1) not in ENTRY_TYPES:
+        return None
+    return ENTRY_TYPES[match.group(1)], match.group(2)
+
+
+def entry_copy(tools: dict[str, dict]) -> dict[str, dict[str, str]]:
+    """Each entry type's field copy, in the order the manifest first names it.
+
+    Raises:
+        Drift: If one field is described two ways.
+    """
+    copy: dict[str, dict[str, str]] = {}
+    for name, tool in tools.items():
+        for key, text in tool["parameters"].items():
+            found = entry_field(key)
+            if found is None:
+                continue
+            type_name, field = found
+            if copy.setdefault(type_name, {}).setdefault(field, text) != text:
+                raise Drift(f"{name}.{key}: {type_name}.{field} is described two ways")
+    return copy
+
+
 def node_spelling(name: str) -> str:
-    """Spell one ``${tool:...}`` marker as the Node SDK's copy names it.
+    """Spell one ``${tool:...}`` marker as the Node and Go SDKs' copy names it.
 
     Args:
         name: The operation the marker names.
@@ -255,8 +286,9 @@ def checked(text: str, where: str, *, template: bool = False) -> str:
     Args:
         text: The copy the manifest published.
         where: What is being written, for the message.
-        template: Whether the destination is a TypeScript template literal
-            rather than a docstring, which it can be eaten by in two more ways.
+        template: Whether the destination is a TypeScript template literal or
+            a Go raw string rather than a docstring, which either can eat copy
+            in two more ways.
 
     Returns:
         The copy, unchanged.
@@ -264,12 +296,15 @@ def checked(text: str, where: str, *, template: bool = False) -> str:
     Raises:
         Drift: If it could not be written verbatim.
     """
-    destination = "a template literal" if template else "a docstring"
+    destination = "a template literal or raw string" if template else "a docstring"
     if "\\" in text or '"""' in text:
         raise Drift(f"{where}: copy carries a backslash or a triple quote, which {destination} eats")
     if template:
         if "`" in text:
-            raise Drift(f"{where}: copy carries a backtick, which ends the template literal")
+            raise Drift(
+                f"{where}: copy carries a backtick, which ends the template literal "
+                "or raw string it is written into"
+            )
         if any(line != line.rstrip() for line in text.split("\n")):
             # Inside a template literal that whitespace is copy, and invisible.
             # Anything that strips it — an editor on save, a whitespace hook —
@@ -486,9 +521,8 @@ def sync_operations(source: str, tools: dict[str, dict]) -> str:
                     # than here, so a key that is neither cannot slip through.
                     continue
                 consumed.add(key)
-                if parameter not in SDK_SHAPED:
-                    described[parameter] = checked(text, f"{where}.{key}")
-            undescribed = sorted(takes - IGNORED - SDK_SHAPED - set(described))
+                described[parameter] = checked(text, f"{where}.{key}")
+            undescribed = sorted(takes - IGNORED - set(described))
             if undescribed:
                 raise Drift(f"{where}: the manifest describes no {', '.join(undescribed)}")
             new_sections = [
@@ -524,19 +558,28 @@ def sync_operations(source: str, tools: dict[str, dict]) -> str:
     # renamed or added field is dropped in silence, and the docstring keeps copy
     # the service has retired — the one failure this script exists to prevent.
     published = {key for tool in tools.values() for key in tool["parameters"]}
-    accounted = consumed | set(NESTED)
-    accounted |= {key for key in published if PARAMETER_ALIASES.get(key, key) in SDK_SHAPED}
+    accounted = consumed | set(NESTED) | {key for key in published if entry_field(key)}
     unaccounted = sorted(published - accounted)
     if unaccounted:
         raise Drift(f"the manifest describes fields nothing carries: {', '.join(unaccounted)}")
     return apply(lines, edits)
 
 
+def fields_of(node: ast.ClassDef) -> set[str]:
+    """The fields a dataclass declares."""
+    return {
+        statement.target.id
+        for statement in node.body
+        if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name)
+    }
+
+
 def sync_types(source: str, tools: dict[str, dict]) -> str:
-    """Write the nested request-field copy onto the dataclasses that carry it."""
+    """Write the nested request-field and entry-field copy onto the dataclasses
+    that carry it."""
     lines = sourcelines(source)
     tree = ast.parse(source)
-    wanted = {target for target, _ in NESTED.values()}
+    wanted = {target for target, _ in NESTED.values()} | set(ENTRY_TYPES.values())
     classes = {
         node.name: node
         for node in tree.body
@@ -553,16 +596,29 @@ def sync_types(source: str, tools: dict[str, dict]) -> str:
             if target is None:
                 continue
             class_name, attribute = target
-            if attribute in SDK_SHAPED:
-                continue
             described[class_name][attribute] = checked(text, path)
 
     unresolved = sorted(set(NESTED) - {p for t in tools.values() for p in t["parameters"]})
     if unresolved:
         raise Drift(f"nested paths absent from the manifest: {', '.join(unresolved)}")
 
-    # A dataclass is not a tool, so nothing in its copy references one; the
-    # renderer is still supplied so a marker appearing later is caught, not shipped.
+    # An entry type is described whole or not at all: a field left hand-written
+    # beside published ones would give a model two voices on one object.
+    entries = entry_copy(tools)
+    for class_name in ENTRY_TYPES.values():
+        fields = entries.get(class_name, {})
+        declared = fields_of(classes[class_name])
+        if set(fields) != declared:
+            raise Drift(
+                f"{class_name}: the manifest describes {', '.join(sorted(fields)) or 'no fields'}, "
+                f"but it declares {', '.join(sorted(declared))}"
+            )
+        described[class_name].update(
+            {field: checked(text, f"{class_name}.{field}") for field, text in fields.items()}
+        )
+
+    # A dataclass carries no operation, so every reference in its copy is
+    # qualified against the namespace that does.
     render = resolver(set(tools), set(), "MemoryOperations")
     edits: list[tuple[int, int, list[str]]] = []
     for class_name, node in classes.items():
@@ -572,6 +628,16 @@ def sync_types(source: str, tools: dict[str, dict]) -> str:
         body, indent = read_docstring(lines, constant)
         prose, sections = split_sections(body)
         width = LINE_LENGTH - indent
+        documented = {
+            match.group(1)
+            for header, body_lines in sections
+            if header == "Attributes"
+            for match in map(ENTRY.match, body_lines)
+            if match
+        }
+        undocumented = sorted(set(described[class_name]) - documented)
+        if undocumented:
+            raise Drift(f"{class_name}: no Attributes entry for {', '.join(undocumented)}")
         new_sections = [
             (header, rewrite_entries(body_lines, described[class_name], render, width))
             if header == "Attributes"
@@ -623,7 +689,6 @@ NODE_HEADER = """/**
  * - `title`, a short label with no caller here.
  * - the manifest's top-level `instructions`, because a briefing is built from
  *   the `DomainEntry` and `Instructions` the service returns, not from this.
- * - the parameters in `SDK_SHAPED`, for the reason given there.
  */
 
 /** One operation's copy: what it is for, and what each parameter means. */
@@ -670,19 +735,6 @@ NODE_ANSWERED = """/**
  */"""
 """The doc comment above ``ANSWERED``."""
 
-NODE_SHAPED = """/**
- * The parameters this module leaves out, because this SDK's shape is not the
- * wire's.
- *
- * The manifest describes what the MCP server accepts: tags and feedback as
- * lists of XML elements, and a source as one of two bare literals. This SDK
- * takes its own types and builds a model an object schema from them, so the
- * wire copy would describe an encoding that schema does not accept — the one
- * case where the service's words are wrong for this surface. Their
- * descriptions are hand-written where the schema is built.
- */"""
-"""The doc comment above ``SDK_SHAPED``."""
-
 NODE_TOOLS = """/**
  * Every tool the manifest publishes, by the manifest's own name for it.
  *
@@ -704,6 +756,17 @@ NODE_NESTED = """/**
 """The doc comment above ``NESTED_COPY``."""
 
 
+NODE_ENTRIES = """/**
+ * The copy for the fields of each entry a list argument takes, by the SDK type
+ * an entry is: a tag in `tags`, a rating in `feedback`.
+ *
+ * The manifest describes these under every list that takes one, in the same
+ * words each time, so they are stated once here and the schema builder reads
+ * them for each object it describes.
+ */"""
+"""The doc comment above ``ENTRY_COPY``."""
+
+
 def camelised(name: str) -> str:
     """Spell a snake_case manifest key the way the Node SDK spells a field."""
     head, *rest = name.split("_")
@@ -718,16 +781,6 @@ def node_parameter(key: str) -> str:
     order would emit ``opId``, which no method takes.
     """
     return camelised(PARAMETER_ALIASES.get(key, key))
-
-
-def sdk_shaped(key: str) -> bool:
-    """Whether a manifest key names one of the parameters this SDK reshapes.
-
-    A nested path is judged by its last segment, which is the field it
-    describes: ``memories[].tags`` is the same ``tags`` as the flat one.
-    """
-    field = key.rsplit(".", 1)[-1]
-    return PARAMETER_ALIASES.get(field, field) in SDK_SHAPED
 
 
 def key_of(name: str) -> str:
@@ -797,13 +850,8 @@ def array(name: str, values: list[str] | tuple[str, ...]) -> list[str]:
     ]
 
 
-def tool_entry(name: str, tool: dict) -> tuple[list[str], list[list[str]]]:
-    """Render one tool's entry, and the nested-path members it carries.
-
-    The two go to different tables — a nested path is a request field of
-    ``import_memories``, not a parameter a schema is built from — so they are
-    handed back apart rather than mixed and sorted out afterwards.
-    """
+def refuse_unnamed(name: str, tool: dict) -> None:
+    """Refuse a tool entry carrying a field neither module writes nor names."""
     unnamed = sorted(set(tool) - CARRIED - EXCLUDED)
     if unnamed:
         raise Drift(
@@ -811,11 +859,21 @@ def tool_entry(name: str, tool: dict) -> tuple[list[str], list[list[str]]]:
             f"nor names: {', '.join(unnamed)}"
         )
 
+
+def tool_entry(name: str, tool: dict) -> tuple[list[str], list[list[str]]]:
+    """Render one tool's entry, and the nested-path members it carries.
+
+    The two go to different tables — a nested path is a request field of
+    ``import_memories``, not a parameter a schema is built from — so they are
+    handed back apart rather than mixed and sorted out afterwards.
+    """
+    refuse_unnamed(name, tool)
+
     described: list[list[str]] = []
     nested: list[list[str]] = []
     for key, text in tool["parameters"].items():
-        if sdk_shaped(key):
-            continue
+        if entry_field(key):
+            continue  # Stated once, in ENTRY_COPY.
         where = f"{name}.{key}"
         body = checked(substituted(text, node_spelling), where, template=True)
         if "[" in key:
@@ -854,6 +912,17 @@ def tool_copy_module(tools: dict[str, dict]) -> str:
         entry, paths = tool_entry(name, tool)
         entries.append(entry)
         nested.extend(paths)
+    types: list[list[str]] = []
+    for type_name, fields in entry_copy(tools).items():
+        described = [
+            member(
+                key_of(node_parameter(field)),
+                checked(substituted(text, node_spelling), f"{type_name}.{field}", template=True),
+                "    ",
+            )
+            for field, text in fields.items()
+        ]
+        types.append([f"  {key_of(type_name)}: {{", *joined(described), "  }"])
     return "\n".join(
         [
             NODE_HEADER.replace("{prefix}", TOOL_PREFIX),
@@ -863,14 +932,175 @@ def tool_copy_module(tools: dict[str, dict]) -> str:
             NODE_ANSWERED,
             *array("ANSWERED", ANSWERED),
             "",
-            NODE_SHAPED,
-            *array("SDK_SHAPED", sorted(SDK_SHAPED)),
-            "",
             NODE_TOOLS,
             *table("TOOL_COPY", entries, "Record<string, ToolCopy>"),
             "",
             NODE_NESTED,
             *table("NESTED_COPY", nested, "Record<string, string>"),
+            "",
+            NODE_ENTRIES,
+            *table("ENTRY_COPY", types, "Record<string, Record<string, string>>"),
+            "",
+        ]
+    )
+
+
+# -- the Go target ---------------------------------------------------------
+
+
+GO_HEADER = """// Code generated by scripts/sync_tool_docs.py. DO NOT EDIT.
+
+package memory
+
+// The service's agent-facing tool copy, generated from the tool manifest with
+// every ${{tool:...}} marker resolved: an offered operation is spelled as a model
+// calls it ({prefix}search), one a bound session answers keeps its bare name.
+// Left behind: rpc, annotations, title and the manifest's instructions. Every
+// literal is positional and every copy a raw string, so gofmt has nothing to
+// realign.
+
+// ToolPrefix is prepended to each offered operation's name.
+const ToolPrefix = "{prefix}"
+"""
+"""Everything above the generated tables. ``{prefix}`` is the one hole in it."""
+
+
+def go_parameter(key: str) -> str:
+    """Spell a flat manifest key as the Go agent layer names the argument.
+
+    Aliased and nothing more: the Go SDK names arguments in snake_case, as the
+    manifest does, so ``op_id`` is ``operation_id``.
+    """
+    return PARAMETER_ALIASES.get(key, key)
+
+
+def go_string(name: str) -> str:
+    """Spell a name as a Go string literal.
+
+    Raises:
+        Drift: If the name carries anything :data:`KEY` refuses.
+    """
+    if not KEY.match(name):
+        raise Drift(f"the manifest names something a key cannot spell: {name!r}")
+    return f'"{name}"'
+
+
+def go_raw(text: str, where: str) -> str:
+    """Spell copy as a Go raw string, refusing what one would change.
+
+    Raises:
+        Drift: If the copy could not be written verbatim.
+    """
+    # Before `checked`, whose trailing-whitespace rule would report a carriage
+    # return under a less exact name.
+    if "\r" in text:
+        raise Drift(f"{where}: copy carries a carriage return, which a raw string drops")
+    if "\x00" in text:
+        raise Drift(f"{where}: copy carries a NUL, which Go source cannot hold")
+    if "\ufeff" in text:
+        raise Drift(f"{where}: copy carries a byte order mark, which Go source cannot hold")
+    return f"`{checked(text, where, template=True)}`"
+
+
+def go_lines(text: str, indent: str) -> list[str]:
+    """Split one element into lines, indenting only the first.
+
+    A raw string keeps every byte between its backticks, so indenting the
+    continuations would indent the copy.
+    """
+    lines = text.split("\n")
+    lines[0] = indent + lines[0]
+    return lines
+
+
+def go_pair(name: str, copy: str, indent: str) -> list[str]:
+    """Lay one positional ``{"name", `copy`},`` element out."""
+    return go_lines(f"{{{go_string(name)}, {copy}}},", indent)
+
+
+def go_strings(values) -> str:
+    """Spell a ``[]string`` literal on one line."""
+    return "[]string{" + ", ".join(go_string(value) for value in values) + "}"
+
+
+def go_table(declaration: str, lines: list[str]) -> list[str]:
+    """Render a slice declaration, collapsed to ``T{}`` when it holds nothing."""
+    if not lines:
+        return [f"{declaration}{{}}"]
+    return [f"{declaration}{{", *lines, "}"]
+
+
+def go_tool_entry(name: str, tool: dict) -> tuple[list[str], list[str]]:
+    """Render one tool's element, and the nested-path elements it carries."""
+    refuse_unnamed(name, tool)
+    described: list[str] = []
+    nested: list[str] = []
+    for key, text in tool["parameters"].items():
+        if entry_field(key):
+            continue  # Stated once, in EntryCopies.
+        body = go_raw(substituted(text, node_spelling), f"{name}.{key}")
+        if "[" in key:
+            nested.extend(go_pair(key, body, "\t"))
+        else:
+            described.extend(go_pair(go_parameter(key), body, "\t\t\t"))
+    summary = go_raw(substituted(tool["description"], node_spelling), name)
+    parameters = ["\t\t[]ParameterCopy{", *described, "\t\t},"] if described else ["\t\tnil,"]
+    entry = [
+        "\t{",
+        f"\t\t{go_string(name)},",
+        *go_lines(f"{summary},", "\t\t"),
+        *parameters,
+        "\t},",
+    ]
+    return entry, nested
+
+
+def go_tool_copy_module(tools: dict[str, dict]) -> str:
+    """Render the Go SDK's checked-in copy file, whole.
+
+    Args:
+        tools: The manifest's tool definitions, by name.
+
+    Returns:
+        The contents of ``go/internal/memory/toolcopy_gen.go``.
+
+    Raises:
+        Drift: If any of the copy cannot be written verbatim, or the manifest
+            carries a field this module neither writes nor names.
+    """
+    entries: list[str] = []
+    nested: list[str] = []
+    for name, tool in tools.items():
+        entry, paths = go_tool_entry(name, tool)
+        entries.extend(entry)
+        nested.extend(paths)
+    types: list[str] = []
+    for type_name, fields in entry_copy(tools).items():
+        described: list[str] = []
+        for field, text in fields.items():
+            body = go_raw(substituted(text, node_spelling), f"{type_name}.{field}")
+            described.extend(go_pair(field, body, "\t\t\t"))
+        types.extend(
+            ["\t{", f"\t\t{go_string(type_name)},", "\t\t[]ParameterCopy{", *described, "\t\t},", "\t},"]
+        )
+    return "\n".join(
+        [
+            GO_HEADER.format(prefix=TOOL_PREFIX),
+            "// OfferedTools are the operations offered to a model, in the order a task uses them.",
+            f"var OfferedTools = {go_strings(OFFERED)}",
+            "",
+            "// AnsweredTools are named by the copy but already answered by a bound session.",
+            f"var AnsweredTools = {go_strings(ANSWERED)}",
+            "",
+            "// ToolCopies holds every tool the manifest publishes, in its order.",
+            *go_table("var ToolCopies = []ToolCopy", entries),
+            "",
+            "// NestedCopy holds import_memories' nested request fields, by manifest path.",
+            *go_table("var NestedCopy = []ParameterCopy", nested),
+            "",
+            "// EntryCopies holds the fields of the entries a list argument takes, once per",
+            "// type an entry is.",
+            *go_table("var EntryCopies = []EntryCopy", types),
             "",
         ]
     )
@@ -927,12 +1157,13 @@ def main() -> int:
         (OPERATIONS, sync_operations),
         (TYPES, sync_types),
         (NODE_COPY, lambda _current, published: tool_copy_module(published)),
+        (GO_COPY, lambda _current, published: go_tool_copy_module(published)),
     )
     rendered: list[tuple[Path, str, str]] = []
     for path, sync in targets:
-        # The Node module is generated in full, so a deleted one is written
-        # again rather than being a crash. The two Python files are hand-written
-        # apart from their docstrings and are never absent.
+        # The Node and Go modules are generated in full, so a deleted one is
+        # written again rather than being a crash. The two Python files are
+        # hand-written apart from their docstrings and are never absent.
         current = path.read_text(encoding="utf-8") if path.exists() else ""
         try:
             rendered.append((path, current, sync(current, tools)))

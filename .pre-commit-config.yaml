@@ -14,7 +14,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: &generated '^(proto/|[a-z]+/client/|python/memcoai/memory/|nodejs/src/gen/)'
+        exclude: &generated '^(proto/|[a-z]+/client/|go/internal/client/|python/memcoai/memory/|nodejs/src/gen/|go/internal/memory/toolcopy_gen\.go$)'
       - id: end-of-file-fixer
         exclude: *generated
       - id: check-yaml
@@ -66,6 +66,19 @@ repos:
         language: system
         files: ^nodejs/
 
+      # The Go counterpart of the ruff and prettier hooks: gofmt and goimports
+      # through golangci-lint's formatters, then its linters and static
+      # analysis, at the version go/Makefile pins. Both modules, since the
+      # examples live in go/ too. go/.golangci.yml skips the generated client,
+      # so this and `make -C go lint` cannot disagree about it.
+      - id: golangci-lint
+        name: golangci-lint (Go format and lint)
+        entry: make --no-print-directory -C go format lint
+        language: system
+        pass_filenames: false
+        files: ^go/(.*\.go|\.golangci\.yml)$
+        exclude: ^go/internal/client/
+
       - id: mypy
         name: mypy (strict)
         entry: bash -c 'cd python && uv run mypy'
@@ -79,7 +92,7 @@ repos:
         entry: python3 scripts/verify_provenance.py
         language: system
         pass_filenames: false
-        files: '^(proto/|[a-z]+/client/|python/memcoai/memory/|python/memcoai/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'
+        files: '^(proto/|[a-z]+/client/|go/internal/client/|go/go\.mod|python/memcoai/memory/|python/memcoai/SDK_PROVENANCE\.yaml|python/requirements\.txt|python/pyproject\.toml)'
 
       # The docstrings are where the service's tool copy lands, so they are a
       # generated artefact even though they are hand-editable. Fires on each
@@ -89,4 +102,4 @@ repos:
         entry: python3 scripts/sync_tool_docs.py --check
         language: system
         pass_filenames: false
-        files: '^(scripts/sync_tool_docs\.py|python/memcoai/(memory/tools\.json|operations\.py|types\.py)|nodejs/(client/src/gen/tools\.json|src/gen/toolCopy\.ts))$'
+        files: '^(scripts/sync_tool_docs\.py|python/memcoai/(memory/tools\.json|operations\.py|types\.py)|nodejs/(client/src/gen/tools\.json|src/gen/toolCopy\.ts)|go/internal/(client/tools/tools\.json|memory/toolcopy_gen\.go))$'

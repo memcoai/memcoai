@@ -38,12 +38,8 @@
  *   `tests/agent.test.ts` fails if that table and the generated copy stop
  *   describing the same set of parameters — the check a derived schema would
  *   get for free, and the price of declaring one.
- * - The copy for `tags` and `feedback` is hand-written here, because the
- *   manifest describes them as XML strings while this SDK takes {@link Tag} and
- *   {@link FeedbackRating} objects. `SDK_SHAPED` names those two and `source`
- *   as the parameters the generator would not copy — though `source` is there
- *   for a different reason: it is in `BOUND`, so a model is never offered it at
- *   all and there is nothing for copy to describe.
+ * - The fields of each {@link Tag} and {@link FeedbackRating} are declared
+ *   below too, and described by `ENTRY_COPY`, the manifest's copy for them.
  *
  * Four details of the surface follow from the language rather than from a
  * choice made here:
@@ -68,6 +64,7 @@ import {
 } from './errors.js'
 import {
   ANSWERED,
+  ENTRY_COPY,
   OFFERED,
   TOOL_COPY,
   TOOL_PREFIX,
@@ -327,28 +324,25 @@ type Shape =
   | { readonly kind: 'list'; readonly type: Scalar }
   | { readonly kind: 'objects'; readonly fields: readonly Field[] }
 
-/** {@link Tag} as a model sends it, described where the wire copy cannot be. */
+/** {@link Tag} as a model sends it. */
 const TAG_FIELDS: readonly Field[] = [
   {
     name: 'type',
     type: 'string',
     required: true,
-    description: 'The tag category, such as language or framework.'
+    description: ENTRY_COPY.Tag.type
   },
   {
     name: 'value',
     type: 'string',
     required: true,
-    description: 'The value within that category, such as typescript.'
+    description: ENTRY_COPY.Tag.value
   },
   {
     name: 'version',
     type: 'string',
     required: false,
-    description:
-      'Version of the thing named, where its type carries one. A version on ' +
-      'a type that does not carry one is dropped by the service. Most tag ' +
-      'types carry no version, so this is usually omitted.'
+    description: ENTRY_COPY.Tag.version
   }
 ]
 
@@ -358,28 +352,25 @@ const FEEDBACK_FIELDS: readonly Field[] = [
     name: 'idx',
     type: 'string',
     required: true,
-    description:
-      'The idx of the result being rated, copied exactly as it appeared in a ' +
-      "search response. An insight's idx rates that insight; a memory's own " +
-      'idx rates every insight under it. It cannot be constructed by hand.'
+    description: ENTRY_COPY.FeedbackRating.idx
   },
   {
     name: 'relevant',
     type: 'boolean',
     required: true,
-    description: 'Whether the result was a good match for the query.'
+    description: ENTRY_COPY.FeedbackRating.relevant
   },
   {
     name: 'correct',
     type: 'boolean',
     required: true,
-    description: 'Whether its content was accurate.'
+    description: ENTRY_COPY.FeedbackRating.correct
   },
   {
     name: 'comment',
     type: 'string',
     required: false,
-    description: 'An optional note about this result.'
+    description: ENTRY_COPY.FeedbackRating.comment
   }
 ]
 
@@ -387,32 +378,6 @@ const STRING: Shape = { kind: 'scalar', type: 'string' }
 const STRINGS: Shape = { kind: 'list', type: 'string' }
 const TAGS: Shape = { kind: 'objects', fields: TAG_FIELDS }
 const FEEDBACK: Shape = { kind: 'objects', fields: FEEDBACK_FIELDS }
-
-/**
- * The copy for the two parameters the manifest describes in a shape this SDK
- * does not take.
- *
- * The wire form is a list of XML elements; this SDK takes objects and builds a
- * model an object schema from them, so the service's words would describe an
- * encoding the schema refuses. Everything else about them — when to supply
- * them and what the values mean — is the manifest's, kept.
- */
-const RESHAPED: Readonly<Record<string, string>> = {
-  tags:
-    'Tags describing the subject and context, narrowing what this applies to. ' +
-    'Each is an object with a type and a value, plus an optional version. ' +
-    'Call list_domains for the tag types this domain uses and which of them ' +
-    'take a version. Supply as many as you can determine for the best results.',
-  feedback:
-    '(Required) The ratings, one per search result. Each is an object naming ' +
-    'the result being rated, whether it was a good match for the query, ' +
-    'whether its content was accurate, and optionally why.'
-}
-// Neither string above quotes a cap. The manifest's tags copy quotes none
-// either; its feedback copy quotes two, and they are dropped here on purpose.
-// The service owns those numbers and reports them on a listDomains response, so
-// one written into this file would go stale the moment the service changed it
-// and would then be telling a model something untrue.
 
 // -- the operations offered -----------------------------------------------
 
@@ -521,17 +486,12 @@ const OPERATIONS: readonly Operation[] = [
 
 // -- schemas --------------------------------------------------------------
 
-/**
- * Name the description of one argument, from whichever source owns it.
- *
- * `RESHAPED` first, because a parameter this SDK reshaped is one the generator
- * left out of `TOOL_COPY` on purpose.
- */
+/** Name the description of one argument: the manifest's copy for it. */
 function describes(operation: Operation, argument: Argument): string {
   // Widened from its literal type so a name can be looked up rather than
   // spelled: the interface declares an index signature, the literal does not.
   const copy: ToolCopy = TOOL_COPY[operation.name]
-  return RESHAPED[argument.name] ?? copy.parameters[argument.name]
+  return copy.parameters[argument.name]
 }
 
 /** Describe one object a model may send as a JSON Schema object. */

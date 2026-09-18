@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Verify that the checked-in generated clients match the contract they claim.
 
-Asserts three-way agreement, so a stale or hand-edited export cannot pass
-review unnoticed:
+Asserts agreement between the contract, the generated clients and what each
+SDK declares, so a stale or hand-edited export cannot pass review unnoticed:
 
 1. The contract's SHA-256 matches the checksum every ``SDK_PROVENANCE.yaml``
    records, and all of them name the same server commit.
@@ -10,6 +10,8 @@ review unnoticed:
    the descriptor.
 3. Both match the floors the generated modules assert at import time.
 4. Every language ships the same tool manifest, and it is not empty.
+5. ``go/go.mod`` requires at least what the Go descriptor declares, and the Go
+   client is where the SDK expects it.
 
 Standard library only, so it runs anywhere without installing anything.
 """
@@ -24,13 +26,17 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROTO = ROOT / "proto" / "memcoai" / "memory" / "v1" / "memory.proto"
-# Python's generated client lives inside the package it ships in; Go and Node
-# keep theirs under <lang>/client/.
+# Python's generated client lives inside the package it ships in; Node keeps
+# its under nodejs/client/, and Go under go/internal/client/, where the go
+# command refuses an import from any other module.
 PYTHON_ROOT = ROOT / "python"
 PYTHON_GENERATED = PYTHON_ROOT / "memcoai" / "memory"
+GO_ROOT = ROOT / "go"
+GO_GENERATED = GO_ROOT / "internal" / "client"
+GO_MODULE_PATH = "github.com/memcoai/memcoai/go"
 CONTRACT_PATH = "memcoai/memory/v1/memory.proto"
 MANIFESTS = (
-    "go/client/tools/tools.json",
+    "go/internal/client/tools/tools.json",
     "nodejs/client/src/gen/tools.json",
     "python/memcoai/memory/tools.json",
 )
@@ -106,6 +112,64 @@ def block(text: str, *path: str) -> str:
     return "\n".join(lines[start:end])
 
 
+VERSION = re.compile(r"^v?(\d+)\.(\d+)(?:\.(\d+))?$")
+
+
+def go_requirements(go_mod: str) -> dict[str, str]:
+    """Read the modules a go.mod requires, and at which version.
+
+    Only ``require`` directives count, so an ``exclude`` or ``replace`` line
+    naming the same module can never answer for it.
+
+    Args:
+        go_mod: The go.mod's contents.
+
+    Returns:
+        Module path to version.
+    """
+    found: dict[str, str] = {}
+    inside = False
+    for raw in go_mod.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if inside:
+            if line == ")":
+                inside = False
+            elif line:
+                module, version = line.split()[:2]
+                found[module] = version
+        elif line == "require (":
+            inside = True
+        elif line.startswith("require "):
+            module, version = line.split()[1:3]
+            found[module] = version
+    return found
+
+
+def at_least(have: str | None, want: str | None) -> bool:
+    """Whether one plain release version is at or above another.
+
+    A go.mod ``require`` is a floor, not a pin: minimal version selection never
+    resolves below it and may resolve above it. So the hand-written go.mod may
+    rise above what the generated code needs, but never sit below it.
+
+    Args:
+        have: What go.mod states, such as ``v1.83.1`` or ``1.25.0``.
+        want: What the descriptor declares.
+
+    Returns:
+        ``False`` when either is absent or is not a plain release version, since
+        a prerelease or pseudo-version cannot be compared this way.
+    """
+    have_match, want_match = VERSION.match(have or ""), VERSION.match(want or "")
+    if not (have_match and want_match):
+        return False
+
+    def parts(match: re.Match[str]) -> tuple[int, ...]:
+        return tuple(int(part or 0) for part in match.groups())
+
+    return parts(have_match) >= parts(want_match)
+
+
 def main() -> int:
     """Run every check and report the outcome.
 
@@ -118,7 +182,11 @@ def main() -> int:
 
     digest = hashlib.sha256(PROTO.read_bytes()).hexdigest()
     descriptors = sorted(
-        [*ROOT.glob("*/client/SDK_PROVENANCE.yaml"), *ROOT.glob("python/memcoai/SDK_PROVENANCE.yaml")]
+        [
+            *ROOT.glob("*/client/SDK_PROVENANCE.yaml"),
+            *GO_GENERATED.glob("SDK_PROVENANCE.yaml"),
+            *ROOT.glob("python/memcoai/SDK_PROVENANCE.yaml"),
+        ]
     )
     print(f"contract {PROTO.relative_to(ROOT)} sha256={digest[:16]}...")
 
@@ -238,6 +306,54 @@ def main() -> int:
             all(tool.get("name") and tool.get("description") for tool in tools),
             "every published tool carries a name and a description",
         )
+
+    print("\n5. go/go.mod requires at least what the Go descriptor declares")
+    go_mod_path = GO_ROOT / "go.mod"
+    go_descriptor = GO_GENERATED / "SDK_PROVENANCE.yaml"
+    go_generated = GO_GENERATED / "memcoai" / "memory" / "v1" / "memory.pb.go"
+    go_required = [go_mod_path, go_descriptor, go_generated]
+    for path in go_required:
+        check(path.is_file(), f"{path.relative_to(ROOT)} is present")
+    if all(path.is_file() for path in go_required):
+        go_mod = go_mod_path.read_text("utf-8")
+        declared = block(go_descriptor.read_text("utf-8"), "requires", "go")
+        module = re.search(r"^module\s+(\S+)", go_mod, re.MULTILINE)
+        module_path = module.group(1) if module else None
+        check(
+            module_path == GO_MODULE_PATH,
+            f"go.mod declares module {GO_MODULE_PATH} (found {module_path!r})",
+        )
+        directive = re.search(r"^go\s+(\S+)", go_mod, re.MULTILINE)
+        required = go_requirements(go_mod)
+        stated = {
+            "go": directive.group(1) if directive else None,
+            "grpc": required.get("google.golang.org/grpc"),
+            "protobuf": required.get("google.golang.org/protobuf"),
+        }
+        for key, have in stated.items():
+            want = scalar(declared, key)
+            check(at_least(have, want), f"{key}: go.mod {have!r} >= descriptor {want!r}")
+        stamp = re.search(
+            r"^//\s+protoc-gen-go\s+(v\S+)\s*$", go_generated.read_text("utf-8"), re.MULTILINE
+        )
+        check(stamp is not None, "memory.pb.go stamps a protoc-gen-go version")
+        if stamp:
+            check(
+                at_least(stated["protobuf"], stamp.group(1)),
+                f"protobuf {stated['protobuf']!r} >= gencode {stamp.group(1)}",
+            )
+        # A consumer's build ignores replace directives, so one here would make
+        # this repository build something no consumer can.
+        check(
+            re.search(r"^\s*replace\b", go_mod, re.MULTILINE) is None,
+            "go/go.mod carries no replace directive",
+        )
+    # The export used to write here. A copy reappearing would publish the
+    # generated client as importable API beside the internal one.
+    check(
+        not (GO_ROOT / "client").exists(),
+        "go/client is absent: the Go client is internal, and a copy there would publish it",
+    )
 
     print()
     if failures:

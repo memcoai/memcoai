@@ -1,8 +1,8 @@
 name: Release (Node.js)
 
 # The tag prefix scopes a release to one SDK, so each SDK in this repository
-# versions independently: `python-v*` is the Python pipeline, `go-v*` will be
-# Go's once it has build tooling of its own.
+# versions independently: `python-v*` is the Python pipeline, and `go-v*` the
+# Go one.
 on:
   push:
     tags: ["nodejs-v*"]

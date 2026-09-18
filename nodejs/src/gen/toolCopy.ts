@@ -30,7 +30,6 @@
  * - `title`, a short label with no caller here.
  * - the manifest's top-level `instructions`, because a briefing is built from
  *   the `DomainEntry` and `Instructions` the service returns, not from this.
- * - the parameters in `SDK_SHAPED`, for the reason given there.
  */
 
 /** One operation's copy: what it is for, and what each parameter means. */
@@ -83,19 +82,6 @@ export const OFFERED = [
 export const ANSWERED = ['list_domains', 'start_session'] as const
 
 /**
- * The parameters this module leaves out, because this SDK's shape is not the
- * wire's.
- *
- * The manifest describes what the MCP server accepts: tags and feedback as
- * lists of XML elements, and a source as one of two bare literals. This SDK
- * takes its own types and builds a model an object schema from them, so the
- * wire copy would describe an encoding that schema does not accept — the one
- * case where the service's words are wrong for this surface. Their
- * descriptions are hand-written where the schema is built.
- */
-export const SDK_SHAPED = ['feedback', 'source', 'tags'] as const
-
-/**
  * Every tool the manifest publishes, by the manifest's own name for it.
  *
  * `as const satisfies Record<string, ToolCopy>` on purpose: the literal keys
@@ -113,6 +99,8 @@ Each memory needs a query (what someone would search to find this), a title, and
       domain: `The memory domain to save into. Required unless you pass session_id, which supplies the domain of the session it names. Call list_domains for the domains available to you.`,
       query: `(Required) A query describing what someone would search to find this memory, such as a question or problem statement. Use markdown formatting for readability. At most 1000 characters.`,
       sessionId: `The session this memory was learned during, as returned by start_session or a previous search. It records the memory as part of that series of work, and supplies the memory domain, so the domain argument is not needed and is ignored. Omit it to save a standalone memory.`,
+      source: `The source of the content: user for human-corrected information, or agent for self-discovered insights without human correction. Unset is read as agent.`,
+      tags: `Tags describing the subject and context, narrowing what this applies to. Call list_domains for the tag types this domain uses. Supply as many as you can determine for the best results.`,
       title: `(Required) A short title describing what this memory is about. Title and content together must be at most 5000 characters.`
     }
   },
@@ -124,7 +112,9 @@ Set memory_idx to the memory you want to extend (from search results), or 'new' 
       content: `(Required) The knowledge you want to add. Use markdown formatting for readability. Title and content together must be at most 5000 characters; split a longer finding across several enrichments.`,
       memoryIdx: `(Required) The memory_idx of the memory you are enriching. If you are adding to a new memory, set memory_idx to 'new'.`,
       sessionId: `(Required) The session id you are enriching a memory in. The ID was included in the response from memco_search.`,
+      source: `The source of the content: user for human-corrected information, or agent for self-discovered insights without human correction. Unset is read as agent.`,
       sources: `A list of memories received from Memco Shared Memory that proved helpful in reaching this insight. Up to 20 sources can be included.`,
+      tags: `Tags describing the subject and context, narrowing what this applies to. Call list_domains for the tag types this domain uses. Supply as many as you can determine for the best results.`,
       title: `(Required) A short title describing what you learned. Title and content together must be at most 5000 characters.`
     }
   },
@@ -132,7 +122,7 @@ Set memory_idx to the memory you want to extend (from search results), or 'new' 
     description: `Fetch one memory a search returned, by its idx, and get it back in full.
 Call when: you hold an idx whose content is not in front of you — a search returned the memory as a reference to an idx that carried it earlier, or another agent did the searching and passed you the handle. An insight's idx returns the memory holding it.
 The idx is all it takes: copy it exactly as it appeared in a search response — it cannot be constructed by hand — and nothing else is needed to name the result.
-When a result shows a ref instead of content, ask by the value in its own idx, never the value in its ref. A result rendered as <memory idx="memory-THIS-1" ref="memory-EARLIER-1"> is fetched with "memory-THIS-1": the ref says where the content was delivered, not what to ask for. Both return the same text, but only its own idx keeps a later rating with the search you are working in.`,
+When a result carries a reference instead of content, ask by the value in its own idx, never the value in its reference. A result with idx "memory-THIS-1" and reference "memory-EARLIER-1" is fetched with "memory-THIS-1": the reference says where the content was delivered, not what to ask for. Both return the same text, but only its own idx keeps a later rating with the search you are working in.`,
     parameters: {
       idx: `(Required) The idx of the result to fetch, copied exactly as it appeared in a search response. An insight's idx returns the memory holding it.`
     }
@@ -171,7 +161,8 @@ Results come back most-relevant-first and are bounded, so a search returns what 
     parameters: {
       domain: `The memory domain to search in. Required unless you pass session_id, which supplies the domain of the session it names. Call list_domains for the domains available to you.`,
       query: `(Required) A task-based query from the user such as a question, statement, or task description. To ensure readability, use markdown formatting. At most 1000 characters.`,
-      sessionId: `The session to record this search under, as returned by start_session or a previous search. The search runs in that session's memory domain, so the domain argument is not needed and is ignored. Omit this to start a new session, in which case a domain is required.`
+      sessionId: `The session to record this search under, as returned by start_session or a previous search. The search runs in that session's memory domain, so the domain argument is not needed and is ignored. Omit this to start a new session, in which case a domain is required.`,
+      tags: `Tags describing the subject and context, narrowing what this applies to. Call list_domains for the tag types this domain uses. Supply as many as you can determine for the best results.`
     }
   },
   share_feedback: {
@@ -179,6 +170,7 @@ Results come back most-relevant-first and are bounded, so a search returns what 
 Call when: you have read the results of a search and can judge them — once per search, while its session id is still to hand.
 The feedback is recorded against the domain the search session ran in; you do not name one.`,
     parameters: {
+      feedback: `(Required) A list of ratings, one per result you want to rate. Up to 10 ratings can be included in each call.`,
       sessionId: `(Required) The session you are providing feedback for. The ID was included in the response from memco_search.`
     }
   },
@@ -204,5 +196,28 @@ export const NESTED_COPY = {
   'memories[].insights': `(Required) The findings this memory holds. At least one, at most 10.`,
   'memories[].insights[].content': `(Required) The knowledge to save. Should be a concise, non-trivial finding that others can learn from. Supports markdown formatting.`,
   'memories[].insights[].title': `(Required) A short title describing what this insight is about. Title and content together must be at most 5000 characters.`,
-  'memories[].queries': `(Required) The queries someone would search to find this memory, such as questions or problem statements. At least one, at most 20.`
+  'memories[].queries': `(Required) The queries someone would search to find this memory, such as questions or problem statements. At least one, at most 20.`,
+  'memories[].tags': `Tags describing the subject and context, narrowing what this memory applies to. Call list_domains for the tag types this domain uses.`
 } as const satisfies Record<string, string>
+
+/**
+ * The copy for the fields of each entry a list argument takes, by the SDK type
+ * an entry is: a tag in `tags`, a rating in `feedback`.
+ *
+ * The manifest describes these under every list that takes one, in the same
+ * words each time, so they are stated once here and the schema builder reads
+ * them for each object it describes.
+ */
+export const ENTRY_COPY = {
+  Tag: {
+    type: `(Required) The tag's type, one of the tag types this domain uses.`,
+    value: `(Required) The tag's value within its type.`,
+    version: `The version of what the tag names. Set it only on a tag type that takes a version, as list_domains states.`
+  },
+  FeedbackRating: {
+    comment: `An optional comment on the result, at most 5000 characters.`,
+    correct: `Set to true if the result's content was accurate.`,
+    idx: `(Required) The idx of the result to rate, copied exactly as it appears in the search response; it cannot be constructed by hand. Use an insight's idx for a specific insight, or a memory's own idx to apply the rating to every insight under it.`,
+    relevant: `Set to true if the result was a good match for the query.`
+  }
+} as const satisfies Record<string, Record<string, string>>

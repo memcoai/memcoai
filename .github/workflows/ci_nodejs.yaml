@@ -30,8 +30,9 @@ jobs:
   # ---- cheap, runs on every push -----------------------------------------
 
   # The contract check is language-agnostic and belongs to no single SDK, so it
-  # is defined once and called from here as well as from ci_python.yaml. See the
-  # comment at the top of that file for why it is not a job in either.
+  # is defined once and called from here as well as from ci_python.yaml and
+  # ci_go.yaml. See the comment at the top of that file for why it is not a job
+  # in any of them.
   provenance:
     uses: ./.github/workflows/provenance.yaml
 
