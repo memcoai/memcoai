@@ -126,6 +126,7 @@ docs:  ## Build the reference documentation
 	rm -rf docs/_build/html docs/_build/markdown
 	$(DOC2GO) -out docs/_build/html -home github.com/memcoai/memcoai/go/memcoai \
 		-rel-link-style index -pagefind=false ./memcoai/...
+	cp README.md docs/_build/html/README.md
 	cd memcoai && $(GOMARKDOC) --format github \
 		--output '../docs/_build/markdown/{{.Dir}}/index.md' \
 		--repository.url https://github.com/memcoai/memcoai \
