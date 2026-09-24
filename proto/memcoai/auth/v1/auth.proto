@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package memcoai.auth.v1;
+
+// go_package names the published SDK module, not the repository this contract
+// is generated in: the option travels inside the serialized descriptor and so
+// reaches every client, which must never be told the server's own repository.
+option go_package = "github.com/memcoai/memcoai/go/internal/client/memcoai/auth/v1;authv1";
+
+// TokenService turns an API client's credentials into a bearer token.
+//
+// It is the one service called without a token of its own — the credentials in
+// the request are what authenticate it — so it lives apart from the services that
+// require one, and a client can bootstrap over gRPC with no HTTP client at all.
+// The same exchange is served over REST at /api/external/v1/oauth/token.
+service TokenService {
+  // IssueToken performs the OAuth 2.0 client-credentials grant (RFC 6749 §4.4).
+  //
+  // The token is a bearer credential for the operations the client was created
+  // for, and expires on its own. Every credential failure — an unknown client, a
+  // wrong secret, a retired one — is the same UNAUTHENTICATED answer, so nothing
+  // about which part was wrong is disclosed.
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+}
+
+// IssueTokenRequest carries the credentials and, optionally, a narrower scope and
+// a lifetime.
+message IssueTokenRequest {
+  // grant_type must be "client_credentials"; no other grant is implemented.
+  string grant_type = 1;
+  // client_id identifies the API client, as issued when it was created.
+  string client_id = 2;
+  // client_secret is the secret issued with it, which is never a bearer
+  // credential itself.
+  string client_secret = 3;
+  // scope narrows the token to a subset of what the credential holds. Empty
+  // takes all of them; anything wider is refused.
+  repeated string scope = 4;
+  // ttl_seconds is the lifetime asked for. Zero takes the default of 3600; more
+  // than 86400 is refused.
+  int32 ttl_seconds = 5;
+}
+
+// IssueTokenResponse is the minted token, in the terms RFC 6749 §5.1 states.
+message IssueTokenResponse {
+  // access_token is sent as "Authorization: Bearer <access_token>".
+  string access_token = 1;
+  // token_type is always "Bearer".
+  string token_type = 2;
+  // expires_in is the token's lifetime in seconds.
+  int32 expires_in = 3;
+  // scope is what the token actually carries.
+  repeated string scope = 4;
+}
