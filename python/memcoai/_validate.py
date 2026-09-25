@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from datetime import datetime
 from typing import TypeVar
 
 import grpc
@@ -44,6 +45,7 @@ This is a value the contract defines, not a limit the service tunes.
 
 __all__ = [
     "NEW_MEMORY",
+    "check_aware",
     "check_content",
     "check_count",
     "check_domain",
@@ -53,9 +55,11 @@ __all__ = [
     "check_memory_idx",
     "check_operation_id",
     "check_query",
+    "check_roles",
     "check_scope",
     "check_session_id",
     "check_sources",
+    "check_strings",
     "check_tags",
     "check_title",
     "check_within",
@@ -268,6 +272,67 @@ def check_sources(sources: Iterable[str] | None) -> list[str]:
     for source in materialised:
         check_idx(source, "sources entry")
     return materialised
+
+
+def check_strings(values: Iterable[str] | None, field: str) -> list[str]:
+    """Materialise a collection of strings, refusing a single string in its place.
+
+    Args:
+        values: The strings supplied by the caller, if any. Consumed exactly
+            once, so a generator is safe here.
+        field: Field name, used verbatim in the error message.
+
+    Returns:
+        The strings as a list, empty when none were given.
+
+    Raises:
+        MemcoInvalidRequestError: If a bare string was passed.
+    """
+    if isinstance(values, str):
+        # A str satisfies Iterable[str], so neither the annotation nor the type
+        # checker catches this; iterating it would send one entry per character.
+        raise reject(f"{field} must be a collection of strings, not a single string")
+    return list(values or ())
+
+
+def check_roles(roles: Iterable[str]) -> list[str]:
+    """Validate the roles given to an external user, and materialise them.
+
+    Which roles exist is the service's to say. That at least one is given is
+    not: on the wire an empty list reads as "not given", so the service would
+    see a new user with no roles, or an update that changes nothing, and could
+    not tell the caller why.
+
+    Args:
+        roles: The roles supplied by the caller.
+
+    Returns:
+        The roles as a list.
+
+    Raises:
+        MemcoInvalidRequestError: If a bare string was passed, or no role at all.
+    """
+    materialised = check_strings(roles, "roles")
+    if not materialised:
+        raise reject("roles must name at least one role")
+    return materialised
+
+
+def check_aware(value: datetime | None, field: str) -> None:
+    """Require a datetime that names one instant.
+
+    A naive datetime does not: which zone it meant is a guess, and guessing the
+    local one would move the instant by the machine's offset from UTC.
+
+    Args:
+        value: The datetime supplied by the caller, if any.
+        field: Field name, used verbatim in the error message.
+
+    Raises:
+        MemcoInvalidRequestError: If the datetime carries no time zone.
+    """
+    if value is not None and value.utcoffset() is None:
+        raise reject(f"{field} must carry a time zone, such as datetime.timezone.utc")
 
 
 def check_within(value: str, field: str, cap: int) -> None:

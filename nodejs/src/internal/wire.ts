@@ -122,19 +122,31 @@ export interface ErrorInfo {
   reason: string
   /** Who defined that vocabulary. Memco's is `memco.ai`. */
   domain: string
+  /**
+   * The detail attached beside the reason, key to value — such as the network
+   * a user is already placed in. Empty when there is none.
+   */
+  metadata: Record<string, string>
 }
 
-function decodeErrorInfo(input: Uint8Array): ErrorInfo {
+/**
+ * Read one entry of `ErrorInfo.metadata`, a `map<string, string>`.
+ *
+ * On the wire a map is a repeated message whose field 1 is the key and field 2
+ * the value.
+ */
+function decodeMetadataEntry(input: Uint8Array): [string, string] {
   const reader = new BinaryReader(input)
-  const message: ErrorInfo = { reason: '', domain: '' }
+  let key = ''
+  let value = ''
   while (reader.pos < reader.len) {
     const tag = reader.uint32()
     if (tag === 10) {
-      message.reason = reader.string()
+      key = reader.string()
       continue
     }
     if (tag === 18) {
-      message.domain = reader.string()
+      value = reader.string()
       continue
     }
     if ((tag & 7) === 4 || tag === 0) {
@@ -142,7 +154,36 @@ function decodeErrorInfo(input: Uint8Array): ErrorInfo {
     }
     reader.skip(tag & 7)
   }
-  return message
+  return [key, value]
+}
+
+function decodeErrorInfo(input: Uint8Array): ErrorInfo {
+  const reader = new BinaryReader(input)
+  let reason = ''
+  let domain = ''
+  const entries: [string, string][] = []
+  while (reader.pos < reader.len) {
+    const tag = reader.uint32()
+    if (tag === 10) {
+      reason = reader.string()
+      continue
+    }
+    if (tag === 18) {
+      domain = reader.string()
+      continue
+    }
+    if (tag === 26) {
+      entries.push(decodeMetadataEntry(reader.bytes()))
+      continue
+    }
+    if ((tag & 7) === 4 || tag === 0) {
+      break
+    }
+    reader.skip(tag & 7)
+  }
+  // Collected and then defined rather than assigned key by key: assigning a
+  // `__proto__` key would hit the prototype setter and vanish.
+  return { reason, domain, metadata: Object.fromEntries(entries) }
 }
 
 /**
@@ -150,8 +191,9 @@ function decodeErrorInfo(input: Uint8Array): ErrorInfo {
  *
  * The trailer holds a serialised `google.rpc.Status`, whose field 3 is a
  * repeated `google.protobuf.Any`. Only the `Any` entries carrying an
- * `ErrorInfo` are decoded, and only their `reason` and `domain` are read —
- * they are the whole of what {@link MemcoSunsetError} is discriminated by.
+ * `ErrorInfo` are decoded, and only their `reason`, `domain` and `metadata`
+ * are read — they are the whole of what a sunset or a refused placement is
+ * discriminated by, and what it reports.
  *
  * A malformed, truncated or absent trailer yields an empty array rather than
  * throwing. The caller is reporting a failure already; losing a discriminator
@@ -216,6 +258,12 @@ export function encodeStatusDetails(
   const detail = new BinaryWriter()
   detail.uint32(10).string(info.reason)
   detail.uint32(18).string(info.domain)
+  for (const [key, value] of Object.entries(info.metadata)) {
+    const entry = new BinaryWriter()
+    entry.uint32(10).string(key)
+    entry.uint32(18).string(value)
+    detail.uint32(26).bytes(entry.finish())
+  }
 
   const any = new BinaryWriter()
   any.uint32(10).string(ERROR_INFO_TYPE_URL)

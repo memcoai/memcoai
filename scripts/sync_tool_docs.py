@@ -113,9 +113,11 @@ Sphinx runs nitpicky — so a reference to an operation the class does not carry
 qualified against the namespace that does.
 """
 
-IGNORED = frozenset({"self", "timeout"})
-"""Parameters the manifest has no business describing: the receiver, and a
-deadline that is this SDK's own idea rather than a request field."""
+IGNORED = frozenset({"self", "timeout", "external_id"})
+"""Parameters the manifest has no business describing: the receiver, a
+deadline that is this SDK's own idea rather than a request field, and the
+external user a session acts as, which the SDK turns into the key the session
+carries rather than into a request field."""
 
 PARAMETER_ALIASES = {"op_id": "operation_id"}
 """Manifest keys are request-message field names. One is spelled differently

@@ -43,8 +43,10 @@ Everything under these paths is produced from the service contract and is
 will be silently discarded:
 
 ```
-proto/                    the service contract
+proto/                    the service contracts: memory, admin and auth
 python/memcoai/memory/    generated Python client, and the tool manifest
+python/memcoai/admin/     generated Python client for administration
+python/memcoai/auth/      generated Python client for the token exchange
 go/internal/client/       generated Go client, and the tool manifest
 nodejs/client/            generated Node client, and the tool manifest
 ```
@@ -231,23 +233,26 @@ python/
     types.py          the result types every operation returns
     errors.py         the exception hierarchy
     operations.py     the namespaces reached as client.memory
+    administration.py the namespaces reached as client.networks and client.users
     _sync.py _aio.py  the clients
     _*.py             internals: config, auth, channel, conversion, validation
     memory/           GENERATED — do not edit
+    admin/ auth/      GENERATED — do not edit
   tests/              the test suite
   examples/           runnable programs, checked by the suite
   docs/               Sphinx sources for the reference
 ```
 
-Anything under `memcoai/memory/` comes from the service contract. Everything else
-in `memcoai/` is hand-written, `__init__.py` included.
+Anything under `memcoai/memory/`, `memcoai/admin/` or `memcoai/auth/` comes from
+the service contracts. Everything else in `memcoai/` is hand-written,
+`__init__.py` included.
 
 ## Tests
 
 The suite runs against a **real in-process gRPC server**
 ([`python/tests/fake_server.py`](python/tests/fake_server.py)) on a loopback
-socket. Nothing about gRPC is mocked, so interceptors, metadata, status codes and
-channel teardown are all exercised for real. It needs no network access and no
+socket. Nothing about gRPC is mocked, so metadata, status codes and channel
+teardown are all exercised for real. It needs no network access and no
 API key.
 
 Conventions the suite already follows:
@@ -272,20 +277,39 @@ suite.
 hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
 enrich, revert both writes, confirm the memory is gone — against the real
 service, once per domain the credential can reach, and checks that a creator
-credential is offered every tool. CI runs it on every pull request.
+credential is offered every tool. As an API client, it also administers a
+customer network and its external users, and opens memory sessions acting as
+those users, two of them at once. CI runs it on every pull request.
 
 It leaves nothing behind. It reverts every write it makes and asserts on the
 outcome, and the `written` fixture reverts them again on the way out, so a run
-that fails part-way still cleans up. It imports nothing: an import mints no
-operation id, so nothing could undo it.
+that fails part-way still cleans up. The networks and users it creates are
+deleted the same way, by the `customer_networks` and `external_users` fixtures,
+and a network's deletion takes the memories its users wrote with it, once they
+are ingested. It imports
+nothing: an import mints no operation id, so nothing could undo it.
 
 It is not collected by `make test`: `testpaths` names `tests/` only, so
-`make -C python system-test` is the only way to reach it. Without
-`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
-it, and `make check`, with no server access at all. In CI a missing credential
+`make -C python system-test` is the only way to reach it. The memory tests need
+`MEMCO_API_TOKEN`; the administration and impersonation tests need
+`MEMCO_CLIENT_ID` and `MEMCO_CLIENT_SECRET`, for an API client holding the admin
+grant and the `network-management` and `user-management` scopes. A test without
+its credential reports itself skipped rather than failing, so you can run it,
+and `make check`, with no server access at all. In CI a missing credential
 is a skip only on a pull request; anywhere else — a push to main, or a release —
 it fails, because a publish that silently never reached the service is worse
 than a red build.
+
+Against a local development server, which serves plaintext,
+`MEMCO_API_TLS=false` turns TLS off:
+
+```bash
+MEMCO_API_TOKEN= MEMCO_API_TLS=false MEMCO_API_HOST=localhost:50052 MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=... make -C python system-test
+```
+
+`MEMCO_API_TOKEN` is blanked because a token exported for the live service is
+rejected by the local server, and a rejected token fails collection rather than
+skipping. Set it to a token the local server issued to run the memory tests too.
 
 Two more things to know before changing it. A write is accepted
 **asynchronously**, so the create returns an operation id rather than a memory
@@ -403,6 +427,7 @@ nodejs/
     index.ts          the public API
     types.ts          the result types every operation returns
     errors.ts         the exception hierarchy
+    administration.ts the namespaces reached as client.networks and client.users
     internal/         internals: wire conversion, resources, provenance
     gen/              GENERATED — the service's tool copy
   client/             GENERATED — do not edit
@@ -430,8 +455,8 @@ loads it both ways rather than trusting the build.
 The suite runs against a **real in-process gRPC server**
 ([`nodejs/tests/fakeServer.ts`](nodejs/tests/fakeServer.ts)) on a loopback
 socket, exactly as the Python suite does. Nothing about gRPC is mocked, so
-interceptors, metadata, status codes and channel teardown are all exercised for
-real. It needs no network access and no API key.
+metadata, status codes and channel teardown are all exercised for real. It needs
+no network access and no API key.
 
 It runs on `node:test` and `node:assert` with **zero test dependencies** — no
 runner, no assertion library, no mocking framework. Keep it that way.
@@ -455,20 +480,38 @@ stopped resolving fails the suite.
 hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
 enrich, revert both writes, confirm the memory is gone — against the real
 service, once per domain the credential can reach, and checks that a creator
-credential is offered every tool. CI runs it on every pull request.
+credential is offered every tool. As an API client, it also administers a
+customer network and its external users, and opens memory sessions acting as
+those users, two of them at once. CI runs it on every pull request.
 
 It leaves nothing behind. It reverts every write it makes and asserts on the
 outcome, and a `finally` reverts them again, so a run that fails part-way still
-cleans up. It imports nothing: an import mints no operation id, so nothing
-could undo it.
+cleans up. The networks and users it creates, all named `nodesys-…`, are deleted
+the same way, by `Created` in `systemtest/support.ts`, and a network's deletion
+takes the memories its users wrote with it, once they are ingested. It imports
+nothing: an import mints no operation id, so nothing could undo it.
 
 `npm test` runs the glob `build/js/tests/**`, so it never matches this suite;
-`make -C nodejs system-test` is the only way to reach it. Without
-`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
-it, and `make check`, with no server access at all. In CI a missing credential
+`make -C nodejs system-test` is the only way to reach it. The memory tests need
+`MEMCO_API_TOKEN`; the administration and impersonation tests need
+`MEMCO_CLIENT_ID` and `MEMCO_CLIENT_SECRET`, for an API client holding the admin
+grant and the `network-management` and `user-management` scopes. A test without
+its credential reports itself skipped rather than failing, so you can run it,
+and `make check`, with no server access at all. In CI a missing credential
 is a skip only on a pull request; anywhere else — a push to main, or a release —
 it fails, because a publish that silently never reached the service is worse
 than a red build.
+
+Against a local development server, which serves plaintext,
+`MEMCO_API_TLS=false` turns TLS off:
+
+```bash
+MEMCO_API_TOKEN= MEMCO_API_TLS=false MEMCO_API_HOST=localhost:50052 MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=... make -C nodejs system-test
+```
+
+`MEMCO_API_TOKEN` is blanked because a token exported for the live service is
+rejected by the local server, and a rejected token fails the suite rather than
+skipping. Set it to a token the local server issued to run the memory tests too.
 
 Two more things to know before changing it. A write is accepted
 **asynchronously**, so the create returns an operation id rather than a memory
@@ -634,8 +677,8 @@ configuration in parent directories.
 The suites run against a **real in-process gRPC server**
 ([`go/internal/testserver`](go/internal/testserver/testserver.go)) on a loopback
 port, exactly as the Python suite does. Nothing about gRPC is mocked, so
-interceptors, metadata, status codes and channel teardown are all exercised for
-real. They need no network access and no API key, and always run with `-race`.
+metadata, status codes and channel teardown are all exercised for real. They
+need no network access and no API key, and always run with `-race`.
 
 They use the standard library's `testing` package with **no test
 dependencies** — no assertion library, no mocking framework, no goroutine-leak
@@ -659,28 +702,50 @@ anything before `main`, so an example that stopped working fails the suite.
 runs the whole command lifecycle — create, search, rate, fetch, enrich, revert
 both writes, confirm the memory is gone — against the real service, once per
 domain the credential can reach, and checks that a creator credential is
-offered every tool. CI runs it on every pull request.
+offered every tool. As an API client, it also administers a customer network and
+its external users, and opens memory sessions acting as those users, two of them
+at once; a local proxy captures each session's key so the test can prove the
+service refuses it once the session is closed. CI runs it on every pull request.
 
 It leaves nothing behind. It reverts every write it makes and asserts on the
 outcome, and `t.Cleanup` reverts them again, so a run that fails part-way still
-cleans up. It imports nothing: an import mints no operation id, so nothing
-could undo it. `go test -timeout` kills a test without running its cleanups, so
+cleans up. The networks and users it creates, all named `gosys-…`, are deleted
+the same way, by cleanups registered before each create, and a network's
+deletion takes the memories its users wrote with it, once they are ingested. The
+organisation may be shared with the other SDKs' suites running at the same time,
+so it only ever touches, asserts on or deletes what its own run created. It
+imports nothing: an import mints no operation id, so nothing could undo it. `go test -timeout` kills a test without running its cleanups, so
 the suite stops polling two minutes before that deadline and fails in time to
 clean up.
 
 Its files carry `//go:build systemtest`, so `go test ./...` never compiles
 them; `make -C go system-test` is the only way to reach it, and
-`make -C go typecheck` vets it so it cannot rot unbuilt. Without
-`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
-it, and `make check`, with no server access at all. In CI a missing credential
+`make -C go typecheck` vets it so it cannot rot unbuilt. The memory tests need
+`MEMCO_API_TOKEN`; the administration and impersonation tests need
+`MEMCO_CLIENT_ID` and `MEMCO_CLIENT_SECRET`, for an API client holding the admin
+grant and the `network-management` and `user-management` scopes. A test without
+its credential reports itself skipped rather than failing, so you can run it,
+and `make check`, with no server access at all. In CI a missing credential
 is a skip only on a pull request; anywhere else — a push to main, or a release —
 it fails, because a publish that silently never reached the service is worse
 than a red build.
 
+Against a local development server, which serves plaintext,
+`MEMCO_API_TLS=false` turns TLS off:
+
+```bash
+MEMCO_API_TOKEN= MEMCO_API_TLS=false MEMCO_API_HOST=localhost:50052 MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=... make -C go system-test
+```
+
+`MEMCO_API_TOKEN` is blanked because a token exported for the live service is
+rejected by the local server. Set it to a token the local server issued to run
+the memory tests too.
+
 Two more things to know before changing it. A write is accepted
 **asynchronously**, so the create returns an operation id rather than a memory
 and the memory is not addressable until ingestion has run — every existence
-assertion is a poll, each bounded by a context deadline. And the content it
+assertion is a poll, pausing 1s, 2s, 4s, 8s and then every 15s, each bounded by
+a context deadline. And the content it
 writes is real prose about this SDK on purpose: a write is evaluated on the way
 in and can be rejected downstream, and filler would be dropped and look exactly
 like a broken search path. Keep it distinct from what the other SDKs' suites

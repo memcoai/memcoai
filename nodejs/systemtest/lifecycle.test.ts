@@ -24,20 +24,19 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 import { DataSource, Memco, RevertOutcome } from '../src/index.js'
 import type { Insight, Memory } from '../src/index.js'
-
-const TOKEN_ENV = 'MEMCO_API_TOKEN'
+import { INGEST_TIMEOUT_MS, TOKEN_ENV, pollWaits } from './support.js'
 
 // A write is accepted asynchronously and only becomes searchable once ingestion
 // has run, so every assertion about a memory existing — or having stopped
 // existing — is a poll rather than a single call.
 //
-// The interval is 15s rather than something tighter because the service rate
-// limits search, and the ingestion poll is the one that runs longest: at 5s a
-// single domain could spend 36 searches waiting. Slower polling costs only
-// resolution on when the memory appeared, which nothing here asserts on.
-const INGEST_TIMEOUT_MS = 180_000
+// The pause between attempts starts short and doubles up to 15s (see
+// pollWaits). Ingestion often lands within a few seconds, and a fixed 15s pause
+// spent most of every wait idle. The cap is what keeps a slow wait within the
+// service's search rate limit: at a fixed 5s, one domain's ingestion poll could
+// spend 36 searches, while this spends at most three more than a fixed 15s
+// would.
 const REMOVAL_TIMEOUT_MS = 60_000
-const POLL_INTERVAL_MS = 15_000
 
 /**
  * Run `body` against a live client, closing it whatever happens.
@@ -50,7 +49,9 @@ const POLL_INTERVAL_MS = 15_000
  * instead of failing in seconds.
  */
 async function withClient<T>(body: (client: Memco) => Promise<T>): Promise<T> {
-  const client = new Memco()
+  // The token is named explicitly: CI sets the API client's variables beside
+  // it, and those win over MEMCO_API_TOKEN for a client given no credential.
+  const client = new Memco({ token: process.env[TOKEN_ENV] })
   try {
     await client.connect()
     return await body(client)
@@ -184,6 +185,7 @@ async function searchUntilFound(
   title: string
 ): Promise<[Memory, Insight]> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
+  const waits = pollWaits()
   let seen = 0
   while (Date.now() < deadline) {
     const result = await client.memory.search(query, { sessionId })
@@ -197,7 +199,7 @@ async function searchUntilFound(
     console.log(
       `  waiting for ingestion; search returned ${seen} memories, none ours`
     )
-    await sleep(POLL_INTERVAL_MS)
+    await sleep(waits.next().value)
   }
   return assert.fail(
     `the memory never became searchable within ${INGEST_TIMEOUT_MS / 1000}s ` +
@@ -230,6 +232,7 @@ async function searchUntilTitled(
   title: string
 ): Promise<Insight> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
+  const waits = pollWaits()
   while (Date.now() < deadline) {
     for (const candidate of (await client.memory.search(query, { domain }))
       .memories) {
@@ -238,7 +241,7 @@ async function searchUntilTitled(
       if (found !== undefined) return found
     }
     console.log('  waiting for the enrichment to be ingested')
-    await sleep(POLL_INTERVAL_MS)
+    await sleep(waits.next().value)
   }
   return assert.fail(
     `the enrichment never appeared within ${INGEST_TIMEOUT_MS / 1000}s. Either ingestion ` +
@@ -255,13 +258,14 @@ async function searchUntilAbsent(
   nonce: string
 ): Promise<void> {
   const deadline = Date.now() + REMOVAL_TIMEOUT_MS
+  const waits = pollWaits()
   while (Date.now() < deadline) {
     const found = (
       await client.memory.search(query, { domain })
     ).memories.filter(m => isOurs(m, nonce))
     if (found.length === 0) return
     console.log('  waiting for the removal to take effect')
-    await sleep(POLL_INTERVAL_MS)
+    await sleep(waits.next().value)
   }
   assert.fail(
     `the memory was still returned by search ${REMOVAL_TIMEOUT_MS / 1000}s after a revert ` +
@@ -272,6 +276,7 @@ async function searchUntilAbsent(
 /** Poll GetMemory until it reports the memory is gone. */
 async function getUntilGone(client: Memco, idx: string): Promise<void> {
   const deadline = Date.now() + REMOVAL_TIMEOUT_MS
+  const waits = pollWaits()
   while (Date.now() < deadline) {
     try {
       await client.memory.getMemory(idx)
@@ -282,7 +287,7 @@ async function getUntilGone(client: Memco, idx: string): Promise<void> {
       throw error
     }
     console.log('  waiting for the removal to take effect')
-    await sleep(POLL_INTERVAL_MS)
+    await sleep(waits.next().value)
   }
   assert.fail(
     `${idx} was still retrievable ${REMOVAL_TIMEOUT_MS / 1000}s after a revert ` +

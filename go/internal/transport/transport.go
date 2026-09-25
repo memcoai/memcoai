@@ -1,5 +1,5 @@
-// Package transport dials the service: TLS, the credential, the user agent and
-// the retry policy each service declares.
+// Package transport dials the service: TLS, the user agent and the retry
+// policy each service declares; and holds the credential each call carries.
 package transport
 
 import (
@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -22,9 +21,8 @@ import (
 )
 
 const (
-	AuthHeader            = "authorization"
-	AuthScheme            = "Bearer "
-	UnauthenticatedPrefix = "/grpc.health.v1."
+	AuthHeader = "authorization"
+	AuthScheme = "Bearer "
 )
 
 // Service is one gRPC service and the methods safe to retry on it.
@@ -87,7 +85,6 @@ func Dial(cfg *config.Config, userAgent string, services ...Service) (*grpc.Clie
 	conn, err := grpc.NewClient(cfg.DialTarget(),
 		grpc.WithTransportCredentials(creds),
 		grpc.WithUserAgent(userAgent),
-		grpc.WithUnaryInterceptor(authenticate(cfg.Credential)),
 		// The SDK's policy, not one a resolver publishes: the dns resolver would
 		// otherwise read a service config from TXT records.
 		grpc.WithDisableServiceConfig(),
@@ -100,25 +97,29 @@ func Dial(cfg *config.Config, userAgent string, services ...Service) (*grpc.Clie
 	return conn, nil
 }
 
-// authenticate attaches the credential to every call but the health probe,
-// replacing any the caller's context carries.
-func authenticate(credential *config.Credential) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
-		invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		md, _ := metadata.FromOutgoingContext(ctx)
-		md = md.Copy()
-		if strings.HasPrefix(method, UnauthenticatedPrefix) {
-			md.Delete(AuthHeader)
-		} else {
-			md.Set(AuthHeader, AuthScheme+credential.Reveal())
-		}
-		return invoker(metadata.NewOutgoingContext(ctx, md), method, req, reply, cc, opts...)
-	}
+// Bearer returns ctx carrying exactly one credential, whatever ctx carried.
+// The credential is an argument of each call rather than state of the
+// connection: a client holds several at once, its own and a key per
+// impersonated session, and a call made without one carries none.
+func Bearer(ctx context.Context, credential *config.Credential) context.Context {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	md.Set(AuthHeader, AuthScheme+credential.Reveal())
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+// Anonymous returns ctx carrying no credential, for the health probe and the
+// token exchange.
+func Anonymous(ctx context.Context) context.Context {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	md.Delete(AuthHeader)
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 // Health probes the server as a whole.
 func Health(ctx context.Context, conn grpc.ClientConnInterface) (grpc_health_v1.HealthCheckResponse_ServingStatus, error) {
-	response, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	response, err := grpc_health_v1.NewHealthClient(conn).Check(Anonymous(ctx), &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
 		return grpc_health_v1.HealthCheckResponse_UNKNOWN, fault.FromRPC(ctx, err)
 	}

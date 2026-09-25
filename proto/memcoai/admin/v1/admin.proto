@@ -1,0 +1,439 @@
+syntax = "proto3";
+
+package memcoai.admin.v1;
+
+// go_package names the published SDK module, not the repository this contract
+// is generated in: the option travels inside the serialized descriptor and so
+// reaches every client, which must never be told the server's own repository.
+option go_package = "github.com/memcoai/memcoai/go/internal/client/memcoai/admin/v1;adminv1";
+
+// AdminService is the organization-administration surface: the memory networks
+// an organization places its people in, the identity-provider groups that place
+// them in an enterprise organization, and the external users an organization
+// drives through API keys.
+//
+// It is reached with a token from TokenService, and every call is bounded by the
+// scope that token carries. The organization is always the credential's own — no
+// request names one — so a token can never address another tenant.
+service AdminService {
+  // ListNetworks returns one page of the organization's memory networks.
+  rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse);
+
+  // CreateNetwork adds a memory network. A child takes its parent's domain.
+  rpc CreateNetwork(CreateNetworkRequest) returns (Network);
+
+  // UpdateNetwork changes a network's name, parent, scope, owner or description.
+  rpc UpdateNetwork(UpdateNetworkRequest) returns (Network);
+
+  // DeleteNetwork removes a network and everything that hangs off it, reporting
+  // what the cascade took with it.
+  rpc DeleteNetwork(DeleteNetworkRequest) returns (DeleteNetworkResponse);
+
+  // ListNetworkMembers returns the users assigned to a network.
+  rpc ListNetworkMembers(ListNetworkMembersRequest) returns (ListNetworkMembersResponse);
+
+  // AddNetworkMember assigns a user to a network. A user already placed in
+  // another network of the same domain is refused unless force is set, which
+  // relocates them.
+  rpc AddNetworkMember(AddNetworkMemberRequest) returns (AddNetworkMemberResponse);
+
+  // RemoveNetworkMember unassigns a user from a network.
+  rpc RemoveNetworkMember(RemoveNetworkMemberRequest) returns (RemoveNetworkMemberResponse);
+
+  // ListGroups returns one page of the organization's identity-provider groups.
+  // Available to enterprise organizations only.
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse);
+
+  // ListGroupMembers returns the users in an identity-provider group. Available
+  // to enterprise organizations only.
+  rpc ListGroupMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse);
+
+  // AddNetworkGroup assigns an identity-provider group to a network, which is how
+  // an enterprise organization places people in networks. A group holds one
+  // network per memory domain, so this replaces the group's network in the
+  // network's domain. Available to enterprise organizations only.
+  rpc AddNetworkGroup(AddNetworkGroupRequest) returns (AddNetworkGroupResponse);
+
+  // RemoveNetworkGroup takes an identity-provider group out of a network. Its
+  // networks in other memory domains are unaffected. Available to enterprise
+  // organizations only.
+  rpc RemoveNetworkGroup(RemoveNetworkGroupRequest) returns (RemoveNetworkGroupResponse);
+
+  // ListExternalUsers returns one page of the organization's external users.
+  rpc ListExternalUsers(ListExternalUsersRequest) returns (ListExternalUsersResponse);
+
+  // GetExternalUser returns the external user with the external id.
+  rpc GetExternalUser(GetExternalUserRequest) returns (ExternalUser);
+
+  // CreateExternalUser adds an external user: a principal with no sign-in of its
+  // own, driven through API keys, holding reader, creator or auditor and never
+  // admin. It starts in no network; AddNetworkMember places it in a
+  // customer-scoped one.
+  rpc CreateExternalUser(CreateExternalUserRequest) returns (ExternalUser);
+
+  // UpdateExternalUser changes an external user's name, email or roles. The
+  // external id is immutable.
+  rpc UpdateExternalUser(UpdateExternalUserRequest) returns (ExternalUser);
+
+  // DeleteExternalUser removes an external user and every key it holds.
+  rpc DeleteExternalUser(DeleteExternalUserRequest) returns (DeleteExternalUserResponse);
+
+  // ListExternalUserKeys returns an external user's API keys, without their values.
+  rpc ListExternalUserKeys(ListExternalUserKeysRequest) returns (ListExternalUserKeysResponse);
+
+  // CreateExternalUserKey mints an API key for an external user from a preset its
+  // roles allow, expiring within three months. The key is returned once.
+  rpc CreateExternalUserKey(CreateExternalUserKeyRequest) returns (CreateExternalUserKeyResponse);
+
+  // DeleteExternalUserKey revokes one of an external user's API keys.
+  rpc DeleteExternalUserKey(DeleteExternalUserKeyRequest) returns (DeleteExternalUserKeyResponse);
+
+  // ImpersonateExternalUser mints a short-lived key that acts as the external
+  // user, carrying its content role and, for an auditor, the audit stream. Only an
+  // API client holding the admin grant may call it.
+  rpc ImpersonateExternalUser(ImpersonateExternalUserRequest) returns (ImpersonationKey);
+
+  // EndImpersonation revokes an impersonation key before it expires.
+  rpc EndImpersonation(EndImpersonationRequest) returns (EndImpersonationResponse);
+}
+
+// Network is a memory network: the unit of knowledge scoping an organization
+// places its people in.
+message Network {
+  string id = 1;
+  string name = 2;
+  // parent_id is empty for a root network.
+  string parent_id = 3;
+  // domain is the memory domain the network's tree belongs to.
+  string domain = 4;
+  // region is the network's data residency; "global" replicates everywhere.
+  string region = 5;
+  // scope is "internal" or "customer", where the organization uses it.
+  string scope = 6;
+  // owner names who the network's knowledge belongs to, where it is used.
+  string owner = 7;
+  string description = 8;
+}
+
+// ListNetworksRequest pages through the organization's networks.
+message ListNetworksRequest {
+  // name matches a network's name, case-insensitively.
+  string name = 1;
+  // scope keeps networks of that scope: "internal", "customer" or "none".
+  string scope = 2;
+  // owner matches a network's owner, case-insensitively.
+  string owner = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  // domain keeps networks of that memory domain.
+  string domain = 6;
+  // parent_id keeps the children of that network; "root" keeps root networks.
+  string parent_id = 7;
+  // ids keeps only those networks, at most 100.
+  repeated string ids = 8;
+}
+
+// ListNetworksResponse is one page of networks.
+message ListNetworksResponse {
+  repeated Network networks = 1;
+  int64 total_count = 2;
+}
+
+// CreateNetworkRequest adds a network.
+message CreateNetworkRequest {
+  string name = 1;
+  // parent_id makes this a child of another network, which it takes its domain
+  // from. Empty creates a root.
+  string parent_id = 2;
+  // domain places a root network; empty takes the organization's default. A child
+  // must not name one.
+  string domain = 3;
+  // region is the data residency; empty takes the organization's default.
+  string region = 4;
+  string scope = 5;
+  string owner = 6;
+  string description = 7;
+}
+
+// UpdateNetworkRequest patches a network. An unset field is left as it is; an
+// explicitly empty string clears the field where the field can be cleared.
+message UpdateNetworkRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string parent_id = 3;
+  optional string scope = 4;
+  optional string owner = 5;
+  optional string description = 6;
+}
+
+// DeleteNetworkRequest names the network to remove.
+message DeleteNetworkRequest {
+  string id = 1;
+}
+
+// DeleteNetworkResponse reports what the cascade removed with the network, keyed
+// by table, so a caller can see the cost of the deletion it just made.
+message DeleteNetworkResponse {
+  string id = 1;
+  map<string, int64> removed = 2;
+}
+
+// Member is a user assigned to a network or a group.
+message Member {
+  string user_id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+// ListNetworkMembersRequest pages through a network's members.
+message ListNetworkMembersRequest {
+  string id = 1;
+  string search = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+// ListNetworkMembersResponse is one page of members.
+message ListNetworkMembersResponse {
+  repeated Member members = 1;
+  int64 total_count = 2;
+}
+
+// AddNetworkMemberRequest assigns a user to a network.
+message AddNetworkMemberRequest {
+  string id = 1;
+  string user_id = 2;
+  // force relocates a user already placed in another network of the same
+  // domain. Without it such a request is refused, naming the network they are in.
+  bool force = 3;
+}
+
+// AddNetworkMemberResponse reports the placement, including the network a moved
+// user left.
+message AddNetworkMemberResponse {
+  string id = 1;
+  string user_id = 2;
+  // moved_from names the network the user was relocated out of, if any.
+  string moved_from = 3;
+}
+
+// RemoveNetworkMemberRequest unassigns a user from a network.
+message RemoveNetworkMemberRequest {
+  string id = 1;
+  string user_id = 2;
+}
+
+// RemoveNetworkMemberResponse is the acknowledgement of an unassignment.
+message RemoveNetworkMemberResponse {
+  string id = 1;
+  string user_id = 2;
+}
+
+// Group is an identity-provider group of an enterprise organization. Its name
+// and members are managed by the identity provider.
+message Group {
+  string id = 1;
+  string name = 2;
+  // memory_network_id is the network the group's members are placed in; empty
+  // when the group is assigned to none.
+  string memory_network_id = 3;
+  int64 member_count = 4;
+}
+
+// ListGroupsRequest pages through the organization's groups.
+message ListGroupsRequest {
+  // name matches a group's name, case-insensitively.
+  string name = 1;
+  // network_id keeps groups bound to that network.
+  string network_id = 2;
+  // ids keeps only those groups, at most 100.
+  repeated string ids = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+}
+
+// ListGroupsResponse is one page of groups.
+message ListGroupsResponse {
+  repeated Group groups = 1;
+  int64 total_count = 2;
+}
+
+// ListGroupMembersRequest names the group whose members to list.
+message ListGroupMembersRequest {
+  string id = 1;
+}
+
+// ListGroupMembersResponse is a group's members.
+message ListGroupMembersResponse {
+  repeated Member members = 1;
+}
+
+// AddNetworkGroupRequest assigns a group to a network.
+message AddNetworkGroupRequest {
+  string id = 1;
+  string group_id = 2;
+}
+
+// AddNetworkGroupResponse is the acknowledgement of an assignment.
+message AddNetworkGroupResponse {
+  string id = 1;
+  string group_id = 2;
+}
+
+// RemoveNetworkGroupRequest takes a group out of a network.
+message RemoveNetworkGroupRequest {
+  string id = 1;
+  string group_id = 2;
+}
+
+// RemoveNetworkGroupResponse is the acknowledgement of an unassignment.
+message RemoveNetworkGroupResponse {
+  string id = 1;
+  string group_id = 2;
+}
+
+// ExternalUser is a principal the organization drives through API keys.
+message ExternalUser {
+  string id = 1;
+  // external_id is the caller's own identifier, unique within the organization.
+  string external_id = 2;
+  string name = 3;
+  string email = 4;
+  // roles are the content roles held: reader, creator and auditor.
+  repeated string roles = 5;
+  bool active = 6;
+}
+
+// ListExternalUsersRequest pages through the organization's external users.
+message ListExternalUsersRequest {
+  // search matches the external id, name or email, case-insensitively.
+  string search = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+// ListExternalUsersResponse is one page of external users.
+message ListExternalUsersResponse {
+  repeated ExternalUser external_users = 1;
+  int64 total_count = 2;
+}
+
+// GetExternalUserRequest names an external user.
+message GetExternalUserRequest {
+  string external_id = 1;
+}
+
+// CreateExternalUserRequest adds an external user.
+message CreateExternalUserRequest {
+  string external_id = 1;
+  string name = 2;
+  string email = 3;
+  // roles is a non-empty subset of reader, creator and auditor.
+  repeated string roles = 4;
+}
+
+// UpdateExternalUserRequest patches an external user. An unset field is left as
+// it is; roles, when given, replaces the role set.
+message UpdateExternalUserRequest {
+  string external_id = 1;
+  optional string name = 2;
+  optional string email = 3;
+  repeated string roles = 4;
+}
+
+// DeleteExternalUserRequest names the external user to remove.
+message DeleteExternalUserRequest {
+  string external_id = 1;
+}
+
+// DeleteExternalUserResponse is the acknowledgement of a removal.
+message DeleteExternalUserResponse {
+  string external_id = 1;
+}
+
+// ExternalUserKey describes an API key without its value.
+message ExternalUserKey {
+  string id = 1;
+  string name = 2;
+  // value_prefix is the key's first characters, to recognise it by.
+  string value_prefix = 3;
+  repeated string roles = 4;
+  repeated string scopes = 5;
+  // valid_until is the expiry in Unix seconds.
+  int64 valid_until = 6;
+}
+
+// ListExternalUserKeysRequest names the external user whose keys to list.
+message ListExternalUserKeysRequest {
+  string external_id = 1;
+}
+
+// ListExternalUserKeysResponse is an external user's keys.
+message ListExternalUserKeysResponse {
+  repeated ExternalUserKey keys = 1;
+}
+
+// CreateExternalUserKeyRequest mints a key for an external user.
+message CreateExternalUserKeyRequest {
+  string external_id = 1;
+  string name = 2;
+  // preset is "mcp_rw", "mcp_ro" or "audit", and must be within the external
+  // user's roles.
+  string preset = 3;
+  // valid_until is the expiry in Unix seconds, at most three months ahead; 0
+  // takes three months.
+  int64 valid_until = 4;
+}
+
+// CreateExternalUserKeyResponse carries the key, which is shown only here.
+message CreateExternalUserKeyResponse {
+  ExternalUserKey key = 1;
+  string value = 2;
+}
+
+// DeleteExternalUserKeyRequest names the key to revoke.
+message DeleteExternalUserKeyRequest {
+  string external_id = 1;
+  string key_id = 2;
+}
+
+// DeleteExternalUserKeyResponse is the acknowledgement of a revocation.
+message DeleteExternalUserKeyResponse {
+  string external_id = 1;
+  string key_id = 2;
+}
+
+// ImpersonateExternalUserRequest names the external user to act as.
+message ImpersonateExternalUserRequest {
+  string external_id = 1;
+  // ttl_minutes is the key's lifetime; 0 takes 60 minutes, and at most 1440.
+  int32 ttl_minutes = 2;
+}
+
+// ImpersonationKey is a short-lived key acting as an external user. It is shown
+// only here.
+message ImpersonationKey {
+  string value = 1;
+  // expires_at is the expiry in Unix seconds.
+  int64 expires_at = 2;
+  repeated string roles = 3;
+  repeated string scopes = 4;
+  // key_id names the key to EndImpersonation.
+  string key_id = 5;
+  // expires_in is the seconds left until expires_at as measured by the server,
+  // so a client can time the expiry without trusting its own clock. It is 0 once
+  // the key has expired.
+  int64 expires_in = 6;
+}
+
+// EndImpersonationRequest names the impersonation key to revoke.
+message EndImpersonationRequest {
+  string external_id = 1;
+  string key_id = 2;
+}
+
+// EndImpersonationResponse is the acknowledgement of a revocation.
+message EndImpersonationResponse {
+  string external_id = 1;
+  string key_id = 2;
+}

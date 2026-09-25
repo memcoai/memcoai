@@ -68,15 +68,21 @@ spelling your client exposes rather than shipping them to a model.
 
 ## Other languages
 
-Every SDK above comes from one contract:
-[`proto/memcoai/memory/v1/memory.proto`](proto/memcoai/memory/v1/memory.proto), the
-same file this repository's own Python, Node.js and Go clients are generated
-from. For a language without an SDK here yet, point that language's `protoc`
+Every SDK above comes from three contracts, the same files this repository's own
+Python, Node.js and Go clients are generated from:
+
+| Contract | Service |
+|---|---|
+| [`proto/memcoai/memory/v1/memory.proto`](proto/memcoai/memory/v1/memory.proto) | `MemoryService` — the memory operations |
+| [`proto/memcoai/admin/v1/admin.proto`](proto/memcoai/admin/v1/admin.proto) | `AdminService` — networks, external users and their keys, and impersonation |
+| [`proto/memcoai/auth/v1/auth.proto`](proto/memcoai/auth/v1/auth.proto) | `TokenService` — an API client's credentials exchanged for a token |
+
+For a language without an SDK here yet, point that language's `protoc`
 plugin (or equivalent — `ts-proto`, `tonic-build`, `grpc-java`,
-`grpc_tools.protoc`, …) at it directly:
+`grpc_tools.protoc`, …) at them directly:
 
 ```bash
-protoc --proto_path=proto proto/memcoai/memory/v1/memory.proto \
+protoc --proto_path=proto proto/memcoai/*/v1/*.proto \
   <your language's protoc-gen-* flags here>
 ```
 
@@ -93,6 +99,7 @@ To point a generated client at the service:
 |---|---|
 | Endpoint | `grpc.memco.ai:443`, over TLS |
 | Credential | gRPC metadata `authorization: Bearer <token>` — get one at [memco.ai](https://memco.ai) |
+| Client credentials | `memcoai.auth.v1.TokenService/IssueToken`, served without a credential, exchanges an API client's id and secret for a token to send as above |
 | Health check | `grpc.health.v1.Health`, served without a credential — probe it first to fail fast on a bad endpoint before sending one that needs a token |
 
 Built a client worth sharing? Open an issue before sending a pull request —
@@ -111,6 +118,17 @@ with Memco() as client:                       # reads MEMCO_API_TOKEN
     for memory in result.memories:
         for insight in memory.insights:
             print(insight.title, insight.updated)
+```
+
+To act for your own users, authenticate as an API client and open a session as
+one of them. Its calls carry a key acting as that user, which renews itself and
+is ended when the session closes:
+
+```python
+from memcoai import Memco
+with Memco(client_id="...", client_secret="...") as client:
+    with client.memory.with_session("coding", external_id="customer-42") as session:
+        result = session.search("how should a client authenticate against the memory API")
 ```
 
 See [`python/README.md`](python/README.md) for the full guide and
@@ -132,6 +150,20 @@ for (const memory of result.memories) {
     console.log(insight.title, insight.updated)
   }
 }
+```
+
+To act for your own users, authenticate as an API client and open a session as
+one of them. Its calls carry a key acting as that user, which renews itself and
+is ended when the session closes:
+
+```typescript
+import { Memco } from '@memco/memcoai'
+
+await using client = await new Memco({ clientId: '...', clientSecret: '...' }).connect()
+await using session = await client.memory.withSession('coding', {
+  externalId: 'customer-42'
+})
+const result = await session.search('how should a client authenticate against the memory API')
 ```
 
 See [`nodejs/README.md`](nodejs/README.md) for the full guide and
@@ -166,6 +198,28 @@ for _, memory := range result.Memories {
 }
 ```
 
+To act for your own users, authenticate as an API client and open a session as
+one of them. Its calls carry a key acting as that user, which renews itself and
+is ended when the session closes:
+
+```go
+client, err := memcoai.NewClient(memcoai.Options{ClientID: "...", ClientSecret: "..."})
+if err != nil {
+	log.Fatal(err)
+}
+defer client.Close(ctx)
+if err := client.Connect(ctx); err != nil {
+	log.Fatal(err)
+}
+session, err := client.Memory.StartSession(ctx, "coding", memcoai.ExternalID("customer-42"))
+if err != nil {
+	log.Fatal(err)
+}
+defer session.Close(ctx)
+result, err := session.Search(ctx, "how should a client authenticate against the memory API",
+	memcoai.ScopedSearchParams{})
+```
+
 See [`go/README.md`](go/README.md) for the full guide and
 [`go/examples/`](go/examples/) for runnable programs.
 
@@ -174,10 +228,12 @@ See [`go/README.md`](go/README.md) for the full guide and
 ## Repository layout
 
 ```
-proto/            the service contract, for reference
+proto/            the service contracts, for reference
 python/           the Python SDK
   memcoai/          hand-written SDK
   memcoai/memory/   generated gRPC client, and the tool manifest
+  memcoai/admin/    generated gRPC client for administration
+  memcoai/auth/     generated gRPC client for the token exchange
 nodejs/           the Node.js SDK
   src/              hand-written SDK
   client/           generated gRPC client, and the tool manifest
@@ -189,8 +245,8 @@ scripts/          repository checks, standard library only
 
 Generated code is replaced wholesale each time it is regenerated, so please do
 not edit it by hand — see [CONTRIBUTING.md](CONTRIBUTING.md). For Python that is
-`python/memcoai/memory/`; for Node it is `nodejs/client/`; for Go it is
-`go/internal/client/`.
+`python/memcoai/memory/`, `python/memcoai/admin/` and `python/memcoai/auth/`; for
+Node it is `nodejs/client/`; for Go it is `go/internal/client/`.
 
 ## Contributing
 

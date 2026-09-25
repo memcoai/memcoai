@@ -20,6 +20,8 @@ The hierarchy is arranged so a caller can be as coarse or as precise as it likes
 from __future__ import annotations
 
 import enum
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 import grpc
@@ -28,9 +30,11 @@ from grpc_status import rpc_status
 
 __all__ = [
     "MemcoAPIError",
+    "MemcoAlreadyExistsError",
     "MemcoAuthenticationError",
     "MemcoConfigError",
     "MemcoError",
+    "MemcoExternalUserNeedsCustomerNetworkError",
     "MemcoInternalError",
     "MemcoInvalidRequestError",
     "MemcoNotFoundError",
@@ -41,6 +45,7 @@ __all__ = [
     "MemcoTimeoutError",
     "MemcoUnavailableError",
     "MemcoUnhealthyError",
+    "MemcoUserAlreadyAssignedNetworkError",
     "ResourceExhaustedKind",
     "SunsetKind",
     "from_rpc_error",
@@ -60,6 +65,13 @@ class MemcoConfigError(MemcoError):
 
     Raised for a missing credential, an unparseable host or port, or a
     non-positive timeout. It never indicates a problem with the service.
+
+    One case is raised after requests were sent: a session key that this
+    host's clock already reads as expired when it arrives. That takes a clock
+    well ahead of the service's, and a service that does not report the
+    seconds a key has left, so that its expiry time is read against this
+    host's clock. The key's mint was sent, and so was the EndImpersonation
+    that ends it at once; what needs correcting is the system clock.
 
     Example:
         >>> Memco(token=None)  # with no MEMCO_API_TOKEN set
@@ -157,6 +169,21 @@ class MemcoNotFoundError(MemcoAPIError):
     """
 
 
+class MemcoAlreadyExistsError(MemcoAPIError):
+    """What the call would create already exists.
+
+    Raised for a network name or an external user id that is already taken.
+    Never worth retrying as-is: the same request will be refused again. Either
+    use what already exists, or create it under another name.
+
+    Example:
+        >>> try:
+        ...     client.users.create("customer-42", roles=["reader"])
+        ... except MemcoAlreadyExistsError:
+        ...     user = client.users.get("customer-42")
+    """
+
+
 class MemcoPreconditionFailedError(MemcoAPIError):
     """The service refused the call because some precondition is unmet.
 
@@ -167,9 +194,109 @@ class MemcoPreconditionFailedError(MemcoAPIError):
     wrong state. :attr:`~MemcoAPIError.message` names which, because only the
     service knows.
 
-    The one case this SDK models separately is a sunset, as
-    :class:`MemcoSunsetError`.
+    The cases this SDK models separately, because the service names them with
+    a structured reason: a sunset, as :class:`MemcoSunsetError`, and the two
+    refusals to place a user in a network,
+    :class:`MemcoUserAlreadyAssignedNetworkError` and
+    :class:`MemcoExternalUserNeedsCustomerNetworkError`.
+
+    Attributes:
+        metadata: The detail the service attached to the refusal, key to value,
+            such as the network a user is already in. Empty when it attached
+            none. Read-only, and the service's to extend: a key this SDK does
+            not name is still here.
     """
+
+    def __init__(
+        self,
+        code: grpc.StatusCode,
+        message: str,
+        debug_error_string: str | None = None,
+        metadata: Mapping[str, str] | None = None,
+    ) -> None:
+        """Initialise the error.
+
+        Args:
+            code: The gRPC status code the server returned.
+            message: The status details string.
+            debug_error_string: gRPC's internal diagnostic string, if available.
+            metadata: The detail the service attached, if any.
+        """
+        super().__init__(code, message, debug_error_string)
+        self.metadata: Mapping[str, str] = MappingProxyType(dict(metadata or {}))
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Support pickling and copying.
+
+        The base implementation rebuilds with three arguments and would drop
+        :attr:`metadata`.
+
+        Returns:
+            The callable and arguments that rebuild this exception.
+        """
+        return (
+            self.__class__,
+            (self.code, self.message, self.debug_error_string, dict(self.metadata)),
+        )
+
+
+class MemcoUserAlreadyAssignedNetworkError(MemcoPreconditionFailedError):
+    """The user is already in another network of the same memory domain.
+
+    A user is placed in one network per domain, so placing them in a second is
+    refused rather than done as a silent move. :attr:`~MemcoAPIError.message`
+    names the network they are in. Pass ``force=True`` to
+    :meth:`~memcoai.administration.NetworkOperations.add_member` to move them.
+
+    Attributes:
+        reason: ``"USER_ALREADY_ASSIGNED_NETWORK"``, the reason the service
+            names this refusal by.
+
+    Example:
+        >>> try:
+        ...     client.networks.add_member(project.id, user.id)
+        ... except MemcoUserAlreadyAssignedNetworkError as exc:
+        ...     print(f"moving them out of {exc.current_network_name}")
+        ...     client.networks.add_member(project.id, user.id, force=True)
+    """
+
+    reason = "USER_ALREADY_ASSIGNED_NETWORK"
+
+    @property
+    def current_network_id(self) -> str | None:
+        """The id of the network the user is already in, or ``None`` if unsent."""
+        return self.metadata.get("current_network_id")
+
+    @property
+    def current_network_name(self) -> str | None:
+        """The name of the network the user is already in, or ``None`` if unsent."""
+        return self.metadata.get("current_network_name")
+
+
+class MemcoExternalUserNeedsCustomerNetworkError(MemcoPreconditionFailedError):
+    """An external user can only be placed in a customer-scoped network.
+
+    Refused for a network of any other scope, a domain's root network
+    included. Place the user in a customer network, or create one for them
+    with ``scope="customer"``.
+
+    Attributes:
+        reason: ``"EXTERNAL_USER_NEEDS_CUSTOMER_NETWORK"``, the reason the
+            service names this refusal by.
+
+    Example:
+        >>> try:
+        ...     client.networks.add_member(root.id, user.id)
+        ... except MemcoExternalUserNeedsCustomerNetworkError:
+        ...     print("place them in a customer network instead")
+    """
+
+    reason = "EXTERNAL_USER_NEEDS_CUSTOMER_NETWORK"
+
+    @property
+    def required_network_scope(self) -> str | None:
+        """The scope a network must have to take the user, or ``None`` if unsent."""
+        return self.metadata.get("required_network_scope")
 
 
 class SunsetKind(enum.Enum):
@@ -218,6 +345,7 @@ class MemcoSunsetError(MemcoPreconditionFailedError):
         message: str,
         debug_error_string: str | None,
         kind: SunsetKind,
+        metadata: Mapping[str, str] | None = None,
     ) -> None:
         """Initialise the error.
 
@@ -227,20 +355,24 @@ class MemcoSunsetError(MemcoPreconditionFailedError):
             debug_error_string: gRPC's internal diagnostic string, if available.
             kind: What the service said was blocked. Read from a structured
                 detail rather than inferred, so it is never a guess.
+            metadata: The detail the service attached, if any.
         """
-        super().__init__(code, message, debug_error_string)
+        super().__init__(code, message, debug_error_string, metadata)
         self.kind = kind
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Support pickling and copying.
 
-        The base implementation rebuilds with three arguments and would drop
-        :attr:`kind`, which this class requires.
+        The base implementation rebuilds without :attr:`kind`, which this class
+        requires.
 
         Returns:
             The callable and arguments that rebuild this exception.
         """
-        return (self.__class__, (self.code, self.message, self.debug_error_string, self.kind))
+        return (
+            self.__class__,
+            (self.code, self.message, self.debug_error_string, self.kind, dict(self.metadata)),
+        )
 
 
 class ResourceExhaustedKind(enum.Enum):
@@ -368,6 +500,7 @@ _STATUS_TO_ERROR: dict[grpc.StatusCode, type[MemcoAPIError]] = {
     grpc.StatusCode.PERMISSION_DENIED: MemcoPermissionError,
     grpc.StatusCode.INVALID_ARGUMENT: MemcoInvalidRequestError,
     grpc.StatusCode.NOT_FOUND: MemcoNotFoundError,
+    grpc.StatusCode.ALREADY_EXISTS: MemcoAlreadyExistsError,
     grpc.StatusCode.FAILED_PRECONDITION: MemcoPreconditionFailedError,
     grpc.StatusCode.RESOURCE_EXHAUSTED: MemcoResourceExhaustedError,
     grpc.StatusCode.UNAVAILABLE: MemcoUnavailableError,
@@ -405,23 +538,30 @@ _SUNSET_REASONS = {
     "API_VERSION_SUNSET": SunsetKind.API_VERSION,
 }
 
+_PRECONDITION_REASONS: dict[str, type[MemcoPreconditionFailedError]] = {
+    cls.reason: cls
+    for cls in (MemcoUserAlreadyAssignedNetworkError, MemcoExternalUserNeedsCustomerNetworkError)
+}
 
-def _sunset_kind(err: grpc.RpcError) -> SunsetKind | None:
-    """Read what a ``FAILED_PRECONDITION`` says was blocked, if it says so.
 
-    The status carries a ``google.rpc.ErrorInfo`` in its trailer when the cause
-    is a sunset. Reading it is what separates that from every other precondition
-    failure — a spent billing account, an account in the wrong state — which
-    share the status code and must not be reported as "upgrade your client".
+def _memco_error_info(err: grpc.RpcError) -> tuple[str, dict[str, str]] | None:
+    """Read the reason a ``FAILED_PRECONDITION`` names itself by, and its detail.
+
+    The status carries a ``google.rpc.ErrorInfo`` in its trailer when the
+    service names the cause. Reading it is what separates a sunset, or a refused
+    placement, from every other precondition failure — a spent billing account,
+    an account in the wrong state — which share the status code and must not be
+    reported as "upgrade your client".
 
     Args:
         err: The error raised by the underlying gRPC call.
 
     Returns:
-        What was blocked, or ``None`` when the status carries no Memco-scoped
-        reason this build recognises. ``None`` is the safe answer: it yields the
-        general :class:`MemcoPreconditionFailedError`, whose message still
-        carries whatever the service said.
+        The Memco-scoped reason and the metadata beside it, or ``None`` when the
+        status carries none. ``None`` is the safe answer, as is a reason this
+        build does not know: either yields the general
+        :class:`MemcoPreconditionFailedError`, whose message still carries
+        whatever the service said.
     """
     # Everything the trailer touches is inside the guard, the detail bytes
     # included: a trailer that is absent, malformed, or inconsistent with the
@@ -438,7 +578,7 @@ def _sunset_kind(err: grpc.RpcError) -> SunsetKind | None:
             info = error_details_pb2.ErrorInfo()
             detail.Unpack(info)
             if info.domain == _ERROR_DOMAIN:
-                return _SUNSET_REASONS.get(info.reason)
+                return str(info.reason), {str(k): str(v) for k, v in info.metadata.items()}
     except Exception:
         return None
     return None
@@ -474,7 +614,9 @@ def from_rpc_error(err: grpc.RpcError) -> MemcoAPIError:
     debug = err.debug_error_string() if callable(getattr(err, "debug_error_string", None)) else None
     cls = _STATUS_TO_ERROR.get(code, MemcoInternalError)
     if code is grpc.StatusCode.FAILED_PRECONDITION:
-        kind = _sunset_kind(err)
-        if kind is not None:
-            return MemcoSunsetError(code, details or "", debug, kind)
+        reason, metadata = _memco_error_info(err) or ("", {})
+        if reason in _SUNSET_REASONS:
+            return MemcoSunsetError(code, details or "", debug, _SUNSET_REASONS[reason], metadata)
+        precondition = _PRECONDITION_REASONS.get(reason, MemcoPreconditionFailedError)
+        return precondition(code, details or "", debug, metadata)
     return cls(code, details or "", debug)

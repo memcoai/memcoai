@@ -44,23 +44,37 @@ test:  ## Run the suite against a real in-process gRPC server
 	$(RUN) test
 
 # Not matched by `test`: that runs the glob build/js/tests/**, so the live suite
-# is reached solely through this target. It needs MEMCO_API_TOKEN and a
-# reachable service; without one it reports itself skipped rather than failing.
+# is reached solely through this target. It needs a reachable service: the
+# memory tests need MEMCO_API_TOKEN, and the administration and impersonation
+# tests an API client's MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET. Each test
+# without its credential reports itself skipped rather than failing.
+# MEMCO_API_TLS=false turns TLS off, for a local development server. Blank
+# MEMCO_API_TOKEN unless it is a token that server issued: a token it rejects
+# fails the listing of domains rather than skipping.
+#
+#   MEMCO_API_TOKEN= MEMCO_API_TLS=false MEMCO_API_HOST=localhost:50052 MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=... make -C nodejs system-test
 system-test:  ## Run the live suite against the real service
 	$(RUN) system-test
 
 # Unlike system-test, this does not skip without a credential -- it assumes
-# MEMCO_API_TOKEN, and whatever langchain_agent.ts additionally needs, are
-# already in the environment (see examples/README.md). Compiled first, for the
-# same reason test is: Node's type stripping refuses the generated client's
-# `export enum`, so the examples cannot run from source either. Each one
-# guards its own entry point, so this is exactly what running it by hand would
-# do, once for every file build:test already produced.
+# MEMCO_API_TOKEN, MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET, and whatever
+# langchain_agent.ts additionally needs, are already in the environment (see
+# examples/README.md). Compiled first, for the same reason test is: Node's type
+# stripping refuses the generated client's `export enum`, so the examples
+# cannot run from source either. Each one guards its own entry point, so this
+# is exactly what running it by hand would do, once for every file build:test
+# already produced. The API client's pair reaches only the examples that name
+# it: it wins over MEMCO_API_TOKEN, and would turn every token example into one
+# acting with credentials that read no memory.
 run-examples:  ## Run every example against the real service
 	@$(RUN) build:test
 	@for f in build/js/examples/*.js; do \
 		printf '\033[1m--- %s ---\033[0m\n' "$$f"; \
-		node --enable-source-maps "$$f" || exit 1; \
+		if grep -q MEMCO_CLIENT_ID "$$f"; then \
+			node --enable-source-maps "$$f" || exit 1; \
+		else \
+			env -u MEMCO_CLIENT_ID -u MEMCO_CLIENT_SECRET node --enable-source-maps "$$f" || exit 1; \
+		fi; \
 	done
 
 # 95% of lines is the floor this SDK holds. Branches sit at 90 because V8

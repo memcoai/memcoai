@@ -7,16 +7,21 @@ how they await the response.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from datetime import datetime
 from typing import TypeVar, cast
 
 import grpc
 from google.protobuf.message import Message
 
+from memcoai.admin.v1 import admin_pb2 as _admin_pb
+from memcoai.auth.v1 import auth_pb2 as _auth_pb
 from memcoai.memory.v1 import memory_pb2 as _pb
 
 from . import _validate
+from ._config import ClientConfig
 from ._limits import Known
 from .errors import MemcoNotFoundError
 from .types import DataSource, FeedbackRating, ImportedInsight, ImportedMemory, Tag
@@ -24,17 +29,39 @@ from .types import DataSource, FeedbackRating, ImportedInsight, ImportedMemory, 
 _M = TypeVar("_M", bound=Message)
 
 __all__ = [
+    "add_network_group_request",
+    "add_network_member_request",
+    "create_external_user_key_request",
+    "create_external_user_request",
     "create_memory_request",
+    "create_network_request",
+    "delete_external_user_key_request",
+    "delete_external_user_request",
+    "delete_network_request",
+    "end_impersonation_request",
     "enrich_memory_request",
+    "get_external_user_request",
     "get_memory_request",
+    "impersonate_request",
     "import_memories_requests",
+    "issue_token_request",
     "list_domains_request",
+    "list_external_user_keys_request",
+    "list_external_users_request",
+    "list_group_members_request",
+    "list_groups_request",
+    "list_network_members_request",
+    "list_networks_request",
     "list_tools_request",
+    "remove_network_group_request",
+    "remove_network_member_request",
     "require_memory",
     "revert_memory_request",
     "search_request",
     "share_feedback_request",
     "start_session_request",
+    "update_external_user_request",
+    "update_network_request",
 ]
 
 
@@ -135,6 +162,37 @@ def _source(source: DataSource) -> _pb.DataSource:
         typing concern only and changes nothing at runtime.
     """
     return cast(_pb.DataSource, source.value)
+
+
+def issue_token_request(config: ClientConfig) -> _auth_pb.IssueTokenRequest:
+    """Build the ``IssueToken`` request exchanging the client's credentials for a token.
+
+    Args:
+        config: Resolved client settings holding the client credentials.
+
+    Returns:
+        The request message. It names no scope, which takes everything the API
+        client was granted, and a ``token_lifetime`` of ``None`` is sent as 0,
+        which takes the service's default.
+
+    Raises:
+        MemcoInvalidRequestError: If a value cannot be sent, such as a
+            ``token_lifetime`` too large for the wire.
+    """
+    with contextlib.suppress(UnicodeError, ValueError):
+        return _auth_pb.IssueTokenRequest(
+            grant_type="client_credentials",
+            client_id=config.client_id,
+            client_secret=config.client_secret,
+            ttl_seconds=config.token_lifetime or 0,
+        )
+    # Raised outside the handler, unlike _built's, so the encoding error is not
+    # even this one's context: it holds the text it refused, and here that may
+    # be the secret.
+    raise _validate.reject(
+        "the client credentials or token_lifetime cannot be sent: a credential is "
+        "not valid Unicode, or the lifetime is too large"
+    )
 
 
 def list_domains_request() -> _pb.ListDomainsRequest:
@@ -528,3 +586,526 @@ def require_memory(response: _pb.GetMemoryResponse, idx: str) -> _pb.MemoryResul
     if not response.HasField("memory"):
         raise MemcoNotFoundError(grpc.StatusCode.NOT_FOUND, f"no memory was returned for {idx!r}")
     return response.memory
+
+
+# -- administration -------------------------------------------------------
+#
+# An argument left as None is handed to the message as it is: protobuf reads a
+# keyword given None as a field never set. That is what leaves an unused filter
+# unsent, and what lets a patch tell "leave this alone" (None) from "clear
+# this" ("") on the fields the contract marks optional.
+
+
+def list_networks_request(
+    *,
+    name: str | None,
+    scope: str | None,
+    owner: str | None,
+    domain: str | None,
+    parent_id: str | None,
+    ids: Iterable[str] | None,
+    page: int | None,
+    page_size: int | None,
+) -> _admin_pb.ListNetworksRequest:
+    """Validate and build a ``ListNetworks`` request.
+
+    Args:
+        name: Keeps networks with this name.
+        scope: Keeps networks of this scope.
+        owner: Keeps networks with this owner.
+        domain: Keeps networks of this memory domain.
+        parent_id: Keeps the children of this network.
+        ids: Keeps only these networks. Consumed exactly once.
+        page: The page to return.
+        page_size: How many networks a page holds.
+
+    Returns:
+        The request message, carrying only the filters given.
+
+    Raises:
+        MemcoInvalidRequestError: If ``ids`` is a single string, or a value
+            cannot be sent.
+    """
+    wanted = _validate.check_strings(ids, "ids")
+    return _built(
+        lambda: _admin_pb.ListNetworksRequest(
+            name=name,
+            scope=scope,
+            owner=owner,
+            domain=domain,
+            parent_id=parent_id,
+            ids=wanted,
+            page=page,
+            page_size=page_size,
+        )
+    )
+
+
+def create_network_request(
+    *,
+    name: str,
+    parent_id: str | None,
+    domain: str | None,
+    region: str | None,
+    scope: str | None,
+    owner: str | None,
+    description: str | None,
+) -> _admin_pb.CreateNetworkRequest:
+    """Build a ``CreateNetwork`` request.
+
+    Nothing is checked here: every field is one the service defaults or
+    refuses on its own terms.
+
+    Args:
+        name: The network's name.
+        parent_id: The network to create this one under.
+        domain: The memory domain of a root network.
+        region: The network's data residency.
+        scope: The network's scope.
+        owner: Who the network's knowledge belongs to.
+        description: What the network is for.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If a value cannot be sent.
+    """
+    return _built(
+        lambda: _admin_pb.CreateNetworkRequest(
+            name=name,
+            parent_id=parent_id,
+            domain=domain,
+            region=region,
+            scope=scope,
+            owner=owner,
+            description=description,
+        )
+    )
+
+
+def update_network_request(
+    network_id: str,
+    *,
+    name: str | None,
+    parent_id: str | None,
+    scope: str | None,
+    owner: str | None,
+    description: str | None,
+) -> _admin_pb.UpdateNetworkRequest:
+    """Validate and build an ``UpdateNetwork`` request.
+
+    Args:
+        network_id: The network to change.
+        name: The new name, or ``None`` to leave it.
+        parent_id: The new parent, or ``None`` to leave it.
+        scope: The new scope, or ``None`` to leave it.
+        owner: The new owner, or ``None`` to leave it.
+        description: The new description, or ``None`` to leave it.
+
+    Returns:
+        The request message, with only the fields given set.
+
+    Raises:
+        MemcoInvalidRequestError: If the network is blank, or a value cannot
+            be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    return _built(
+        lambda: _admin_pb.UpdateNetworkRequest(
+            id=network_id,
+            name=name,
+            parent_id=parent_id,
+            scope=scope,
+            owner=owner,
+            description=description,
+        )
+    )
+
+
+def delete_network_request(network_id: str) -> _admin_pb.DeleteNetworkRequest:
+    """Validate and build a ``DeleteNetwork`` request.
+
+    Args:
+        network_id: The network to delete.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the network is blank, or cannot be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    return _built(lambda: _admin_pb.DeleteNetworkRequest(id=network_id))
+
+
+def list_network_members_request(
+    network_id: str, *, search: str | None, page: int | None, page_size: int | None
+) -> _admin_pb.ListNetworkMembersRequest:
+    """Validate and build a ``ListNetworkMembers`` request.
+
+    Args:
+        network_id: The network whose members to list.
+        search: Keeps members matching this text.
+        page: The page to return.
+        page_size: How many members a page holds.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the network is blank, or a value cannot
+            be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    return _built(
+        lambda: _admin_pb.ListNetworkMembersRequest(
+            id=network_id, search=search, page=page, page_size=page_size
+        )
+    )
+
+
+def add_network_member_request(
+    network_id: str, user_id: str, *, force: bool
+) -> _admin_pb.AddNetworkMemberRequest:
+    """Validate and build an ``AddNetworkMember`` request.
+
+    Args:
+        network_id: The network to place the user in.
+        user_id: The user to place.
+        force: Whether to move a user already placed in another network of the
+            same memory domain.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the network or the user is blank, or a
+            value cannot be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    _validate.check_idx(user_id, "user_id")
+    return _built(
+        lambda: _admin_pb.AddNetworkMemberRequest(id=network_id, user_id=user_id, force=force)
+    )
+
+
+def remove_network_member_request(
+    network_id: str, user_id: str
+) -> _admin_pb.RemoveNetworkMemberRequest:
+    """Validate and build a ``RemoveNetworkMember`` request.
+
+    Args:
+        network_id: The network to take the user out of.
+        user_id: The user to take out.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the network or the user is blank, or a
+            value cannot be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    _validate.check_idx(user_id, "user_id")
+    return _built(lambda: _admin_pb.RemoveNetworkMemberRequest(id=network_id, user_id=user_id))
+
+
+def list_groups_request(
+    *,
+    name: str | None,
+    network_id: str | None,
+    ids: Iterable[str] | None,
+    page: int | None,
+    page_size: int | None,
+) -> _admin_pb.ListGroupsRequest:
+    """Validate and build a ``ListGroups`` request.
+
+    Args:
+        name: Keeps groups with this name.
+        network_id: Keeps groups bound to this network.
+        ids: Keeps only these groups. Consumed exactly once.
+        page: The page to return.
+        page_size: How many groups a page holds.
+
+    Returns:
+        The request message, carrying only the filters given.
+
+    Raises:
+        MemcoInvalidRequestError: If ``ids`` is a single string, or a value
+            cannot be sent.
+    """
+    wanted = _validate.check_strings(ids, "ids")
+    return _built(
+        lambda: _admin_pb.ListGroupsRequest(
+            name=name, network_id=network_id, ids=wanted, page=page, page_size=page_size
+        )
+    )
+
+
+def list_group_members_request(group_id: str) -> _admin_pb.ListGroupMembersRequest:
+    """Validate and build a ``ListGroupMembers`` request.
+
+    Args:
+        group_id: The group whose members to list.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the group is blank, or cannot be sent.
+    """
+    _validate.check_idx(group_id, "group_id")
+    return _built(lambda: _admin_pb.ListGroupMembersRequest(id=group_id))
+
+
+def add_network_group_request(network_id: str, group_id: str) -> _admin_pb.AddNetworkGroupRequest:
+    """Validate and build an ``AddNetworkGroup`` request.
+
+    Args:
+        network_id: The network to assign the group to.
+        group_id: The group to assign.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the network or the group is blank, or a
+            value cannot be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    _validate.check_idx(group_id, "group_id")
+    return _built(lambda: _admin_pb.AddNetworkGroupRequest(id=network_id, group_id=group_id))
+
+
+def remove_network_group_request(
+    network_id: str, group_id: str
+) -> _admin_pb.RemoveNetworkGroupRequest:
+    """Validate and build a ``RemoveNetworkGroup`` request.
+
+    Args:
+        network_id: The network to take the group out of.
+        group_id: The group to take out.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the network or the group is blank, or a
+            value cannot be sent.
+    """
+    _validate.check_idx(network_id, "network_id")
+    _validate.check_idx(group_id, "group_id")
+    return _built(lambda: _admin_pb.RemoveNetworkGroupRequest(id=network_id, group_id=group_id))
+
+
+def list_external_users_request(
+    *, search: str | None, page: int | None, page_size: int | None
+) -> _admin_pb.ListExternalUsersRequest:
+    """Build a ``ListExternalUsers`` request.
+
+    Args:
+        search: Keeps users matching this text.
+        page: The page to return.
+        page_size: How many users a page holds.
+
+    Returns:
+        The request message, carrying only the filters given.
+
+    Raises:
+        MemcoInvalidRequestError: If a value cannot be sent.
+    """
+    return _built(
+        lambda: _admin_pb.ListExternalUsersRequest(search=search, page=page, page_size=page_size)
+    )
+
+
+def get_external_user_request(external_id: str) -> _admin_pb.GetExternalUserRequest:
+    """Validate and build a ``GetExternalUser`` request.
+
+    Args:
+        external_id: The user to fetch, by your own id for them.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the id is blank, or cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    return _built(lambda: _admin_pb.GetExternalUserRequest(external_id=external_id))
+
+
+def create_external_user_request(
+    external_id: str, *, roles: Iterable[str], name: str | None, email: str | None
+) -> _admin_pb.CreateExternalUserRequest:
+    """Validate and build a ``CreateExternalUser`` request.
+
+    Args:
+        external_id: Your own id for the new user.
+        roles: The roles the user holds. Consumed exactly once.
+        name: The user's name.
+        email: The user's email address.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the id is blank, ``roles`` is a single
+            string or names no role, or a value cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    held = _validate.check_roles(roles)
+    return _built(
+        lambda: _admin_pb.CreateExternalUserRequest(
+            external_id=external_id, name=name, email=email, roles=held
+        )
+    )
+
+
+def update_external_user_request(
+    external_id: str, *, name: str | None, email: str | None, roles: Iterable[str] | None
+) -> _admin_pb.UpdateExternalUserRequest:
+    """Validate and build an ``UpdateExternalUser`` request.
+
+    Args:
+        external_id: The user to change.
+        name: The new name, or ``None`` to leave it.
+        email: The new email address, or ``None`` to leave it.
+        roles: The roles to replace the user's with, or ``None`` to leave
+            them. Consumed exactly once.
+
+    Returns:
+        The request message, with only the fields given set.
+
+    Raises:
+        MemcoInvalidRequestError: If the id is blank, ``roles`` is given as a
+            single string or naming no role, or a value cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    held = None if roles is None else _validate.check_roles(roles)
+    return _built(
+        lambda: _admin_pb.UpdateExternalUserRequest(
+            external_id=external_id, name=name, email=email, roles=held
+        )
+    )
+
+
+def delete_external_user_request(external_id: str) -> _admin_pb.DeleteExternalUserRequest:
+    """Validate and build a ``DeleteExternalUser`` request.
+
+    Args:
+        external_id: The user to delete.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the id is blank, or cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    return _built(lambda: _admin_pb.DeleteExternalUserRequest(external_id=external_id))
+
+
+def list_external_user_keys_request(external_id: str) -> _admin_pb.ListExternalUserKeysRequest:
+    """Validate and build a ``ListExternalUserKeys`` request.
+
+    Args:
+        external_id: The user whose keys to list.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the id is blank, or cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    return _built(lambda: _admin_pb.ListExternalUserKeysRequest(external_id=external_id))
+
+
+def create_external_user_key_request(
+    external_id: str, *, preset: str, name: str | None, valid_until: datetime | None
+) -> _admin_pb.CreateExternalUserKeyRequest:
+    """Validate and build a ``CreateExternalUserKey`` request.
+
+    Args:
+        external_id: The user to create the key for.
+        preset: The kind of key to create.
+        name: The key's name.
+        valid_until: When the key expires, or ``None`` for the service's
+            default.
+
+    Returns:
+        The request message, with the expiry as Unix seconds.
+
+    Raises:
+        MemcoInvalidRequestError: If the id is blank, the expiry names no time
+            zone, or a value cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    _validate.check_aware(valid_until, "valid_until")
+    return _built(
+        lambda: _admin_pb.CreateExternalUserKeyRequest(
+            external_id=external_id,
+            name=name,
+            preset=preset,
+            valid_until=None if valid_until is None else int(valid_until.timestamp()),
+        )
+    )
+
+
+def delete_external_user_key_request(
+    external_id: str, key_id: str
+) -> _admin_pb.DeleteExternalUserKeyRequest:
+    """Validate and build a ``DeleteExternalUserKey`` request.
+
+    Args:
+        external_id: The user the key belongs to.
+        key_id: The key to delete.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If the id or the key is blank, or a value
+            cannot be sent.
+    """
+    _validate.check_idx(external_id, "external_id")
+    _validate.check_idx(key_id, "key_id")
+    return _built(
+        lambda: _admin_pb.DeleteExternalUserKeyRequest(external_id=external_id, key_id=key_id)
+    )
+
+
+def impersonate_request(external_id: str) -> _admin_pb.ImpersonateExternalUserRequest:
+    """Build an ``ImpersonateExternalUser`` request minting a session's key.
+
+    Args:
+        external_id: The user the key acts as, already checked for blankness by
+            the session opening it.
+
+    Returns:
+        The request message. It asks for no lifetime, which takes the
+        service's default: the session renews its key before it expires, so a
+        longer one would only leave a leaked key usable for longer.
+
+    Raises:
+        MemcoInvalidRequestError: If the id cannot be sent.
+    """
+    return _built(lambda: _admin_pb.ImpersonateExternalUserRequest(external_id=external_id))
+
+
+def end_impersonation_request(external_id: str, key_id: str) -> _admin_pb.EndImpersonationRequest:
+    """Build an ``EndImpersonation`` request revoking a session's key.
+
+    Args:
+        external_id: The user the key acts as.
+        key_id: The key to revoke, as the service named it when minting it.
+
+    Returns:
+        The request message.
+
+    Raises:
+        MemcoInvalidRequestError: If a value cannot be sent.
+    """
+    return _built(lambda: _admin_pb.EndImpersonationRequest(external_id=external_id, key_id=key_id))

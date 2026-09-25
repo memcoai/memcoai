@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -278,5 +279,201 @@ func TestTheTokenIsInNoRendering(t *testing.T) {
 		if strings.Contains(rendered, "sk-secret-token") || strings.Contains(rendered, "736b2d") {
 			t.Errorf("the token is visible in %q", rendered)
 		}
+	}
+}
+
+var withPair = environment{ClientIDEnv: " env-id ", ClientSecretEnv: " env-secret\n"}
+
+func TestClientCredentialsComeFromTheOptions(t *testing.T) {
+	config, out := resolved(t, Input{ClientID: " arg-id ", ClientSecret: " arg-secret "}, withPair)
+	if config.ClientID != "arg-id" || config.ClientSecret.Reveal() != "arg-secret" || config.Credential != nil {
+		t.Fatalf("got %+v", config)
+	}
+	if !strings.Contains(out, `msg="client credentials taken from the client_id and client_secret arguments"`) {
+		t.Fatalf("got %q", out)
+	}
+}
+
+func TestClientCredentialsInTheEnvironmentWinOverATokenThere(t *testing.T) {
+	config, out := resolved(t, Input{}, environment{
+		TokenEnv: "env-token", ClientIDEnv: " env-id ", ClientSecretEnv: " env-secret\n",
+	})
+	if config.ClientID != "env-id" || config.ClientSecret.Reveal() != "env-secret" || config.Credential != nil {
+		t.Fatalf("got %+v", config)
+	}
+	if !strings.Contains(out, `msg="client credentials taken from MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET"`) {
+		t.Fatalf("got %q", out)
+	}
+}
+
+func TestATokenOptionIgnoresClientCredentialsInTheEnvironment(t *testing.T) {
+	for name, env := range map[string]environment{
+		"a pair":      withPair,
+		"half a pair": {ClientIDEnv: "env-id"},
+	} {
+		config, _ := resolved(t, Input{Token: "arg-token"}, env)
+		if config.Credential.Reveal() != "arg-token" || config.ClientSecret != nil {
+			t.Errorf("%s: got %+v", name, config)
+		}
+	}
+}
+
+func TestClientCredentialsSkipTheLegacyTokenAndItsWarning(t *testing.T) {
+	_, out := resolved(t, Input{}, environment{LegacyTokenEnv: "legacy", ClientIDEnv: "id", ClientSecretEnv: "secret"})
+	if strings.Contains(out, LegacyTokenEnv) {
+		t.Fatalf("the legacy variable was read: %q", out)
+	}
+}
+
+func TestABlankPairInTheEnvironmentReadsAsUnset(t *testing.T) {
+	config, _ := resolved(t, Input{}, environment{TokenEnv: "env-token", ClientIDEnv: "  ", ClientSecretEnv: ""})
+	if config.Credential.Reveal() != "env-token" || config.ClientSecret != nil {
+		t.Fatalf("got %+v", config)
+	}
+}
+
+func TestClientCredentialsThatCannotStandAreRefused(t *testing.T) {
+	cases := map[string]struct {
+		in  Input
+		env environment
+	}{
+		"pass either token=... or client_id=... with client_secret=..., not both": {
+			Input{Token: "t", ClientID: "id", ClientSecret: "secret"}, nil,
+		},
+		"client credentials need both client_id and client_secret; client_secret is missing": {
+			Input{ClientID: "id"}, withToken,
+		},
+		"client credentials need both client_id and client_secret; client_id is missing": {
+			Input{ClientSecret: "secret"}, withToken,
+		},
+		"the client_id passed to the client is blank":             {Input{ClientID: " ", ClientSecret: "secret"}, nil},
+		"the client_secret passed to the client is blank":         {Input{ClientID: "id", ClientSecret: "\t"}, nil},
+		"the client_secret cannot be sent: it is not valid UTF-8": {Input{ClientID: "id", ClientSecret: "bad\xff"}, nil},
+		"MEMCO_CLIENT_ID or MEMCO_CLIENT_SECRET cannot be sent: it is not valid UTF-8": {
+			Input{}, environment{ClientIDEnv: "id", ClientSecretEnv: "bad\xff"},
+		},
+		"MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET must be set together; MEMCO_CLIENT_SECRET is not": {
+			Input{}, environment{TokenEnv: "t", ClientIDEnv: "id"},
+		},
+		"MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET must be set together; MEMCO_CLIENT_ID is not": {
+			Input{}, environment{ClientSecretEnv: "secret"},
+		},
+	}
+	for want, c := range cases {
+		if got := refusal(t, c.in, c.env); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestATokenLifetimeNeedsClientCredentials(t *testing.T) {
+	for _, in := range []Input{{Token: "t", TokenLifetime: time.Hour}, {TokenLifetime: time.Hour}} {
+		if got := refusal(t, in, withToken); got != "token_lifetime applies only to client credentials, not a token" {
+			t.Errorf("%+v: got %q", in, got)
+		}
+	}
+	config, _ := resolved(t, Input{TokenLifetime: 90 * time.Minute}, withPair)
+	if config.TokenLifetime != 90*time.Minute {
+		t.Fatalf("got %v", config.TokenLifetime)
+	}
+}
+
+func TestATokenLifetimeIsAPositiveWholeNumberOfSeconds(t *testing.T) {
+	for lifetime, want := range map[time.Duration]string{
+		-time.Second:                            "token_lifetime must be a positive whole number of seconds, at most 2147483647s, got -1s",
+		1500 * time.Millisecond:                 "token_lifetime must be a positive whole number of seconds, at most 2147483647s, got 1.5s",
+		math.MaxInt32*time.Second + time.Second: "token_lifetime must be a positive whole number of seconds, at most 2147483647s, got 596523h14m8s",
+	} {
+		if got := refusal(t, Input{TokenLifetime: lifetime}, withPair); got != want {
+			t.Errorf("%v: got %q", lifetime, got)
+		}
+	}
+	// The service owns the maximum: a day and a second is its to refuse.
+	if config, _ := resolved(t, Input{TokenLifetime: 86401 * time.Second}, withPair); config.TokenLifetime != 86401*time.Second {
+		t.Fatalf("got %v", config.TokenLifetime)
+	}
+}
+
+func TestTLSComesFromMemcoAPITLS(t *testing.T) {
+	for value, want := range map[string]bool{"true": true, "false": false, " FALSE ": false, "True\n": true, "": true, "  ": true} {
+		config, out := resolved(t, Input{}, environment{TokenEnv: "t", TLSEnv: value})
+		if config.TLS != want {
+			t.Errorf("%q: got TLS %v", value, config.TLS)
+		}
+		if !strings.Contains(out, fmt.Sprintf("tls=%v", want)) {
+			t.Errorf("%q: the endpoint record says %q", value, out)
+		}
+	}
+}
+
+func TestPlaintextWinsOverMemcoAPITLS(t *testing.T) {
+	for _, value := range []string{"true", "not a boolean"} {
+		config, _ := resolved(t, Input{Plaintext: true}, environment{TokenEnv: "t", TLSEnv: value})
+		if config.TLS {
+			t.Errorf("%q: TLS stayed on", value)
+		}
+	}
+}
+
+func TestAnUnreadableMemcoAPITLSIsRefused(t *testing.T) {
+	for _, value := range []string{"yes", "1", "off", "tru"} {
+		want := fmt.Sprintf("MEMCO_API_TLS must be true or false, got %q", value)
+		if got := refusal(t, Input{}, environment{TokenEnv: "t", TLSEnv: value}); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestTheClientSecretIsInNoRendering(t *testing.T) {
+	config, _ := resolved(t, Input{ClientID: "id", ClientSecret: "cs-secret-value"}, nil)
+	if config.ClientSecret.Reveal() != "cs-secret-value" {
+		t.Fatal("control: the secret can no longer be sent")
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	slog.New(slog.NewTextHandler(&buffer, nil)).Info("x", "config", config)
+	renderings := []string{string(encoded), buffer.String()}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x"} {
+		renderings = append(renderings, fmt.Sprintf(verb, config), fmt.Sprintf(verb, *config))
+	}
+	for _, rendered := range renderings {
+		if strings.Contains(rendered, "cs-secret-value") || strings.Contains(rendered, "63732d") {
+			t.Errorf("the secret is visible in %q", rendered)
+		}
+	}
+}
+
+func yes() *bool { on := true; return &on }
+func no() *bool  { off := false; return &off }
+
+func TestTheTLSOptionWinsOverMemcoAPITLS(t *testing.T) {
+	cases := []struct {
+		in    Input
+		value string
+		want  bool
+	}{
+		{Input{TLS: yes()}, "false", true},
+		{Input{TLS: no()}, "true", false},
+		// The option decides, so a value it overrides is not read at all.
+		{Input{TLS: no()}, "not a boolean", false},
+		{Input{TLS: yes()}, "not a boolean", true},
+		{Input{Plaintext: true, TLS: no()}, "true", false},
+	}
+	for _, c := range cases {
+		c.in.Token = "t"
+		config, _ := resolved(t, c.in, environment{TLSEnv: c.value})
+		if config.TLS != c.want {
+			t.Errorf("%+v with %q: got TLS %v", c.in, c.value, config.TLS)
+		}
+	}
+}
+
+func TestPlaintextBesideTLSIsRefused(t *testing.T) {
+	want := "Plaintext and TLS disagree: Plaintext is deprecated, so set TLS alone"
+	if got := refusal(t, Input{Token: "t", Plaintext: true, TLS: yes()}, nil); got != want {
+		t.Fatalf("got %q", got)
 	}
 }

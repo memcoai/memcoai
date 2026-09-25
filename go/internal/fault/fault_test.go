@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -119,6 +120,44 @@ func TestASunsetIsReadFromAMemcoErrorInfo(t *testing.T) {
 				t.Fatalf("got %+v, want sunset %q", got, c.want)
 			}
 		})
+	}
+}
+
+func TestAPreconditionKeepsTheReasonAndMetadataItWasNamedBy(t *testing.T) {
+	assigned := map[string]string{"current_network_id": "network-a", "current_network_name": "Acme"}
+	cases := []struct {
+		name     string
+		infos    []*errdetails.ErrorInfo
+		reason   string
+		metadata map[string]string
+	}{
+		{"known", []*errdetails.ErrorInfo{{Reason: ReasonUserAlreadyAssignedNetwork, Domain: "memco.ai", Metadata: assigned}},
+			ReasonUserAlreadyAssignedNetwork, assigned},
+		// An unknown reason is kept with its detail, for a caller newer than this SDK.
+		{"unknown", []*errdetails.ErrorInfo{{Reason: "NEWER_REASON", Domain: "memco.ai", Metadata: map[string]string{"k": "v"}}},
+			"NEWER_REASON", map[string]string{"k": "v"}},
+		{"unknown then known", []*errdetails.ErrorInfo{
+			{Reason: "NEWER_REASON", Domain: "memco.ai"},
+			{Reason: ReasonExternalUserNeedsCustomerNetwork, Domain: "memco.ai", Metadata: map[string]string{"required_network_scope": "customer"}},
+		}, ReasonExternalUserNeedsCustomerNetwork, map[string]string{"required_network_scope": "customer"}},
+		{"another domain", []*errdetails.ErrorInfo{{Reason: ReasonUserAlreadyAssignedNetwork, Domain: "example.com", Metadata: assigned}},
+			"", nil},
+		{"no details", nil, "", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := FromRPC(context.Background(), withInfo(t, codes.FailedPrecondition, "network_move_required: taken", c.infos...))
+			if got.Reason != c.reason || !maps.Equal(got.Metadata, c.metadata) || got.Sunset != "" {
+				t.Fatalf("got %+v, want %q %v", got, c.reason, c.metadata)
+			}
+		})
+	}
+}
+
+func TestAPlacementReasonOnAnotherCodeIsIgnored(t *testing.T) {
+	err := withInfo(t, codes.PermissionDenied, "no", &errdetails.ErrorInfo{Reason: ReasonUserAlreadyAssignedNetwork, Domain: "memco.ai"})
+	if got := FromRPC(context.Background(), err); got.Reason != "" || got.Metadata != nil {
+		t.Fatalf("got %+v", got)
 	}
 }
 

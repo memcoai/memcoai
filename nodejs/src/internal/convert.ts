@@ -20,9 +20,20 @@ import { status } from '@grpc/grpc-js'
 
 import { MemcoInternalError } from '../errors.js'
 import {
+  CreatedKey,
   importStatusFromWire,
   revertOutcomeFromWire,
+  type DeletedNetwork,
   type DomainEntry,
+  type ExternalUser,
+  type ExternalUserKey,
+  type ExternalUserList,
+  type GroupList,
+  type Member,
+  type MemberList,
+  type MemberPlacement,
+  type Network,
+  type NetworkList,
   type DomainList,
   type FeedbackEntry,
   type FeedbackRating,
@@ -474,4 +485,224 @@ export function toImportResult(
     // the first is as good as any and there is always one.
     instructions: toInstructions(answered[0][1].instructions)
   }
+}
+
+/**
+ * Convert Unix seconds into a `Date`.
+ *
+ * @param seconds The instant as it arrived on the wire.
+ * @returns The instant, or `null` for zero, which is how the wire says there is
+ *   none.
+ */
+function toInstant(seconds: number): Date | null {
+  return seconds === 0 ? null : new Date(seconds * 1000)
+}
+
+/**
+ * Convert a `Network` message.
+ *
+ * @param message The generated message.
+ * @returns The public equivalent, with an empty parent, scope or owner mapped
+ *   to `null`: each is absent rather than blank.
+ */
+export function toNetwork(message: pb.admin.Network): Network {
+  return {
+    id: message.id,
+    name: message.name,
+    parentId: optional(message.parentId),
+    domain: message.domain,
+    region: message.region,
+    scope: optional(message.scope),
+    owner: optional(message.owner),
+    description: message.description
+  }
+}
+
+/**
+ * Convert a `ListNetworksResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent.
+ */
+export function toNetworkList(
+  message: pb.admin.ListNetworksResponse
+): NetworkList {
+  return {
+    networks: message.networks.map(toNetwork),
+    totalCount: message.totalCount
+  }
+}
+
+/**
+ * Convert a `DeleteNetworkResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent. The removed counts arrive as a map, whose
+ *   order the wire does not keep, so they are keyed in table order to read the
+ *   same way every time.
+ */
+export function toDeletedNetwork(
+  message: pb.admin.DeleteNetworkResponse
+): DeletedNetwork {
+  const tables = Object.entries(message.removed).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0
+  )
+  return { id: message.id, removed: Object.fromEntries(tables) }
+}
+
+/**
+ * Convert a `Member` message.
+ *
+ * @param message The generated message.
+ * @returns The public equivalent.
+ */
+function toMember(message: pb.admin.Member): Member {
+  return { userId: message.userId, email: message.email, name: message.name }
+}
+
+/**
+ * Convert a `ListNetworkMembersResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent.
+ */
+export function toMemberList(
+  message: pb.admin.ListNetworkMembersResponse
+): MemberList {
+  return {
+    members: message.members.map(toMember),
+    totalCount: message.totalCount
+  }
+}
+
+/**
+ * Convert an `AddNetworkMemberResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent, with an empty `movedFrom` mapped to `null`:
+ *   nobody was moved.
+ */
+export function toMemberPlacement(
+  message: pb.admin.AddNetworkMemberResponse
+): MemberPlacement {
+  return {
+    networkId: message.id,
+    userId: message.userId,
+    movedFrom: optional(message.movedFrom)
+  }
+}
+
+/**
+ * Convert a `ListGroupsResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent, with an empty network mapped to `null`: the
+ *   group is assigned to none.
+ */
+export function toGroupList(message: pb.admin.ListGroupsResponse): GroupList {
+  return {
+    groups: message.groups.map(group => ({
+      id: group.id,
+      name: group.name,
+      memoryNetworkId: optional(group.memoryNetworkId),
+      memberCount: group.memberCount
+    })),
+    totalCount: message.totalCount
+  }
+}
+
+/**
+ * Convert a `ListGroupMembersResponse`.
+ *
+ * @param message The generated response.
+ * @returns The group's members.
+ */
+export function toGroupMembers(
+  message: pb.admin.ListGroupMembersResponse
+): readonly Member[] {
+  return message.members.map(toMember)
+}
+
+/**
+ * Convert an `ExternalUser` message.
+ *
+ * @param message The generated message.
+ * @returns The public equivalent, with the roles copied rather than aliased.
+ */
+export function toExternalUser(message: pb.admin.ExternalUser): ExternalUser {
+  return {
+    id: message.id,
+    externalId: message.externalId,
+    name: message.name,
+    email: message.email,
+    roles: [...message.roles],
+    active: message.active
+  }
+}
+
+/**
+ * Convert a `ListExternalUsersResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent.
+ */
+export function toExternalUserList(
+  message: pb.admin.ListExternalUsersResponse
+): ExternalUserList {
+  return {
+    externalUsers: message.externalUsers.map(toExternalUser),
+    totalCount: message.totalCount
+  }
+}
+
+/**
+ * Convert an `ExternalUserKey` message.
+ *
+ * @param message The generated message.
+ * @returns The public equivalent, with the expiry as a `Date`.
+ */
+function toExternalUserKey(message: pb.admin.ExternalUserKey): ExternalUserKey {
+  return {
+    id: message.id,
+    name: message.name,
+    valuePrefix: message.valuePrefix,
+    roles: [...message.roles],
+    scopes: [...message.scopes],
+    validUntil: toInstant(message.validUntil)
+  }
+}
+
+/**
+ * Convert a `ListExternalUserKeysResponse`.
+ *
+ * @param message The generated response.
+ * @returns The user's keys, described without their values.
+ */
+export function toExternalUserKeys(
+  message: pb.admin.ListExternalUserKeysResponse
+): readonly ExternalUserKey[] {
+  return message.keys.map(toExternalUserKey)
+}
+
+/**
+ * Convert a `CreateExternalUserKeyResponse`.
+ *
+ * @param message The generated response.
+ * @returns The key's description, and its value.
+ * @throws A {@link MemcoInternalError} if the response carries no key: a value
+ *   with nothing describing it would be a key with every field empty, as if it
+ *   were real. The value is left out of the message, since it is a working
+ *   credential and an error's text is exactly what reaches logs.
+ */
+export function toCreatedKey(
+  message: pb.admin.CreateExternalUserKeyResponse
+): CreatedKey {
+  if (message.key === undefined) {
+    throw new MemcoInternalError(
+      status.INTERNAL,
+      "the service returned a key value but no key; list the user's keys to " +
+        'see whether one was created'
+    )
+  }
+  return new CreatedKey(toExternalUserKey(message.key), message.value)
 }

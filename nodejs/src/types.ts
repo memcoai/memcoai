@@ -11,8 +11,11 @@
  *   timestamp, and reading a date-only value as one silently attaches the
  *   reader's time zone to it; `updated` would land a day early for anyone west
  *   of UTC. Anything the service sends that is not exactly `YYYY-MM-DD` becomes
- *   `null` rather than throwing.
+ *   `null` rather than throwing. An instant — when a key expires — is a
+ *   `Date`, since that one really is a timestamp.
  */
+
+import { inspect } from 'node:util'
 
 /**
  * Who produced a piece of content.
@@ -796,4 +799,231 @@ export interface Provenance {
   readonly serverCommit: string
   /** The contract files it was generated from, and their checksums. */
   readonly protos: readonly ProtoRecord[]
+}
+
+/**
+ * One memory network: the unit of knowledge scoping an organization places its
+ * people in.
+ *
+ * Networks form trees, one per memory domain. What a member can find is scoped
+ * by the network they are placed in: a member of a network sees its knowledge
+ * and that of the networks above it, and never a sibling's.
+ */
+export interface Network {
+  /** The handle addressing this network, for every other network method. */
+  readonly id: string
+  /** The network's name. */
+  readonly name: string
+  /** The network this one is a child of, or `null` for a root. */
+  readonly parentId: string | null
+  /** The memory domain the network's tree belongs to. */
+  readonly domain: string
+  /** The network's data residency. `global` replicates everywhere. */
+  readonly region: string
+  /**
+   * `internal` or `customer`, or `null` where the organization does not use
+   * scopes. An external user can be placed only in a customer network.
+   */
+  readonly scope: string | null
+  /** Who the network's knowledge belongs to, or `null` where none is named. */
+  readonly owner: string | null
+  /** What the network is for. Empty when none was given. */
+  readonly description: string
+}
+
+/** One page of an organization's memory networks. */
+export interface NetworkList {
+  /** The networks on this page. */
+  readonly networks: readonly Network[]
+  /** How many networks match in all, across every page. */
+  readonly totalCount: number
+}
+
+/** A user placed in a network, or belonging to an identity-provider group. */
+export interface Member {
+  /** The handle addressing the user, for adding or removing them. */
+  readonly userId: string
+  /** The user's email address. */
+  readonly email: string
+  /** The user's name. */
+  readonly name: string
+}
+
+/** One page of a network's members. */
+export interface MemberList {
+  /** The members on this page. */
+  readonly members: readonly Member[]
+  /** How many members match in all, across every page. */
+  readonly totalCount: number
+}
+
+/** Where a user was placed, and where they were moved from. */
+export interface MemberPlacement {
+  /** The network the user is now placed in. */
+  readonly networkId: string
+  /** The user that was placed. */
+  readonly userId: string
+  /**
+   * The network the user was moved out of, or `null` when they were placed
+   * without moving. Only a placement made with `force` moves anyone.
+   */
+  readonly movedFrom: string | null
+}
+
+/**
+ * A network that was deleted, and what the deletion took with it.
+ *
+ * @example
+ * ```ts
+ * const deleted = await client.networks.delete('network-a')
+ * deleted.removed // { memories: 3, network_members: 1 }
+ * ```
+ */
+export interface DeletedNetwork {
+  /** The network that was deleted. */
+  readonly id: string
+  /**
+   * How many rows the cascade removed from each table, keyed by table in
+   * sorted order, so the cost of the deletion can be seen and reads the same
+   * way every time.
+   */
+  readonly removed: Readonly<Record<string, number>>
+}
+
+/**
+ * An identity-provider group of an enterprise organization.
+ *
+ * Its name and its members are managed by the identity provider, not here.
+ */
+export interface Group {
+  /** The handle addressing this group. */
+  readonly id: string
+  /** The group's name, as the identity provider has it. */
+  readonly name: string
+  /**
+   * The network the group's members are placed in, or `null` when the group
+   * is assigned to none.
+   */
+  readonly memoryNetworkId: string | null
+  /** How many users the group holds. */
+  readonly memberCount: number
+}
+
+/** One page of an organization's identity-provider groups. */
+export interface GroupList {
+  /** The groups on this page. */
+  readonly groups: readonly Group[]
+  /** How many groups match in all, across every page. */
+  readonly totalCount: number
+}
+
+/**
+ * A user of yours that Memco knows by your own id for them.
+ *
+ * An external user has no sign-in of its own. It acts through API keys, or
+ * through a session opened on its behalf with
+ * {@link MemoryOperations.startSession}'s `externalId`.
+ */
+export interface ExternalUser {
+  /**
+   * Memco's own handle for the user: what
+   * {@link NetworkOperations.addMember} takes.
+   */
+  readonly id: string
+  /**
+   * Your identifier for the user, unique within your organization. It is what
+   * every {@link UserOperations} method takes.
+   */
+  readonly externalId: string
+  /** The user's name. Empty when none was given. */
+  readonly name: string
+  /** The user's email address. Empty when none was given. */
+  readonly email: string
+  /** The content roles the user holds, from `reader`, `creator` and `auditor`. */
+  readonly roles: readonly string[]
+  /** Whether the user is active. */
+  readonly active: boolean
+}
+
+/** One page of an organization's external users. */
+export interface ExternalUserList {
+  /** The users on this page. */
+  readonly externalUsers: readonly ExternalUser[]
+  /** How many users match in all, across every page. */
+  readonly totalCount: number
+}
+
+/** An external user's API key, described without its value. */
+export interface ExternalUserKey {
+  /** The handle addressing the key, for deleting it. */
+  readonly id: string
+  /** The key's name. Empty when none was given. */
+  readonly name: string
+  /** The first characters of the key's value, to recognise it by. */
+  readonly valuePrefix: string
+  /** The content roles the key carries. */
+  readonly roles: readonly string[]
+  /** The scopes the key grants. */
+  readonly scopes: readonly string[]
+  /** When the key expires, or `null` when the service reported no expiry. */
+  readonly validUntil: Date | null
+}
+
+/**
+ * A key just created, carrying the one copy of its value there will ever be.
+ *
+ * The value is a working credential, and the service shows it only here, so
+ * store it now. It is left out of every rendering of this object —
+ * `console.log`, `util.inspect`, `JSON.stringify`, a spread — so it cannot
+ * reach a log line or a crash report by that route; read {@link CreatedKey.value}
+ * where you mean to.
+ */
+export class CreatedKey {
+  /** The key's description, as listing the user's keys will show it. */
+  readonly key: ExternalUserKey
+
+  /**
+   * The key itself, a working credential. Declared rather than defined, so the
+   * constructor's `Object.defineProperty` is what creates it — a normal field
+   * declaration would emit an enumerable one and undo the hiding.
+   */
+  declare readonly value: string
+
+  /**
+   * @param key The key's description.
+   * @param value The key itself, hidden from every rendering of this object.
+   *
+   * @internal Built by {@link UserOperations.createKey}, never by a caller.
+   */
+  constructor(key: ExternalUserKey, value: string) {
+    this.key = key
+    Object.defineProperty(this, 'value', {
+      value,
+      enumerable: false,
+      writable: false,
+      configurable: false
+    })
+  }
+
+  /**
+   * The key's description without its value, for `JSON.stringify`.
+   *
+   * @returns Everything but the value.
+   */
+  toJSON(): {
+    /** The key's description. */
+    key: ExternalUserKey
+  } {
+    return { key: this.key }
+  }
+
+  /**
+   * The key's description without its value, for `util.inspect` and
+   * `console.log`.
+   *
+   * @returns A rendering that omits the value even under `showHidden`.
+   */
+  [inspect.custom](): string {
+    return `CreatedKey ${inspect(this.toJSON())}`
+  }
 }

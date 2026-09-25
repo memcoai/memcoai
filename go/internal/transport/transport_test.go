@@ -88,15 +88,35 @@ func callEvery(ctx context.Context, t *testing.T, client memoryv1.MemoryServiceC
 	}
 }
 
-func TestEveryMemoryCallCarriesExactlyOneCredential(t *testing.T) {
+func TestEveryCallCarriesExactlyTheBearerItIsGiven(t *testing.T) {
 	harness, client, _ := connected(t)
-	callEvery(context.Background(), t, client)
+	callEvery(transport.Bearer(context.Background(), config.Secret(token)), t, client)
 	all := harness.Memory.Metadata()
 	if len(all) != len(testserver.Methods) {
 		t.Fatalf("recorded %d calls", len(all))
 	}
 	for i, md := range all {
 		if got := md.Get(transport.AuthHeader); !reflect.DeepEqual(got, []string{"Bearer " + token}) {
+			t.Errorf("%s: authorization %q", harness.Memory.Calls()[i], got)
+		}
+	}
+}
+
+// The connection carries no credential of its own, so a call made without one
+// fails closed rather than borrowing another call's.
+func TestACallGivenNoBearerCarriesNone(t *testing.T) {
+	harness, client, _ := connected(t)
+	callEvery(context.Background(), t, client)
+	forged := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer caller")
+	if _, err := client.ListDomains(transport.Anonymous(forged), &memoryv1.ListDomainsRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	all := harness.Memory.Metadata()
+	if len(all) != len(testserver.Methods)+1 {
+		t.Fatalf("control: recorded %d calls", len(all))
+	}
+	for i, md := range all {
+		if got := md.Get(transport.AuthHeader); len(got) != 0 {
 			t.Errorf("%s: authorization %q", harness.Memory.Calls()[i], got)
 		}
 	}
@@ -123,7 +143,7 @@ func TestCallerMetadataCannotDisplaceTheCredential(t *testing.T) {
 	caller := metadata.MD{"Authorization": []string{"Bearer forged"}, "x-other": []string{"kept"}}
 	ctx := metadata.NewOutgoingContext(context.Background(), caller)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer a", "AUTHORIZATION", "Bearer b", "Authorization", "Bearer c")
-	if _, err := client.ListDomains(ctx, &memoryv1.ListDomainsRequest{}); err != nil {
+	if _, err := client.ListDomains(transport.Bearer(ctx, config.Secret(token)), &memoryv1.ListDomainsRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	md := harness.Memory.Metadata()[0]

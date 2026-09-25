@@ -3,8 +3,9 @@
 Every method returns one of these frozen dataclasses rather than a protobuf
 message. That keeps the generated code an implementation detail, and lets the
 SDK present values in their natural Python form: dates as :class:`datetime.date`,
-enumerations as :class:`enum.Enum`, repeated fields as tuples, and genuinely
-absent strings as ``None``.
+instants as aware UTC :class:`datetime.datetime`, enumerations as
+:class:`enum.Enum`, repeated fields as tuples, and genuinely absent strings as
+``None``.
 
 Values are immutable, so a result can be cached or shared between threads
 without defensive copying.
@@ -15,7 +16,7 @@ from __future__ import annotations
 import enum
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 import grpc
@@ -28,12 +29,19 @@ if TYPE_CHECKING:  # pragma: no cover - avoids a cycle with operations.py
 
 __all__ = [
     "AsyncMemory",
+    "CreatedKey",
     "DataSource",
+    "DeletedNetwork",
     "DomainEntry",
     "DomainList",
+    "ExternalUser",
+    "ExternalUserKey",
+    "ExternalUserList",
     "FeedbackEntry",
     "FeedbackRating",
     "FeedbackResult",
+    "Group",
+    "GroupList",
     "ImportOutcome",
     "ImportResult",
     "ImportStatus",
@@ -42,8 +50,13 @@ __all__ = [
     "Insight",
     "Instructions",
     "Limits",
+    "Member",
+    "MemberList",
+    "MemberPlacement",
     "Memory",
     "MemoryT",
+    "Network",
+    "NetworkList",
     "ProtoRecord",
     "Provenance",
     "RevertOutcome",
@@ -809,6 +822,224 @@ class ImportResult:
 
     results: tuple[ImportOutcome, ...]
     instructions: Instructions
+
+
+@dataclass(frozen=True, slots=True)
+class Network:
+    """One memory network: the unit of knowledge scoping an organization places its people in.
+
+    Networks form trees, one per memory domain. What a member can find is scoped
+    by the network they are placed in.
+
+    Attributes:
+        id: Handle addressing this network, for every other network method.
+        name: The network's name.
+        parent_id: The network this one is a child of, or ``None`` for a root.
+        domain: The memory domain the network's tree belongs to.
+        region: The network's data residency. ``"global"`` replicates everywhere.
+        scope: ``"internal"`` or ``"customer"``, or ``None`` where the
+            organization does not use scopes. An external user can be placed
+            only in a customer network.
+        owner: Who the network's knowledge belongs to, or ``None`` where none
+            is named.
+        description: What the network is for. Empty when none was given.
+    """
+
+    id: str
+    name: str
+    parent_id: str | None
+    domain: str
+    region: str
+    scope: str | None
+    owner: str | None
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class NetworkList:
+    """One page of an organization's memory networks.
+
+    Attributes:
+        networks: The networks on this page.
+        total_count: How many networks match in all, across every page.
+    """
+
+    networks: tuple[Network, ...]
+    total_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class Member:
+    """A user placed in a network, or belonging to an identity-provider group.
+
+    Attributes:
+        user_id: Handle addressing the user, for adding or removing them.
+        email: The user's email address.
+        name: The user's name.
+    """
+
+    user_id: str
+    email: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class MemberList:
+    """One page of a network's members.
+
+    Attributes:
+        members: The members on this page.
+        total_count: How many members match in all, across every page.
+    """
+
+    members: tuple[Member, ...]
+    total_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class MemberPlacement:
+    """Where a user was placed, and where they were moved from.
+
+    Attributes:
+        network_id: The network the user is now placed in.
+        user_id: The user that was placed.
+        moved_from: The network the user was moved out of, or ``None`` when
+            they were placed without moving. Only a placement made with
+            ``force`` moves anyone.
+    """
+
+    network_id: str
+    user_id: str
+    moved_from: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedNetwork:
+    """A network that was deleted, and what the deletion took with it.
+
+    Attributes:
+        id: The network that was deleted.
+        removed: How many rows the cascade removed, as ``(table, count)``
+            pairs sorted by table, so the cost of the deletion can be seen.
+
+    Example:
+        >>> deleted = client.networks.delete("network-a")
+        >>> deleted.removed
+        (('memories', 3), ('network_members', 1))
+    """
+
+    id: str
+    removed: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Group:
+    """An identity-provider group of an enterprise organization.
+
+    Its name and its members are managed by the identity provider, not here.
+
+    Attributes:
+        id: Handle addressing this group.
+        name: The group's name, as the identity provider has it.
+        memory_network_id: The network the group's members are placed in, or
+            ``None`` when the group is assigned to none.
+        member_count: How many users the group holds.
+    """
+
+    id: str
+    name: str
+    memory_network_id: str | None
+    member_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class GroupList:
+    """One page of an organization's identity-provider groups.
+
+    Attributes:
+        groups: The groups on this page.
+        total_count: How many groups match in all, across every page.
+    """
+
+    groups: tuple[Group, ...]
+    total_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalUser:
+    """A user of yours that Memco knows by your own id for them.
+
+    An external user has no sign-in of its own. It acts through API keys, or
+    through a session opened on its behalf.
+
+    Attributes:
+        id: Memco's own handle for the user.
+        external_id: Your identifier for the user, unique within your
+            organization. It is what every user method takes.
+        name: The user's name. Empty when none was given.
+        email: The user's email address. Empty when none was given.
+        roles: The content roles the user holds, from ``"reader"``,
+            ``"creator"`` and ``"auditor"``.
+        active: Whether the user is active.
+    """
+
+    id: str
+    external_id: str
+    name: str
+    email: str
+    roles: tuple[str, ...]
+    active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalUserList:
+    """One page of an organization's external users.
+
+    Attributes:
+        external_users: The users on this page.
+        total_count: How many users match in all, across every page.
+    """
+
+    external_users: tuple[ExternalUser, ...]
+    total_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalUserKey:
+    """An external user's API key, described without its value.
+
+    Attributes:
+        id: Handle addressing the key, for deleting it.
+        name: The key's name. Empty when none was given.
+        value_prefix: The first characters of the key's value, to recognise it
+            by.
+        roles: The content roles the key carries.
+        scopes: The scopes the key grants.
+        valid_until: When the key expires, as an aware UTC datetime, or
+            ``None`` when the service reported no expiry.
+    """
+
+    id: str
+    name: str
+    value_prefix: str
+    roles: tuple[str, ...]
+    scopes: tuple[str, ...]
+    valid_until: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class CreatedKey:
+    """A key just created, carrying the one copy of its value there will ever be.
+
+    Attributes:
+        key: The key's description, as listing the user's keys will show it.
+        value: The key itself, a working credential. The service shows it only
+            here, so store it now. It is left out of this object's ``repr``, so
+            it cannot reach a log line or a crash report by that route.
+    """
+
+    key: ExternalUserKey
+    value: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)

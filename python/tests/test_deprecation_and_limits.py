@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import warnings
 from datetime import date
@@ -38,10 +39,12 @@ UPGRADE_REMEDY = "memco-python/0.1.0 is no longer served; upgrade to >=0.4.0"
 MIGRATE_REMEDY = "Memory API v1 is no longer served; migrate to v2"
 
 
-def sunset_status(reason: str, message: str, domain: str = "memco.ai") -> grpc.Status:
+def sunset_status(
+    reason: str, message: str, domain: str = "memco.ai", metadata: dict[str, str] | None = None
+) -> grpc.Status:
     """Build the FAILED_PRECONDITION a blocked version is refused with."""
     detail = any_pb2.Any()
-    detail.Pack(error_details_pb2.ErrorInfo(reason=reason, domain=domain))
+    detail.Pack(error_details_pb2.ErrorInfo(reason=reason, domain=domain, metadata=metadata))
     return rpc_status.to_status(
         status_pb2.Status(code=code_pb2.FAILED_PRECONDITION, message=message, details=[detail])
     )
@@ -225,6 +228,18 @@ def test_a_blocked_client_version_says_upgrade_the_package(client: Memco, harnes
         client.memory.search("anything at all", domain="coding")
     assert caught.value.kind is errors.SunsetKind.CLIENT_VERSION
     assert caught.value.message == UPGRADE_REMEDY
+
+
+def test_a_sunset_carries_the_detail_the_service_attached(client: Memco, harness: Harness):
+    # It is a precondition failure like any other, and the README promises
+    # every one of those carries what the service attached.
+    harness.memory.rich_error = sunset_status(
+        CLIENT_SUNSET, UPGRADE_REMEDY, metadata={"sunset_date": "2026-01-01"}
+    )
+    with pytest.raises(errors.MemcoSunsetError) as caught:
+        client.memory.search("anything at all", domain="coding")
+    assert dict(caught.value.metadata) == {"sunset_date": "2026-01-01"}
+    assert dict(copy.copy(caught.value).metadata) == {"sunset_date": "2026-01-01"}
 
 
 def test_a_blocked_api_version_says_migrate(client: Memco, harness: Harness):

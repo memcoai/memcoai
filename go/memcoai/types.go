@@ -3,7 +3,9 @@ package memcoai
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	memoryv1 "github.com/memcoai/memcoai/go/internal/client/memcoai/memory/v1"
 	"github.com/memcoai/memcoai/go/internal/fault"
@@ -324,6 +326,179 @@ type Provenance struct {
 	// Protos are the contract files.
 	Protos []ProtoRecord
 }
+
+// Network is a memory network: where an organization places its people, and
+// so what knowledge each of them can find. A root network sits in a memory
+// domain; every other network hangs under a parent and takes its domain.
+type Network struct {
+	// ID is the network's handle.
+	ID string
+	// Name is the network's name.
+	Name string
+	// ParentID is the network this one hangs under, or empty for a root.
+	ParentID string
+	// Domain is the memory domain the network belongs to.
+	Domain string
+	// Region is where the network's data resides.
+	Region string
+	// Scope is "internal" or "customer", or empty where the organization
+	// uses no scopes.
+	Scope string
+	// Owner is who the network's knowledge belongs to, or empty.
+	Owner string
+	// Description says what the network is for, or is empty.
+	Description string
+}
+
+// NetworkList is one page of networks.
+type NetworkList struct {
+	// Networks are the networks on this page.
+	Networks []Network
+	// TotalCount is how many networks match in all.
+	TotalCount int64
+}
+
+// Member is a user placed in a network or a group.
+type Member struct {
+	// UserID is the user's handle: for an external user, [ExternalUser.ID].
+	UserID string
+	// Email is the user's email address, or empty.
+	Email string
+	// Name is the user's name, or empty.
+	Name string
+}
+
+// MemberList is one page of a network's members.
+type MemberList struct {
+	// Members are the members on this page.
+	Members []Member
+	// TotalCount is how many members match in all.
+	TotalCount int64
+}
+
+// MemberPlacement is where [NetworkOperations.AddMember] placed a user.
+type MemberPlacement struct {
+	// NetworkID is the network the user is now in.
+	NetworkID string
+	// UserID is the user placed.
+	UserID string
+	// MovedFrom is the network the user was moved out of, or empty when the
+	// placement moved nobody.
+	MovedFrom string
+}
+
+// DeletedNetwork is what [NetworkOperations.Delete] removed.
+type DeletedNetwork struct {
+	// ID is the network deleted.
+	ID string
+	// Removed counts what the deletion took with the network, by kind, such
+	// as "memories" or "network_members".
+	Removed map[string]int64
+}
+
+// Group is an identity-provider group, which places its members in networks.
+// Groups are available to enterprise organizations only.
+type Group struct {
+	// ID is the group's handle.
+	ID string
+	// Name is the group's name.
+	Name string
+	// MemoryNetworkID is the network the group is assigned to, or empty.
+	MemoryNetworkID string
+	// MemberCount is how many users the group holds.
+	MemberCount int64
+}
+
+// GroupList is one page of groups.
+type GroupList struct {
+	// Groups are the groups on this page.
+	Groups []Group
+	// TotalCount is how many groups match in all.
+	TotalCount int64
+}
+
+// ExternalUser is one of your own users, known to Memco by your id for them.
+// It has no sign-in of its own: it acts through API keys, or through a
+// session opened for it with [ExternalID].
+type ExternalUser struct {
+	// ID is Memco's handle for the user, which [NetworkOperations.AddMember]
+	// takes.
+	ID string
+	// ExternalID is your own id for the user, which [UserOperations] and
+	// [ExternalID] take.
+	ExternalID string
+	// Name is the user's name, or empty.
+	Name string
+	// Email is the user's email address, or empty.
+	Email string
+	// Roles are the content roles the user holds, such as "reader" and
+	// "creator".
+	Roles []string
+	// Active reports whether the user may act.
+	Active bool
+}
+
+// ExternalUserList is one page of external users.
+type ExternalUserList struct {
+	// ExternalUsers are the users on this page.
+	ExternalUsers []ExternalUser
+	// TotalCount is how many users match in all.
+	TotalCount int64
+}
+
+// ExternalUserKey describes an API key acting as an external user. The key's
+// value is shown only once, in the [CreatedKey] that created it.
+type ExternalUserKey struct {
+	// ID is the key's handle.
+	ID string
+	// Name is the name the key was created with, or empty.
+	Name string
+	// ValuePrefix is the start of the key's value, to recognise it by.
+	ValuePrefix string
+	// Roles are the content roles the key acts with.
+	Roles []string
+	// Scopes are what the key may reach, such as "mcp:read".
+	Scopes []string
+	// ValidUntil is when the key expires, in UTC, or zero if it never does.
+	ValidUntil time.Time
+}
+
+// CreatedKey is an API key just created, with its value. The value is shown
+// here and never again, so store it now. Read it with [CreatedKey.Value]: it
+// is kept out of everything that prints, logs or encodes a CreatedKey, with
+// fmt, slog, encoding/json or encoding/xml, whatever the verb.
+type CreatedKey struct {
+	// Key describes the key.
+	Key ExternalUserKey
+
+	// Behind a pointer, which fmt prints as an address even where it formats
+	// nothing, as for a misused verb.
+	value *string
+}
+
+// Value returns the key itself: the credential to hand over.
+func (k CreatedKey) Value() string {
+	if k.value == nil {
+		return ""
+	}
+	return *k.value
+}
+
+// hidden is what a CreatedKey prints and logs as.
+type hidden struct {
+	Key   ExternalUserKey
+	Value string
+}
+
+func (k CreatedKey) hidden() hidden { return hidden{Key: k.Key, Value: "[redacted]"} }
+
+// Format prints the key with its value redacted.
+func (k CreatedKey) Format(f fmt.State, verb rune) {
+	_, _ = fmt.Fprintf(f, fmt.FormatString(f, verb), k.hidden()) // a Formatter has nowhere to report it
+}
+
+// LogValue logs the key with its value redacted.
+func (k CreatedKey) LogValue() slog.Value { return slog.AnyValue(k.hidden()) }
 
 // DataSource names who produced the content of a write.
 type DataSource int32

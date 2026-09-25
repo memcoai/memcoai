@@ -18,6 +18,12 @@ type Error interface {
 
 // ConfigError reports a setting, or a closed client, that stopped a call
 // before anything was sent.
+//
+// One case is the exception: this machine's clock, running so far ahead of
+// the service's that the key [MemoryOperations.StartSession] minted with
+// [ExternalID] had already expired by it. There the mint was sent; the key it
+// returned is ended at once. It arises only from a service that does not say
+// how many seconds a key has left.
 type ConfigError struct {
 	// Message says what is wrong.
 	Message string
@@ -71,12 +77,65 @@ type NotFoundError struct{ APIError }
 // Unwrap returns the embedded [APIError].
 func (e *NotFoundError) Unwrap() error { return &e.APIError }
 
+// AlreadyExistsError reports that what the call would create already exists,
+// such as a network name or an external user id already taken. Retrying will
+// not help: use what exists, or create it under another name.
+type AlreadyExistsError struct{ APIError }
+
+// Unwrap returns the embedded [APIError].
+func (e *AlreadyExistsError) Unwrap() error { return &e.APIError }
+
 // PreconditionFailedError reports an account or request in a state that does
-// not allow the call, such as disabled billing.
-type PreconditionFailedError struct{ APIError }
+// not allow the call, such as disabled billing. Retrying will not help until
+// something outside the request changes. The refusals the service names by a
+// reason this SDK knows are subtypes: [*SunsetError],
+// [*UserAlreadyAssignedNetworkError] and
+// [*ExternalUserNeedsCustomerNetworkError].
+type PreconditionFailedError struct {
+	APIError
+	// Reason is the name the service gave the refusal, such as
+	// "USER_ALREADY_ASSIGNED_NETWORK", or empty when it gave none.
+	Reason string
+	// Metadata is the detail the service attached to the refusal, key to
+	// value, such as the network a user is already in; nil when it attached
+	// none. A key this SDK does not name is kept too.
+	Metadata map[string]string
+}
 
 // Unwrap returns the embedded [APIError].
 func (e *PreconditionFailedError) Unwrap() error { return &e.APIError }
+
+// UserAlreadyAssignedNetworkError reports a user already placed in another
+// network of the same memory domain. A user holds one network per domain, so
+// [NetworkOperations.AddMember] refuses a second placement rather than moving
+// them silently; pass [AddMemberParams].Force to move them. It is also a
+// [*PreconditionFailedError].
+type UserAlreadyAssignedNetworkError struct {
+	PreconditionFailedError
+	// CurrentNetworkID is the network the user is in, or empty if the service
+	// did not say.
+	CurrentNetworkID string
+	// CurrentNetworkName is that network's name, or empty if the service did
+	// not say.
+	CurrentNetworkName string
+}
+
+// Unwrap returns the embedded [PreconditionFailedError].
+func (e *UserAlreadyAssignedNetworkError) Unwrap() error { return &e.PreconditionFailedError }
+
+// ExternalUserNeedsCustomerNetworkError reports an external user placed in a
+// network that is not a customer network, a domain's root included. Place the
+// user in a customer network instead. It is also a
+// [*PreconditionFailedError].
+type ExternalUserNeedsCustomerNetworkError struct {
+	PreconditionFailedError
+	// RequiredNetworkScope is the scope a network needs to take the user,
+	// "customer", or empty if the service did not say.
+	RequiredNetworkScope string
+}
+
+// Unwrap returns the embedded [PreconditionFailedError].
+func (e *ExternalUserNeedsCustomerNetworkError) Unwrap() error { return &e.PreconditionFailedError }
 
 // SunsetKind says what is past its sunset date.
 type SunsetKind string
@@ -182,11 +241,22 @@ func public(err error) error {
 		return &InvalidRequestError{api}
 	case codes.NotFound:
 		return &NotFoundError{api}
+	case codes.AlreadyExists:
+		return &AlreadyExistsError{api}
 	case codes.FailedPrecondition:
-		if f.Sunset != "" {
-			return &SunsetError{PreconditionFailedError{api}, SunsetKind(f.Sunset)}
+		precondition := PreconditionFailedError{APIError: api, Reason: f.Reason, Metadata: f.Metadata}
+		switch f.Reason {
+		case fault.ReasonUserAlreadyAssignedNetwork:
+			return &UserAlreadyAssignedNetworkError{
+				precondition, f.Metadata["current_network_id"], f.Metadata["current_network_name"],
+			}
+		case fault.ReasonExternalUserNeedsCustomerNetwork:
+			return &ExternalUserNeedsCustomerNetworkError{precondition, f.Metadata["required_network_scope"]}
 		}
-		return &PreconditionFailedError{api}
+		if f.Sunset != "" {
+			return &SunsetError{precondition, SunsetKind(f.Sunset)}
+		}
+		return &precondition
 	case codes.ResourceExhausted:
 		return &ResourceExhaustedError{api, ResourceExhaustedKind(f.Exhaustion)}
 	case codes.Unavailable:

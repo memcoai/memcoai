@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "memcoai"
-version = "0.1.4"
+version = "0.2.0"
 description = "Python SDK for Memco Shared Memory."
 authors = [{ name = "Memco Labs, Inc." }]
 readme = "README.md"
@@ -65,7 +65,7 @@ branch = true
 # Generated code is the export's to cover, not ours — the same boundary ruff and
 # mypy draw. Counting it would report the SDK's coverage as whatever protoc
 # happened to emit.
-omit = ["memcoai/memory/*"]
+omit = ["memcoai/memory/*", "memcoai/admin/*", "memcoai/auth/*"]
 
 [tool.coverage.report]
 # Every line of hand-written code is either exercised or explicitly excused, so
@@ -85,7 +85,7 @@ target-version = "py310"
 # Generated code is the export's to lint, not ours. Anchored to the exact path:
 # an unanchored pattern matches any segment and would silently exclude
 # hand-written code that happens to share a directory name.
-extend-exclude = ["memcoai/memory/**"]
+extend-exclude = ["memcoai/memory/**", "memcoai/admin/**", "memcoai/auth/**"]
 
 [tool.ruff.lint]
 select = [
@@ -143,6 +143,7 @@ ignore = [
 # one source line, and reflowing it to fit would fork the copy from the
 # manifest it is generated from.
 "memcoai/operations.py" = ["ANN401", "D205"]
+"memcoai/administration.py" = ["ANN401"]
 "memcoai/_aio.py" = ["ANN401"]
 "memcoai/_sync.py" = ["ANN401"]
 # Tests: names are the documentation, asserts are the point, reaching into a
@@ -174,12 +175,12 @@ strict = true
 # subdirectories here would silently drop a module that later moves out of
 # one, which is how types/errors/operations escaped checking once already.
 files = ["memcoai", "tests", "systemtest", "docs/conf.py"]
-exclude = "^memcoai/memory/"
+exclude = "^memcoai/(memory|admin|auth)/"
 namespace_packages = true
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["grpc.*", "grpc_health.*", "grpc_status.*", "google.rpc.*", "memcoai.memory.*"]
+module = ["grpc.*", "grpc_health.*", "grpc_status.*", "google.rpc.*", "memcoai.memory.*", "memcoai.admin.*", "memcoai.auth.*"]
 ignore_missing_imports = true
 
 # Test functions carry no annotations by convention; everything they call is

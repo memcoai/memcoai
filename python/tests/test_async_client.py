@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import grpc
@@ -10,10 +11,11 @@ from grpc_health.v1 import health_pb2
 
 import memcoai
 from memcoai import AsyncMemco, errors, types
+from memcoai._auth import Minted
 from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
-from .fake_server import Harness
+from .fake_server import Harness, Hold
 
 # --- auth ----------------------------------------------------------------
 
@@ -29,6 +31,15 @@ async def test_auth_metadata_is_sent_on_every_method(async_client: AsyncMemco, h
     assert len(harness.memory.metadata) == 3
     for sent in harness.memory.metadata:
         assert sent["authorization"] == f"Bearer {TOKEN}"
+
+
+async def test_each_call_carries_exactly_one_credential(async_client: AsyncMemco, harness: Harness):
+    # Counted off the metadata as received, since a dict collapses repeats.
+    await async_client.memory.list_domains()
+    await async_client.memory.start_session("coding")  # StartSession and ListTools
+    assert len(harness.memory.raw_metadata) == 3
+    for sent in harness.memory.raw_metadata:
+        assert [value for key, value in sent if key == "authorization"] == [f"Bearer {TOKEN}"]
 
 
 async def test_the_credential_is_withheld_from_the_health_probe(harness: Harness):
@@ -121,6 +132,24 @@ async def test_server_errors_arrive_typed(
     assert caught.value.code is code
 
 
+async def test_a_call_landing_on_a_closed_channel_is_refused_unchained(async_client: AsyncMemco):
+    # The race close() leaves open: a call past the closed check reaches the
+    # channel as it is torn down. grpc's frames hold the metadata the call was
+    # sent with, bearer and all, so its error is chained to nothing raised.
+    async def torn_down(request: object, **sent: object) -> None:
+        raise grpc.aio.UsageError("Channel is closed")
+
+    with pytest.raises(errors.MemcoConfigError, match="closed") as caught:
+        await async_client._send(torn_down, pb.ListDomainsRequest(), 1.0, Minted(TOKEN, 0.0))
+    assert (caught.value.__cause__, caught.value.__context__) == (None, None)
+
+
+async def test_memco_api_tls_false_dials_a_plaintext_server(harness: Harness):
+    env = {"MEMCO_API_TOKEN": TOKEN, "MEMCO_API_TLS": "false"}
+    async with AsyncMemco(host=harness.address, env=env):
+        pass
+
+
 async def test_validation_fires_before_any_rpc(async_client: AsyncMemco, harness: Harness):
     with pytest.raises(errors.MemcoInvalidRequestError):
         await async_client.memory.search("   ", domain="coding")
@@ -188,6 +217,30 @@ async def test_double_close_is_safe(harness: Harness):
     await connected.connect()
     await connected.close()
     await connected.close()
+
+
+async def test_a_failed_reconnect_returns_once_the_calls_it_waits_for_are_done(
+    async_client: AsyncMemco, harness: Harness
+):
+    # A failed connect() drops the channel and waits for the calls still on it
+    # before closing it. A call arriving meanwhile opens a fresh channel, and
+    # must not leave connect() waiting on a signal nothing will ever give.
+    session = await async_client.memory.start_session("coding")
+    hold = harness.memory.holds["Search"] = Hold()
+    held = asyncio.create_task(session.search("held"))
+    assert await asyncio.to_thread(hold.arrived.wait, 5)
+    harness.health.status = health_pb2.HealthCheckResponse.NOT_SERVING
+    reconnecting = asyncio.create_task(async_client.connect())
+    for _ in range(500):
+        if async_client._channel is None:
+            break
+        await asyncio.sleep(0.01)
+    harness.health.status = health_pb2.HealthCheckResponse.SERVING
+    await session.get_memory("memory-a-1")
+    hold.released.set()
+    await held
+    with pytest.raises(errors.MemcoUnhealthyError):
+        await asyncio.wait_for(reconnecting, 5)
 
 
 async def test_provenance_is_reachable(async_client: AsyncMemco):

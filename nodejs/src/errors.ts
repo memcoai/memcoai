@@ -19,7 +19,11 @@
 
 import { status, type ServiceError } from '@grpc/grpc-js'
 
-import { errorDetails, STATUS_DETAILS_KEY } from './internal/wire.js'
+import {
+  errorDetails,
+  STATUS_DETAILS_KEY,
+  type ErrorInfo
+} from './internal/wire.js'
 
 /**
  * Base of every error this SDK raises.
@@ -38,7 +42,11 @@ export class MemcoError extends Error {
  * The client was asked for something it cannot do before reaching the service.
  *
  * A missing credential, an unparseable host, a non-positive timeout, a log
- * level that is not one, a call on a closed client. Nothing was sent.
+ * level that is not one, a call on a closed client or a closed session.
+ * Nothing was sent — with one exception: a local clock so far ahead of the
+ * service's that a key acting for one of your users arrives already expired,
+ * which only a service that does not send `expiresIn` can produce. That key is
+ * ended again before this is thrown.
  */
 export class MemcoConfigError extends MemcoError {}
 
@@ -75,8 +83,11 @@ export class MemcoAPIError extends MemcoError {
  *
  * Never worth retrying: the same credential will be refused again. Check that
  * `MEMCO_API_TOKEN`, or the `token` given to {@link MemcoOptions}, is present
- * and still current. {@link Memco.connect} lists domains, and that call carries
- * the credential, so a stale one fails there rather than on the first search.
+ * and still current — or, for an API client, `MEMCO_CLIENT_ID` and
+ * `MEMCO_CLIENT_SECRET`, or `clientId` and `clientSecret`. {@link Memco.connect}
+ * proves the credential — a token by listing domains, client credentials by
+ * exchanging them for a token — so a stale one fails there rather than on the
+ * first real call.
  *
  * Prefer `error.name === 'MemcoAuthenticationError'` to `instanceof`, for the
  * reason this module's header gives.
@@ -129,18 +140,122 @@ export class MemcoInvalidRequestError extends MemcoAPIError {}
 export class MemcoNotFoundError extends MemcoAPIError {}
 
 /**
+ * What the call would create already exists.
+ *
+ * Raised for a network name or an external user id that is already taken.
+ * Never worth retrying as-is: the same request will be refused again. Either
+ * use what already exists, or create it under another name.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await client.users.create('customer-42', { roles: ['reader'] })
+ * } catch (error) {
+ *   if (!(error instanceof MemcoAlreadyExistsError)) throw error
+ *   await client.users.get('customer-42')
+ * }
+ * ```
+ */
+export class MemcoAlreadyExistsError extends MemcoAPIError {}
+
+/**
  * The service refused because the caller's state does not allow the call.
  *
- * Billing, account standing, terms — something outside the request has to
- * change, so neither a retry nor a different argument gets past it. `detail` is
- * the service's own account of what that is.
+ * Billing, account standing, terms, a resource in the wrong state — something
+ * outside the request has to change, so neither a retry nor a different
+ * argument gets past it. `detail` is the service's own account of what that is.
  *
- * {@link MemcoSunsetError} extends this class, so an `instanceof` chain testing
- * this one first never reaches it, and comparing `name` against
- * `'MemcoPreconditionFailedError'` never matches it at all. Test for the sunset
+ * Three cases the service names with a structured reason are modelled as
+ * subclasses: a sunset, as {@link MemcoSunsetError}, and the two refusals to
+ * place a user in a network, {@link MemcoUserAlreadyAssignedNetworkError} and
+ * {@link MemcoExternalUserNeedsCustomerNetworkError}. An `instanceof` chain
+ * testing this class first never reaches them, and comparing `name` against
+ * `'MemcoPreconditionFailedError'` never matches them at all. Test for them
  * explicitly, either way.
  */
-export class MemcoPreconditionFailedError extends MemcoAPIError {}
+export class MemcoPreconditionFailedError extends MemcoAPIError {
+  /**
+   * The detail the service attached to the refusal, key to value, such as the
+   * network a user is already in. Empty when it attached none. Frozen, and the
+   * service's to extend: a key this SDK does not name is still here.
+   */
+  readonly metadata: Readonly<Record<string, string>>
+
+  constructor(
+    code: status,
+    detail: string,
+    debugErrorString?: string,
+    metadata: Readonly<Record<string, string>> = {}
+  ) {
+    super(code, detail, debugErrorString)
+    this.metadata = Object.freeze({ ...metadata })
+  }
+}
+
+/**
+ * The user is already in another network of the same memory domain.
+ *
+ * A user is placed in one network per domain, so placing them in a second is
+ * refused rather than done as a silent move. Pass `force: true` to
+ * {@link NetworkOperations.addMember} to move them.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await client.networks.addMember(project.id, { userId: user.id })
+ * } catch (error) {
+ *   if (!(error instanceof MemcoUserAlreadyAssignedNetworkError)) throw error
+ *   console.log(`moving them out of ${error.currentNetworkName}`)
+ *   await client.networks.addMember(project.id, { userId: user.id, force: true })
+ * }
+ * ```
+ */
+export class MemcoUserAlreadyAssignedNetworkError extends MemcoPreconditionFailedError {
+  /** The reason the service names this refusal by. */
+  static readonly reason = 'USER_ALREADY_ASSIGNED_NETWORK'
+
+  /** The id of the network the user is already in, or `null` if unsent. */
+  readonly currentNetworkId: string | null
+
+  /** The name of the network the user is already in, or `null` if unsent. */
+  readonly currentNetworkName: string | null
+
+  constructor(
+    code: status,
+    detail: string,
+    debugErrorString?: string,
+    metadata: Readonly<Record<string, string>> = {}
+  ) {
+    super(code, detail, debugErrorString, metadata)
+    this.currentNetworkId = this.metadata['current_network_id'] ?? null
+    this.currentNetworkName = this.metadata['current_network_name'] ?? null
+  }
+}
+
+/**
+ * An external user can be placed only in a customer-scoped network.
+ *
+ * Refused for a network of any other scope, a domain's root network included.
+ * Place the user in a customer network, or create one for them with
+ * `scope: 'customer'`.
+ */
+export class MemcoExternalUserNeedsCustomerNetworkError extends MemcoPreconditionFailedError {
+  /** The reason the service names this refusal by. */
+  static readonly reason = 'EXTERNAL_USER_NEEDS_CUSTOMER_NETWORK'
+
+  /** The scope a network must have to take the user, or `null` if unsent. */
+  readonly requiredNetworkScope: string | null
+
+  constructor(
+    code: status,
+    detail: string,
+    debugErrorString?: string,
+    metadata: Readonly<Record<string, string>> = {}
+  ) {
+    super(code, detail, debugErrorString, metadata)
+    this.requiredNetworkScope = this.metadata['required_network_scope'] ?? null
+  }
+}
 
 /** Which version reached its end of life. */
 export const SunsetKind = {
@@ -177,9 +292,10 @@ export class MemcoSunsetError extends MemcoPreconditionFailedError {
     code: status,
     detail: string,
     debugErrorString: string | undefined,
-    kind: SunsetKind
+    kind: SunsetKind,
+    metadata: Readonly<Record<string, string>> = {}
   ) {
-    super(code, detail, debugErrorString)
+    super(code, detail, debugErrorString, metadata)
     this.kind = kind
   }
 }
@@ -314,13 +430,21 @@ const STATUS_TO_ERROR = new Map<status, APIErrorClass>([
   [status.PERMISSION_DENIED, MemcoPermissionError],
   [status.INVALID_ARGUMENT, MemcoInvalidRequestError],
   [status.NOT_FOUND, MemcoNotFoundError],
+  [status.ALREADY_EXISTS, MemcoAlreadyExistsError],
   [status.FAILED_PRECONDITION, MemcoPreconditionFailedError],
   [status.RESOURCE_EXHAUSTED, MemcoResourceExhaustedError],
   [status.UNAVAILABLE, MemcoUnavailableError],
   [status.DEADLINE_EXCEEDED, MemcoTimeoutError]
 ])
 
-/** The error domain Memco's own `google.rpc.ErrorInfo` details are scoped to. */
+/**
+ * The error domain Memco's own `google.rpc.ErrorInfo` details are scoped to.
+ *
+ * So a reason another service happens to spell the same way is not read as
+ * Memco's. This is namespacing, not a trust boundary: anything terminating the
+ * connection to the configured host could write this domain into a trailer,
+ * exactly as it could already put anything it liked in an error message.
+ */
 const ERROR_DOMAIN = 'memco.ai'
 
 const SUNSET_REASONS = new Map<string, SunsetKind>([
@@ -328,29 +452,38 @@ const SUNSET_REASONS = new Map<string, SunsetKind>([
   ['API_VERSION_SUNSET', SunsetKind.API_VERSION]
 ])
 
+type PreconditionClass = new (
+  code: status,
+  detail: string,
+  debugErrorString?: string,
+  metadata?: Readonly<Record<string, string>>
+) => MemcoPreconditionFailedError
+
+const PRECONDITION_REASONS = new Map<string, PreconditionClass>(
+  [
+    MemcoUserAlreadyAssignedNetworkError,
+    MemcoExternalUserNeedsCustomerNetworkError
+  ].map(cls => [cls.reason, cls])
+)
+
 /**
- * Read the sunset discriminator out of a call's trailing metadata.
+ * Read the Memco-scoped `ErrorInfo` out of a call's trailing metadata.
  *
- * Returns `undefined` for anything that is not a Memco-scoped sunset, and for
- * any trailer that cannot be read. Losing the discriminator costs the caller
- * the `MemcoSunsetError` they would have had, leaving them a
- * `MemcoPreconditionFailedError`; a throw here would cost them their error
- * entirely.
+ * The reason is read from here and nowhere else — never from the message —
+ * because it is what separates a sunset, or a refused placement, from every
+ * other precondition failure sharing the status code.
+ *
+ * Returns `undefined` when the trailer carries none, and for any trailer that
+ * cannot be read. Losing the reason costs the caller a discriminator, leaving
+ * them a plain `MemcoPreconditionFailedError`; a throw here would cost them
+ * their error entirely.
  */
-function sunsetKind(error: Partial<ServiceError>): SunsetKind | undefined {
+function memcoErrorInfo(error: Partial<ServiceError>): ErrorInfo | undefined {
   const raw = error.metadata?.get(STATUS_DETAILS_KEY)?.[0]
   if (!(raw instanceof Buffer)) {
     return undefined
   }
-  for (const info of errorDetails(raw)) {
-    if (info.domain === ERROR_DOMAIN) {
-      const kind = SUNSET_REASONS.get(info.reason)
-      if (kind !== undefined) {
-        return kind
-      }
-    }
-  }
-  return undefined
+  return errorDetails(raw).find(info => info.domain === ERROR_DOMAIN)
 }
 
 /**
@@ -358,9 +491,12 @@ function sunsetKind(error: Partial<ServiceError>): SunsetKind | undefined {
  *
  * Returns rather than throws, so a caller can add context before raising.
  *
- * The mapping is by status code, with `FAILED_PRECONDITION` splitting further:
- * when the call carries a Memco-scoped `google.rpc.ErrorInfo` naming a sunset,
- * the result is a {@link MemcoSunsetError}. Any code with no entry becomes a
+ * The mapping is by status code, with `FAILED_PRECONDITION` splitting further
+ * by the Memco-scoped `google.rpc.ErrorInfo` the call carries: a sunset becomes
+ * a {@link MemcoSunsetError}, and a refused placement the subclass its reason
+ * names. Any other precondition failure — an unknown reason included — stays a
+ * {@link MemcoPreconditionFailedError}, carrying whatever metadata the service
+ * attached. Any code with no entry becomes a
  * {@link MemcoInternalError}, which is where an unrecognised status belongs —
  * it is not something the caller did.
  *
@@ -377,10 +513,15 @@ export function fromServiceError(error: Partial<ServiceError>): MemcoAPIError {
   // for it, and it is often the same string as the details.
   const debug = error.message
   if (code === status.FAILED_PRECONDITION) {
-    const kind = sunsetKind(error)
+    const info = memcoErrorInfo(error)
+    const kind = info && SUNSET_REASONS.get(info.reason)
     if (kind !== undefined) {
-      return new MemcoSunsetError(code, detail, debug, kind)
+      return new MemcoSunsetError(code, detail, debug, kind, info?.metadata)
     }
+    const precondition =
+      (info && PRECONDITION_REASONS.get(info.reason)) ??
+      MemcoPreconditionFailedError
+    return new precondition(code, detail, debug, info?.metadata)
   }
   const cls = STATUS_TO_ERROR.get(code) ?? MemcoInternalError
   return new cls(code, detail, debug)

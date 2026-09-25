@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,8 +93,10 @@ func TestProvenanceNeedsNoConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(first.ServerCommit) || len(first.Protos) != 1 ||
-		first.Protos[0].Path != "memcoai/memory/v1/memory.proto" {
+	recordsMemory := slices.ContainsFunc(first.Protos, func(p ProtoRecord) bool {
+		return p.Path == "memcoai/memory/v1/memory.proto"
+	})
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(first.ServerCommit) || !recordsMemory {
 		t.Fatalf("got %+v", first)
 	}
 	first.Protos[0].Path = "changed"

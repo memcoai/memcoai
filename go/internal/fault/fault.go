@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -32,6 +33,12 @@ const (
 	ExhaustionUnknown   = "unknown"
 )
 
+// The refusals to place a user in a network the service names by reason.
+const (
+	ReasonUserAlreadyAssignedNetwork       = "USER_ALREADY_ASSIGNED_NETWORK"
+	ReasonExternalUserNeedsCustomerNetwork = "EXTERNAL_USER_NEEDS_CUSTOMER_NETWORK"
+)
+
 // Error is what every internal package returns.
 type Error struct {
 	Kind       Kind
@@ -39,6 +46,10 @@ type Error struct {
 	Detail     string
 	Sunset     string
 	Exhaustion string
+	// Reason and Metadata are what a FAILED_PRECONDITION's memco ErrorInfo
+	// named the refusal by, and the detail beside it.
+	Reason   string
+	Metadata map[string]string
 	// Cause is the caller's context error, when that context ended the call.
 	Cause error
 }
@@ -92,7 +103,8 @@ func FromRPC(ctx context.Context, err error) *Error {
 	translated := &Error{Code: code, Detail: st.Message()}
 	switch code {
 	case codes.FailedPrecondition:
-		translated.Sunset = sunset(st)
+		translated.Reason, translated.Metadata = errorInfo(st)
+		translated.Sunset = sunsets[translated.Reason]
 	case codes.ResourceExhausted:
 		translated.Exhaustion = exhaustion(st.Message())
 	case codes.Canceled, codes.DeadlineExceeded:
@@ -110,19 +122,33 @@ func FromContext(ctx context.Context) *Error {
 	return FromRPC(ctx, status.FromContextError(ctx.Err()).Err())
 }
 
-// sunset reads the cause of a sunset from a memco ErrorInfo. A reason it does
-// not recognise is not guessed at.
-func sunset(st *status.Status) string {
+var placements = map[string]bool{
+	ReasonUserAlreadyAssignedNetwork:       true,
+	ReasonExternalUserNeedsCustomerNetwork: true,
+}
+
+// errorInfo reads the reason a memco ErrorInfo names a refusal by, and the
+// detail beside it: the first reason this SDK knows, else the first reason
+// given. Another domain's reason is never read as the service's, and a reason
+// is never guessed from the message.
+func errorInfo(st *status.Status) (string, map[string]string) {
+	var first *errdetails.ErrorInfo
 	for _, detail := range st.Details() {
 		info, ok := detail.(*errdetails.ErrorInfo)
 		if !ok || info.GetDomain() != memcoDomain {
 			continue
 		}
-		if kind, known := sunsets[info.GetReason()]; known {
-			return kind
+		if _, sunset := sunsets[info.GetReason()]; sunset || placements[info.GetReason()] {
+			return info.GetReason(), maps.Clone(info.GetMetadata())
+		}
+		if first == nil {
+			first = info
 		}
 	}
-	return ""
+	if first == nil {
+		return "", nil
+	}
+	return first.GetReason(), maps.Clone(first.GetMetadata())
 }
 
 // Quota markers are checked first: the longer window decides whether waiting

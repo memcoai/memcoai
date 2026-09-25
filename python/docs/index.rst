@@ -10,6 +10,7 @@ memcoai
 
    clients
    operations
+   administration
    agent
    types
    errors

@@ -81,6 +81,11 @@ nitpick_ignore = [
     ("py:attr", "MemcoAPIError.code"),
     ("py:attr", "MemcoAPIError.message"),
     ("py:attr", "MemcoResourceExhaustedError.kind"),
+    # Private types in the memory namespaces' constructor signatures. The
+    # client builds its namespaces, so no caller ever passes one.
+    ("py:class", "Renewing"),
+    ("py:class", "AsyncRenewing"),
+    ("py:class", "_limits.Known"),
 ]
 
 exclude_patterns = ["_build"]

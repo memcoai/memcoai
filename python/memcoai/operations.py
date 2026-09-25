@@ -9,11 +9,13 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Awaitable, Callable, Generator, Iterable
+from functools import partial
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
-from . import _convert, _deprecation, _limits, _requests
+from . import _convert, _deprecation, _limits, _requests, _validate
+from ._auth import AsyncRenewing, Renewing
 from .errors import MemcoAPIError
 from .types import (
     AsyncMemory,
@@ -57,17 +59,30 @@ class MemoryOperations:
         ...     result = session.search("how does X work")
     """
 
-    def __init__(self, stub: Any, call: Callable[..., Any]) -> None:
+    def __init__(
+        self,
+        stub: Any,
+        call: Callable[..., Any],
+        *,
+        impersonate: Callable[[str], Renewing],
+        known: _limits.Known | None = None,
+    ) -> None:
         """Bind the namespace to its client.
 
         Args:
             stub: The generated service stub.
             call: The owning client's invoker, which applies the deadline and
                 translates failures into typed exceptions.
+            impersonate: The owning client's source of impersonation keys:
+                given an external id, the credential a session acting as that
+                user leases.
+            known: The limits to share with the namespace this one is scoped
+                from, or ``None`` to start knowing none.
         """
         self._stub = stub
         self._call = call
-        self._known = _limits.Known()
+        self._impersonate = impersonate
+        self._known = known if known is not None else _limits.Known()
         """What the service has reported about its own limits, once it has."""
 
     def list_domains(self, *, timeout: float | None = None) -> DomainList:
@@ -80,7 +95,8 @@ class MemoryOperations:
         argument.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The available domains and accompanying guidance.
@@ -110,7 +126,8 @@ class MemoryOperations:
         caller that wants the catalog itself, not for shaping what a session offers.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             One descriptor per method the contract declares.
@@ -124,7 +141,9 @@ class MemoryOperations:
         response = self._call(self._stub.ListTools, _requests.list_tools_request(), timeout)
         return _convert.to_tool_list(response)
 
-    def start_session(self, domain: str, *, timeout: float | None = None) -> Session:
+    def start_session(
+        self, domain: str, *, external_id: str | None = None, timeout: float | None = None
+    ) -> Session:
         """Start a session and get its id. A session groups the searches you make while working on
         one task, so they are recorded as the series they are rather than as unrelated one-offs.
 
@@ -137,20 +156,77 @@ class MemoryOperations:
         Args:
             domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
                 domains available to you.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            external_id: Act as one of your own users, by your id for them, as
+                created with :meth:`~memcoai.administration.UserOperations.create`.
+                The client's credential mints a key acting as that user, and the
+                session and every call through it carry that key, which renews
+                itself before it expires. The session first lists the domains
+                under the key, learning the limits and any deprecation notice as
+                that user. Close the session when done, which ends the key at
+                once; one dropped unclosed is ended only eventually, as
+                :meth:`Session.close` describes. Omit it to open the session
+                under the client's own credential.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             The open session, with every session-bound operation already
             applied -- :meth:`with_session` returns the same kind of object.
 
         Raises:
-            MemcoInvalidRequestError: If the domain is blank.
-            MemcoAPIError: If the service returns an error status.
+            MemcoInvalidRequestError: If the domain or ``external_id`` is blank.
+            MemcoAPIError: If the service returns an error status. With an
+                ``external_id``, the key minted for a session that failed to
+                open is ended: before this is raised, or, if the mint outlasted
+                ``timeout``, as the key arrives.
 
         Example:
             >>> session = client.memory.start_session("coding")
             >>> session.id
             'session-z2ye39'
+        """
+        if external_id is None:
+            return self._open_session(domain, timeout)
+        # Checked before the mint, so a blank value costs no key.
+        _validate.check_domain(domain)
+        _validate.check_idx(external_id, "external_id")
+        key = self._impersonate(external_id)
+        try:
+            # Every call from here on carries the key -- including what a
+            # session's tools and returned memories send, since they reach the
+            # service through the namespace their session was opened on.
+            scoped = MemoryOperations(
+                self._stub,
+                partial(self._call, credential=key),
+                impersonate=self._impersonate,
+                known=self._known,
+            )
+            # The first lease mints the key; this is also what tells the
+            # session its limits and any deprecation, as that user.
+            scoped.list_domains(timeout=timeout)
+            return scoped._open_session(domain, timeout, release=key.close)
+        except BaseException:
+            key.close()
+            raise
+
+    def _open_session(
+        self, domain: str, timeout: float | None, release: Callable[[], None] | None = None
+    ) -> Session:
+        """Start a session under whatever credential this namespace sends.
+
+        Args:
+            domain: The memory domain to operate in.
+            timeout: Deadline in seconds for each request, or ``None`` for the
+                client's.
+            release: What closing the session does, or ``None`` for a session
+                holding nothing to end.
+
+        Returns:
+            The open session.
+
+        Raises:
+            MemcoInvalidRequestError: If the domain is blank.
+            MemcoAPIError: If the service returns an error status.
         """
         session_id, instructions = _convert.to_session(
             self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout)
@@ -163,33 +239,39 @@ class MemoryOperations:
                 exc,
             )
             tool_catalog = None
-        return Session(self, session_id, instructions, tool_catalog)
+        return Session(self, session_id, instructions, tool_catalog, release)
 
-    def with_session(self, domain: str, *, timeout: float | None = None) -> Session:
+    def with_session(
+        self, domain: str, *, external_id: str | None = None, timeout: float | None = None
+    ) -> Session:
         """Open a session and apply it to every call made through the result.
 
         The same as :meth:`start_session`: kept as its own name for the
         context-manager call site, wherever the session outlives a line or two.
         A call that silently drops the id is still a valid call, it just stops
-        being part of the series.
+        being part of the series. Leaving the block closes the session, which
+        ends the key a session opened with an ``external_id`` holds.
 
         Args:
             domain: Slug of the domain, as returned by :meth:`list_domains`.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            external_id: Act as one of your own users, by your id for them. See
+                :meth:`start_session`.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             The open session, with every session-bound operation already
             applied -- the same as what :meth:`start_session` returns.
 
         Raises:
-            MemcoInvalidRequestError: If the domain is blank.
+            MemcoInvalidRequestError: If the domain or ``external_id`` is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> with client.memory.with_session("coding") as session:
+            >>> with client.memory.with_session("coding", external_id="customer-42") as session:
             ...     result = session.search("how does X work")
         """
-        return self.start_session(domain, timeout=timeout)
+        return self.start_session(domain, external_id=external_id, timeout=timeout)
 
     def search(
         self,
@@ -238,7 +320,8 @@ class MemoryOperations:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
                 determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -284,7 +367,8 @@ class MemoryOperations:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -358,7 +442,8 @@ class MemoryOperations:
                 determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -432,7 +517,8 @@ class MemoryOperations:
                 reaching this insight. Up to 20 sources can be included.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -481,7 +567,8 @@ class MemoryOperations:
                 in the response from :meth:`search`.
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -521,7 +608,8 @@ class MemoryOperations:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -573,7 +661,10 @@ class MemoryOperations:
                 :meth:`start_session` or a previous search. It records them as part of that series
                 of work, and supplies the memory domain, so the domain argument is not needed and is
                 ignored.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -622,17 +713,30 @@ class AsyncMemoryOperations:
         ...     result = await session.search("how does X work")
     """
 
-    def __init__(self, stub: Any, call: Callable[..., Any]) -> None:
+    def __init__(
+        self,
+        stub: Any,
+        call: Callable[..., Any],
+        *,
+        impersonate: Callable[[str], AsyncRenewing],
+        known: _limits.Known | None = None,
+    ) -> None:
         """Bind the namespace to its client.
 
         Args:
             stub: The generated service stub.
             call: The owning client's invoker, which applies the deadline and
                 translates failures into typed exceptions.
+            impersonate: The owning client's source of impersonation keys:
+                given an external id, the credential a session acting as that
+                user leases.
+            known: The limits to share with the namespace this one is scoped
+                from, or ``None`` to start knowing none.
         """
         self._stub = stub
         self._call = call
-        self._known = _limits.Known()
+        self._impersonate = impersonate
+        self._known = known if known is not None else _limits.Known()
         """What the service has reported about its own limits, once it has."""
 
     async def list_domains(self, *, timeout: float | None = None) -> DomainList:
@@ -645,7 +749,8 @@ class AsyncMemoryOperations:
         argument.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The available domains and accompanying guidance.
@@ -677,7 +782,8 @@ class AsyncMemoryOperations:
         caller that wants the catalog itself, not for shaping what a session offers.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             One descriptor per method the contract declares.
@@ -701,7 +807,8 @@ class AsyncMemoryOperations:
         so its own failure must not surface as one -- only ``StartSession``'s should.
 
         Args:
-            timeout: Per-call deadline in seconds, as given to ``start_session``.
+            timeout: Deadline in seconds for the request, as given to
+                ``start_session``.
 
         Returns:
             The catalog, or ``None`` if the fetch failed after the retries
@@ -718,7 +825,9 @@ class AsyncMemoryOperations:
             )
             return None
 
-    async def start_session(self, domain: str, *, timeout: float | None = None) -> AsyncSession:
+    async def start_session(
+        self, domain: str, *, external_id: str | None = None, timeout: float | None = None
+    ) -> AsyncSession:
         """Start a session and get its id. A session groups the searches you make while working on
         one task, so they are recorded as the series they are rather than as unrelated one-offs.
 
@@ -731,35 +840,99 @@ class AsyncMemoryOperations:
         Args:
             domain: (Required) The memory domain to operate in. Call :meth:`list_domains` for the
                 domains available to you.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            external_id: Act as one of your own users, by your id for them, as
+                created with :meth:`~memcoai.administration.AsyncUserOperations.create`.
+                The client's credential mints a key acting as that user, and the
+                session and every call through it carry that key, which renews
+                itself before it expires. The session first lists the domains
+                under the key, learning the limits and any deprecation notice as
+                that user. Close the session when done, which ends the key at
+                once; one dropped unclosed is ended only eventually, as
+                :meth:`AsyncSession.close` describes. Omit it to open the
+                session under the client's own credential.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             The open session, with every session-bound operation already
             applied -- :meth:`with_session` returns the same kind of object.
 
         Raises:
-            MemcoInvalidRequestError: If the domain is blank.
-            MemcoAPIError: If the service returns an error status.
+            MemcoInvalidRequestError: If the domain or ``external_id`` is blank.
+            MemcoAPIError: If the service returns an error status. With an
+                ``external_id``, the key minted for a session that failed to
+                open is ended: before this is raised, or, if the mint outlasted
+                ``timeout``, as the key arrives.
 
         Example:
             >>> session = await client.memory.start_session("coding")
             >>> session.id
             'session-z2ye39'
         """
+        if external_id is None:
+            return await self._open_session(domain, timeout)
+        # Checked before the mint, so a blank value costs no key.
+        _validate.check_domain(domain)
+        _validate.check_idx(external_id, "external_id")
+        key = self._impersonate(external_id)
+        try:
+            # Every call from here on carries the key -- including what a
+            # session's tools and returned memories send, since they reach the
+            # service through the namespace their session was opened on.
+            scoped = AsyncMemoryOperations(
+                self._stub,
+                partial(self._call, credential=key),
+                impersonate=self._impersonate,
+                known=self._known,
+            )
+            # The first lease mints the key, once, before the two calls below
+            # are sent together; this is also what tells the session its
+            # limits and any deprecation, as that user.
+            await scoped.list_domains(timeout=timeout)
+            return await scoped._open_session(domain, timeout, release=key.close)
+        except BaseException:
+            await key.close()
+            raise
+
+    async def _open_session(
+        self,
+        domain: str,
+        timeout: float | None,
+        release: Callable[[], Awaitable[None]] | None = None,
+    ) -> AsyncSession:
+        """Start a session under whatever credential this namespace sends.
+
+        Args:
+            domain: The memory domain to operate in.
+            timeout: Deadline in seconds for each request, or ``None`` for the
+                client's.
+            release: What closing the session does, or ``None`` for a session
+                holding nothing to end.
+
+        Returns:
+            The open session.
+
+        Raises:
+            MemcoInvalidRequestError: If the domain is blank.
+            MemcoAPIError: If the service returns an error status.
+        """
         response, tool_catalog = await asyncio.gather(
             self._call(self._stub.StartSession, _requests.start_session_request(domain), timeout),
             self._best_effort_tool_catalog(timeout),
         )
         session_id, instructions = _convert.to_session(response)
-        return AsyncSession(self, session_id, instructions, tool_catalog)
+        return AsyncSession(self, session_id, instructions, tool_catalog, release)
 
-    def with_session(self, domain: str, *, timeout: float | None = None) -> AsyncSessionOpener:
+    def with_session(
+        self, domain: str, *, external_id: str | None = None, timeout: float | None = None
+    ) -> AsyncSessionOpener:
         """Open a session and apply it to every call made through the result.
 
         The same as :meth:`start_session`: kept as its own name for the
         context-manager call site, wherever the session outlives a line or two.
         A call that silently drops the id is still a valid call, it just stops
-        being part of the series.
+        being part of the series. Leaving the block closes the session, which
+        ends the key a session opened with an ``external_id`` holds.
 
         The result is both awaitable and an async context manager, so ``await``
         and ``async with`` both reach the session. Nothing is sent until one of
@@ -768,21 +941,25 @@ class AsyncMemoryOperations:
 
         Args:
             domain: Slug of the domain, as returned by :meth:`list_domains`.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            external_id: Act as one of your own users, by your id for them. See
+                :meth:`start_session`.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             A handle that opens the session and yields it, on ``await`` or on
             entering it.
 
         Raises:
-            MemcoInvalidRequestError: If the domain is blank.
+            MemcoInvalidRequestError: If the domain or ``external_id`` is blank.
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> async with client.memory.with_session("coding") as session:
+            >>> opener = client.memory.with_session("coding", external_id="customer-42")
+            >>> async with opener as session:
             ...     result = await session.search("how does X work")
         """
-        return AsyncSessionOpener(self, domain, timeout)
+        return AsyncSessionOpener(self, domain, timeout, external_id)
 
     async def search(
         self,
@@ -831,7 +1008,8 @@ class AsyncMemoryOperations:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
                 determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -877,7 +1055,8 @@ class AsyncMemoryOperations:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -951,7 +1130,8 @@ class AsyncMemoryOperations:
                 determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -1025,7 +1205,8 @@ class AsyncMemoryOperations:
                 determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -1074,7 +1255,8 @@ class AsyncMemoryOperations:
                 in the response from :meth:`search`.
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -1118,7 +1300,8 @@ class AsyncMemoryOperations:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -1172,7 +1355,10 @@ class AsyncMemoryOperations:
                 :meth:`start_session` or a previous search. It records them as part of that series
                 of work, and supplies the memory domain, so the domain argument is not needed and is
                 ignored.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -1218,10 +1404,13 @@ class Session:
     cannot be dropped, mistyped, or invented further down a call stack. The
     session supplies the domain too, which is why no operation here takes one.
 
-    Usable as a context manager, which releases nothing: the contract has no
-    call that ends a session, and a session id stays usable for as long as it is
-    named. The block bounds the scope for the reader rather than managing a
-    resource.
+    Usable as a context manager, which closes it on leaving. A session opened
+    with an ``external_id`` holds a key acting as that user, and closing ends
+    the key at once; dropping it unclosed ends the key only eventually, as
+    :meth:`close` describes. Any other session holds nothing: the contract has
+    no call that ends a session, and a session id stays usable for as long as
+    it is named, so closing one changes nothing and the block bounds the scope
+    for the reader.
 
     Attributes:
         id: The session every call through this object names.
@@ -1242,6 +1431,7 @@ class Session:
         session_id: str,
         instructions: Instructions,
         tool_catalog: tuple[ToolDescriptor, ...] | None,
+        release: Callable[[], None] | None = None,
     ) -> None:
         """Bind a session to a namespace.
 
@@ -1253,11 +1443,14 @@ class Session:
                 the session was opened, which :meth:`tools` filters against.
                 ``None`` when that fetch failed -- every tool is then treated
                 as available rather than none.
+            release: Ends what the session holds, on :meth:`close`. ``None``
+                for a session holding nothing.
         """
         self._operations = operations
         self._id = session_id
         self._instructions = instructions
         self._tool_catalog = tool_catalog
+        self._release = release
 
     @property
     def id(self) -> str:
@@ -1283,10 +1476,42 @@ class Session:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Leave the scope, releasing nothing.
+        """Close the session on leaving the scope. See :meth:`close`."""
+        self.close()
 
-        There is no call that ends a session, so there is nothing to undo here.
+    def close(self) -> None:
+        """Close the session, ending the key it holds if it acts for an external user.
+
+        Only a session opened with an ``external_id`` holds anything: its
+        impersonation key, which is revoked here rather than left live until it
+        expires. Every later call through the session, its tools, or a memory
+        it returned is refused locally with
+        :class:`~memcoai.errors.MemcoConfigError`. A call still in flight
+        keeps the key until it finishes, and the key is ended then.
+
+        Ending the key is best effort. If the service cannot end it, a warning
+        naming the key's id is logged and nothing is raised: the next session
+        opened for the same user tries again, as does closing the client, and
+        the key expires on its own regardless. After the client is closed, this
+        does nothing.
+
+        A session dropped without being closed has its key ended too, but only
+        eventually: once the session, and every tool and memory it returned,
+        has been garbage-collected, a :class:`ResourceWarning` is issued, as
+        for an unclosed file, and the client ends the key at its next call.
+        Until then the key counts against the user's cap on live keys, so close
+        the session rather than rely on this.
+
+        A session opened without an ``external_id`` holds nothing, so closing
+        it changes nothing and it stays usable. Safe to call more than once.
+
+        Example:
+            >>> session = client.memory.start_session("coding", external_id="customer-42")
+            >>> result = session.search("how does X work")
+            >>> session.close()
         """
+        if self._release is not None:
+            self._release()
 
     def search(
         self,
@@ -1326,7 +1551,8 @@ class Session:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`~memcoai.operations.MemoryOperations.list_domains` for the tag types this
                 domain uses. Supply as many as you can determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -1362,7 +1588,8 @@ class Session:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -1423,7 +1650,8 @@ class Session:
                 domain uses. Supply as many as you can determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -1487,7 +1715,8 @@ class Session:
                 reaching this insight. Up to 20 sources can be included.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -1531,7 +1760,8 @@ class Session:
         Args:
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -1567,7 +1797,8 @@ class Session:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -1606,7 +1837,10 @@ class Session:
         Args:
             memories: (Required) The memories to contribute. At least one, at most 25 per call; send
                 several calls for more.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -1680,10 +1914,13 @@ class AsyncSession:
     or invented further down a call stack. The session supplies the domain too,
     which is why no operation here takes one.
 
-    Usable as an async context manager, which releases nothing: the contract has
-    no call that ends a session, and a session id stays usable for as long as it
-    is named. The block bounds the scope for the reader rather than managing a
-    resource.
+    Usable as an async context manager, which closes it on leaving. A session
+    opened with an ``external_id`` holds a key acting as that user, and closing
+    ends the key at once; dropping it unclosed ends the key only eventually, as
+    :meth:`close` describes. Any other session holds nothing: the contract has
+    no call that ends a session, and a session id stays usable for as long as
+    it is named, so closing one changes nothing and the block bounds the scope
+    for the reader.
 
     Attributes:
         id: The session every call through this object names.
@@ -1700,6 +1937,7 @@ class AsyncSession:
         session_id: str,
         instructions: Instructions,
         tool_catalog: tuple[ToolDescriptor, ...] | None,
+        release: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Bind a session to a namespace.
 
@@ -1711,11 +1949,14 @@ class AsyncSession:
                 when the session was opened, which :meth:`tools` filters against.
                 ``None`` when that fetch failed -- every tool is then treated
                 as available rather than none.
+            release: Ends what the session holds, on :meth:`close`. ``None``
+                for a session holding nothing.
         """
         self._operations = operations
         self._id = session_id
         self._instructions = instructions
         self._tool_catalog = tool_catalog
+        self._release = release
 
     @property
     def id(self) -> str:
@@ -1741,10 +1982,42 @@ class AsyncSession:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Leave the scope, releasing nothing.
+        """Close the session on leaving the scope. See :meth:`close`."""
+        await self.close()
 
-        There is no call that ends a session, so there is nothing to undo here.
+    async def close(self) -> None:
+        """Close the session, ending the key it holds if it acts for an external user.
+
+        Only a session opened with an ``external_id`` holds anything: its
+        impersonation key, which is revoked here rather than left live until it
+        expires. Every later call through the session, its tools, or a memory
+        it returned is refused locally with
+        :class:`~memcoai.errors.MemcoConfigError`. A call still in flight
+        keeps the key until it finishes, and the key is ended then.
+
+        Ending the key is best effort. If the service cannot end it, a warning
+        naming the key's id is logged and nothing is raised: the next session
+        opened for the same user tries again, as does closing the client, and
+        the key expires on its own regardless. After the client is closed, this
+        does nothing.
+
+        A session dropped without being closed has its key ended too, but only
+        eventually: once the session, and every tool and memory it returned,
+        has been garbage-collected, a :class:`ResourceWarning` is issued, as
+        for an unclosed file, and the client ends the key at its next call.
+        Until then the key counts against the user's cap on live keys, so close
+        the session rather than rely on this.
+
+        A session opened without an ``external_id`` holds nothing, so closing
+        it changes nothing and it stays usable. Safe to call more than once.
+
+        Example:
+            >>> session = await client.memory.start_session("coding", external_id="customer-42")
+            >>> result = await session.search("how does X work")
+            >>> await session.close()
         """
+        if self._release is not None:
+            await self._release()
 
     async def search(
         self,
@@ -1785,7 +2058,8 @@ class AsyncSession:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`~memcoai.operations.AsyncMemoryOperations.list_domains` for the tag types
                 this domain uses. Supply as many as you can determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -1821,7 +2095,8 @@ class AsyncSession:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -1882,7 +2157,8 @@ class AsyncSession:
                 this domain uses. Supply as many as you can determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -1946,7 +2222,8 @@ class AsyncSession:
                 reaching this insight. Up to 20 sources can be included.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -1990,7 +2267,8 @@ class AsyncSession:
         Args:
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -2028,7 +2306,8 @@ class AsyncSession:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -2067,7 +2346,10 @@ class AsyncSession:
         Args:
             memories: (Required) The memories to contribute. At least one, at most 25 per call; send
                 several calls for more.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -2139,19 +2421,30 @@ class AsyncSessionOpener:
     """
 
     def __init__(
-        self, operations: AsyncMemoryOperations, domain: str, timeout: float | None
+        self,
+        operations: AsyncMemoryOperations,
+        domain: str,
+        timeout: float | None,
+        external_id: str | None = None,
     ) -> None:
         """Record what to open, without opening it.
 
         Args:
             operations: The namespace the scope will forward to.
             domain: Slug of the domain to open a session in.
-            timeout: Per-call deadline for the open, or ``None``.
+            timeout: Deadline in seconds for each request the open sends, or
+                ``None``.
+            external_id: The user the session acts as, or ``None`` to open it
+                under the client's own credential.
         """
         self._operations = operations
         self._domain = domain
         self._timeout = timeout
+        self._external_id = external_id
         self._scope: AsyncSession | None = None
+        # Two awaits of one handle would otherwise both find nothing opened
+        # yet, and each open a session -- and mint a key -- of its own.
+        self._opening = asyncio.Lock()
 
     def __await__(self) -> Generator[Any, None, AsyncSession]:
         """Open the session.
@@ -2175,10 +2468,12 @@ class AsyncSessionOpener:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Leave the scope, releasing nothing.
+        """Close the session this opened on leaving the scope.
 
-        There is no call that ends a session, so there is nothing to undo here.
+        See :meth:`AsyncSession.close`.
         """
+        if self._scope is not None:
+            await self._scope.close()
 
     async def _open(self) -> AsyncSession:
         """Open the session and bind it, once.
@@ -2191,6 +2486,9 @@ class AsyncSessionOpener:
         Returns:
             The scope, with the opened session applied to every call.
         """
-        if self._scope is None:
-            self._scope = await self._operations.start_session(self._domain, timeout=self._timeout)
+        async with self._opening:
+            if self._scope is None:
+                self._scope = await self._operations.start_session(
+                    self._domain, external_id=self._external_id, timeout=self._timeout
+                )
         return self._scope

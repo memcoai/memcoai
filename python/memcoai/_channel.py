@@ -9,7 +9,6 @@ from typing import Any
 import grpc
 from grpc_health.v1 import health_pb2
 
-from ._auth import AsyncAuthInterceptor, AuthInterceptor
 from ._config import ClientConfig
 from .memory.v1 import memory_pb2
 
@@ -134,38 +133,36 @@ _OPTIONS = [
 
 
 def build_channel(config: ClientConfig) -> grpc.Channel:
-    """Open a synchronous channel with the credential interceptor attached.
+    """Open a synchronous channel.
+
+    The channel carries no credential: each call passes its own, as explicit
+    metadata. See :mod:`memcoai._auth` for why.
 
     Args:
         config: Resolved client settings.
 
     Returns:
-        A channel that adds the credential to every call.
+        A channel to the configured endpoint.
     """
     if config.tls:
-        channel: grpc.Channel = grpc.secure_channel(
-            config.target, grpc.ssl_channel_credentials(), options=_OPTIONS
-        )
-    else:
-        channel = grpc.insecure_channel(config.target, options=_OPTIONS)
-    return grpc.intercept_channel(channel, AuthInterceptor(config.token))
+        return grpc.secure_channel(config.target, grpc.ssl_channel_credentials(), options=_OPTIONS)
+    return grpc.insecure_channel(config.target, options=_OPTIONS)
 
 
 def build_async_channel(config: ClientConfig) -> Any:
-    """Open an asyncio channel with the credential interceptor attached.
+    """Open an asyncio channel.
+
+    The channel carries no credential: each call passes its own, as explicit
+    metadata. See :mod:`memcoai._auth` for why.
 
     Args:
         config: Resolved client settings.
 
     Returns:
-        A :class:`grpc.aio.Channel` that adds the credential to every call.
+        A :class:`grpc.aio.Channel` to the configured endpoint.
     """
-    interceptors = [AsyncAuthInterceptor(config.token)]
     if config.tls:
         return grpc.aio.secure_channel(
-            config.target,
-            grpc.ssl_channel_credentials(),
-            interceptors=interceptors,
-            options=_OPTIONS,
+            config.target, grpc.ssl_channel_credentials(), options=_OPTIONS
         )
-    return grpc.aio.insecure_channel(config.target, interceptors=interceptors, options=_OPTIONS)
+    return grpc.aio.insecure_channel(config.target, options=_OPTIONS)

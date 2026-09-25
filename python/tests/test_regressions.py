@@ -541,6 +541,12 @@ def test_get_memory_reports_an_absent_memory_rather_than_fabricating_one(
             "dbg",
             errors.SunsetKind.CLIENT_VERSION,
         ),
+        errors.MemcoUserAlreadyAssignedNetworkError(
+            grpc.StatusCode.FAILED_PRECONDITION, "already placed", "dbg"
+        ),
+        errors.MemcoExternalUserNeedsCustomerNetworkError(
+            grpc.StatusCode.FAILED_PRECONDITION, "not a customer network", "dbg"
+        ),
     ],
     ids=lambda e: type(e).__name__,
 )
@@ -551,6 +557,17 @@ def test_errors_survive_pickling_and_copying(exc):
         assert type(restored) is type(exc)
         assert restored.code is exc.code
         assert restored.message == exc.message
+
+
+def test_a_precondition_keeps_its_metadata_through_a_pickle():
+    exc = errors.MemcoUserAlreadyAssignedNetworkError(
+        grpc.StatusCode.FAILED_PRECONDITION,
+        "already placed",
+        "dbg",
+        {"current_network_id": "network-a"},
+    )
+    for restored in (pickle.loads(pickle.dumps(exc)), copy.deepcopy(exc)):
+        assert restored.current_network_id == "network-a"
 
 
 def test_resource_exhausted_keeps_its_kind_through_a_pickle():

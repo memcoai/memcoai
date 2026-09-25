@@ -23,11 +23,20 @@ Everything is available asynchronously too, with the same method names::
     async with AsyncMemco() as client:
         session = await client.memory.start_session("coding")
 
+A client can also authenticate as an API client, with the id and secret it was
+created with instead of a token. The SDK exchanges them for a token, and renews
+that before it expires::
+
+    with Memco(client_id="...", client_secret="...") as client:
+        ...
+
 The rest of the surface is grouped by concern:
 
 * :mod:`memcoai.types` — the immutable result types every operation returns
 * :mod:`memcoai.errors` — the exception hierarchy
 * :mod:`memcoai.operations` — the operation namespaces reached as ``client.memory``
+* :mod:`memcoai.administration` — network and user administration, reached as
+  ``client.networks`` and ``client.users`` on a client with client credentials
 * :mod:`memcoai.agent` — the same operations as agent tools, with schemas and
   rendered results
 
@@ -35,7 +44,13 @@ Configuration comes from arguments first and the environment second:
 
 * ``MEMCO_API_TOKEN`` — the credential: an API key or a session token.
   The older ``MEMCO_API_KEY`` still works but warns.
+* ``MEMCO_CLIENT_ID`` and ``MEMCO_CLIENT_SECRET`` — an API client's
+  credentials, used together. When both are set they win over
+  ``MEMCO_API_TOKEN``, unless a ``token`` argument is passed; setting only one
+  of them is an error.
 * ``MEMCO_API_HOST`` — the endpoint, defaulting to ``grpc.memco.ai:443``.
+* ``MEMCO_API_TLS`` — ``false`` dials without TLS, for a plaintext endpoint such
+  as a local server; the client logs a warning when it does.
 * ``MEMCO_LOG`` — the SDK's log level, defaulting to ``info``: ``debug``,
   ``info``, ``warning``, ``error``, ``critical``, or ``none`` to turn it off.
   The ``log_level`` argument on either client does the same and wins over it.
@@ -59,7 +74,7 @@ from __future__ import annotations
 
 from importlib.metadata import version as _metadata_version
 
-from . import agent, errors, operations, types
+from . import administration, agent, errors, operations, types
 from ._aio import AsyncMemco
 from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
 from ._deprecation import MemcoDeprecationWarning
@@ -86,6 +101,7 @@ __all__ = [
     "Memco",
     "MemcoDeprecationWarning",
     "__version__",
+    "administration",
     "agent",
     "errors",
     "operations",

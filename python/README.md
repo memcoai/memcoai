@@ -162,14 +162,45 @@ Arguments win over the environment, which wins over the defaults.
 
 | Setting | Argument | Environment | Default |
 |---|---|---|---|
-| Credential | `token` | `MEMCO_API_TOKEN` | required |
+| Credential | `token` | `MEMCO_API_TOKEN` | required, unless an API client's credentials are given |
+| API client id | `client_id` | `MEMCO_CLIENT_ID` | — |
+| API client secret | `client_secret` | `MEMCO_CLIENT_SECRET` | — |
+| Issued token lifetime, in seconds | `token_lifetime` | — | the service's |
 | Endpoint | `host` | `MEMCO_API_HOST` | `grpc.memco.ai:443` |
-| TLS | `tls` | — | `True` |
+| TLS | `tls` | `MEMCO_API_TLS` (`true` or `false`) | `True` |
 | Deadline | `timeout` | — | 30 seconds |
 | Log level | `log_level` | `MEMCO_LOG` | `info` |
 
 The credential is either a Memco API key or a session token issued for your
 account; both go in the same header. `MEMCO_API_KEY` is still honoured but warns.
+
+The deadline is the whole call's, and every method also takes its own
+`timeout`. It starts when the call does and covers everything the call waits
+for: a credential still being issued as well as the request, which gets
+whatever is left, so a call ends when you said it would, failing with
+`MemcoTimeoutError` if it has not finished. Two methods send several requests
+and give each of them the deadline in turn: opening a session, and
+`import_memories` with a batch above the service's cap per request.
+
+TLS is on unless you turn it off, with `tls=False` or `MEMCO_API_TLS=false`, for
+a plaintext endpoint such as a local development server. A client built without
+TLS says so at `WARNING`, since its credential then crosses the wire readable.
+
+A client can authenticate as an API client instead, with the `client_id` and
+`client_secret` it was created with. The SDK exchanges them for a token, asking
+for `token_lifetime` if you set it, and renews the token before it expires. The
+two are used together, and which credential a client holds is decided in this
+order:
+
+1. A `token` argument wins, and the client variables are ignored. Passing it
+   beside `client_id` or `client_secret` is an error.
+2. `client_id` and `client_secret` arguments come next.
+3. With no credential argument, `MEMCO_CLIENT_ID` and `MEMCO_CLIENT_SECRET` win
+   over `MEMCO_API_TOKEN` when both are set.
+4. Otherwise `MEMCO_API_TOKEN`, as above.
+
+Half a pair, in arguments or in the environment, raises `MemcoConfigError`, as
+does `token_lifetime` without client credentials.
 
 Constructing a `Memco` makes two calls. It probes the service's health
 endpoint, so a bad host, port or TLS setting fails immediately rather than on
@@ -179,8 +210,41 @@ which reports the input limits the service enforces. The client keeps those and
 applies them from then on, so an oversized field is refused locally instead of
 costing a round trip.
 
+With client credentials, the second call is the exchange for a token instead,
+so bad credentials fail at construction too. An issued token carries no content
+role of its own, so the memory operations refuse it. Such a client administers
+networks and users, and reaches memory through sessions acting for your users,
+both described below.
+
 `AsyncMemco` cannot do any of this in `__init__` — it runs both on `connect()`,
 which `async with` calls for you.
+
+### Against a local development server
+
+A local server usually serves plaintext, so point the client at it and turn TLS
+off, either in the environment:
+
+```bash
+export MEMCO_API_HOST=localhost:50052 MEMCO_API_TLS=false MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=...
+
+python examples/map_your_users.py
+```
+
+or in code:
+
+```python
+with Memco(host="localhost:50052", tls=False, client_id="...", client_secret="...") as client:
+    ...
+```
+
+Either way the client says so before it sends anything:
+
+```text
+memcoai._sync WARNING TLS is off: localhost:50052 is dialled in plaintext, credentials included
+```
+
+A token issued for the live service is rejected by a local server, so for the
+token examples set `MEMCO_API_TOKEN` to one the local server issued.
 
 ## Logging
 
@@ -285,6 +349,113 @@ The memory operations live on `client.memory`.
 | `memory.revert_memory(operation_id)` | Undo one of your own writes |
 | `memory.import_memories(memories, ...)` | Contribute many memories at once, splitting the batch as the service requires |
 
+## Networks and users
+
+A client built with an API client's credentials administers your organization:
+its memory networks, which scope what the people placed in them can find, and
+its external users — your own users, known to Memco by your id for them. The
+API client needs the `network-management` and `user-management` scopes.
+
+```python
+from memcoai import Memco
+
+with Memco(client_id="...", client_secret="...") as client:
+    root = client.networks.list(parent_id="root", domain="coding").networks[0]
+    acme = client.networks.create(name="Acme", parent_id=root.id, scope="customer")
+
+    user = client.users.create("customer-42", roles=["creator"], name="Ada")
+    client.networks.add_member(acme.id, user.id)
+```
+
+| Method | Purpose |
+|---|---|
+| `networks.list(...)` | One page of networks, filtered by name, scope, owner, domain, parent or id |
+| `networks.create(...)`, `update(...)`, `delete(...)` | Manage a network; deleting one takes everything placed in it |
+| `networks.list_members(...)`, `add_member(...)`, `remove_member(...)` | Who is placed in a network |
+| `networks.list_groups(...)`, `list_group_members(...)`, `add_group(...)`, `remove_group(...)` | Identity-provider groups, for enterprise organizations |
+| `users.list(...)`, `get(...)`, `create(...)`, `update(...)`, `delete(...)` | Manage external users |
+| `users.list_keys(...)`, `create_key(...)`, `delete_key(...)` | An external user's API keys |
+
+An external user has no sign-in of its own, never holds `admin`, and can be
+placed only in a customer network. Every `client.users` method names the user by
+your `external_id`; `add_member` takes Memco's own `user.id`. On `update`, an
+argument left as `None` leaves its field as it is, and an empty string clears
+it. Pages count from 1. A key's value is returned once, by `create_key`, and
+never again.
+
+## Acting for your users
+
+Passing `external_id` to `start_session` or `with_session` opens a session that
+acts as one of your external users, so what it finds is what that user may
+find, and what it writes is that user's:
+
+```python
+with Memco(client_id="...", client_secret="...") as client:
+    with client.memory.with_session("coding", external_id="customer-42") as session:
+        result = session.search("how should a client authenticate")
+```
+
+Opening one runs in a fixed order. The SDK has the service mint an
+impersonation key for the user, under your client's token; lists the domains
+under that key, so the session learns the limits and any deprecation notice that
+apply to the user; and only then starts the session. Every call made through
+the session — its tools, and the memories it returns, included — carries that
+key, and never your client's token. The API client needs the admin grant, and
+what the session can reach is scoped by the network the user is placed in.
+
+**Close the session.** Leaving the `with` block, or calling `session.close()`,
+ends the key on the service at once. The service caps how many live keys each
+user may hold, so a session left open holds one of them until its key expires.
+A session dropped without being closed has its key ended too, but only
+eventually: once it, and every tool and memory it returned, has been
+garbage-collected, Python issues a `ResourceWarning`, as for an unclosed file,
+and the client ends the key at its next call. Closing the client ends any key
+still live. A key the service cannot end is logged by its id, never its value;
+the next session opened for the same user tries again, and the key expires on
+its own regardless. After closing, a call through the session raises
+`MemcoConfigError`. A session opened without `external_id` holds nothing, so
+closing it changes nothing.
+
+**Keys renew themselves.** A key is replaced once four fifths of its lifetime
+have passed, timed by the service's own count of the seconds it has left, so
+this host's clock does not come into it (a service that does not send that
+count yet has its expiry time read against this host's clock instead). The new
+one is minted in the background, and calls go on with the
+key held until it arrives, so a slow renewal holds none of them up. The key
+replaced is ended as soon as no call is still using it, so a long session never
+fails for an expired key, and a renewal never revokes one under a call in
+flight. The client's own token renews the same way. If a renewal fails -- the
+token service is down, say, or the user already holds as many live keys as the
+service allows -- the key or token held stays in use until it expires, a
+warning is logged, and the next call tries again.
+
+Each session carries its own key, so sessions for different users run side by
+side on one client — from several threads with `Memco`, or concurrently with
+`AsyncMemco`:
+
+```python
+import asyncio
+
+from memcoai import AsyncMemco
+
+
+async def answer(client: AsyncMemco, user: str, question: str) -> None:
+    async with client.memory.with_session("coding", external_id=user) as session:
+        result = await session.search(question)
+        ...
+
+
+async def main() -> None:
+    async with AsyncMemco() as client:  # reads MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET
+        await asyncio.gather(
+            answer(client, "customer-42", "how do I rotate an API key"),
+            answer(client, "customer-7", "why was my import rejected"),
+        )
+
+
+asyncio.run(main())
+```
+
 ## Errors
 
 Every failure is a subclass of `MemcoError`, so no raw `grpc.RpcError` ever
@@ -298,14 +469,25 @@ MemcoError
     ├── MemcoPermissionError          credential lacks the scope or role
     ├── MemcoInvalidRequestError      malformed request
     ├── MemcoNotFoundError            handle resolved to nothing visible
+    ├── MemcoAlreadyExistsError       what it would create already exists
     ├── MemcoPreconditionFailedError  a precondition is unmet
-    │   └── MemcoSunsetError          past its sunset; carries .kind
+    │   ├── MemcoSunsetError          past its sunset; carries .kind
+    │   ├── MemcoUserAlreadyAssignedNetworkError
+    │   │                             already in another network of the domain
+    │   └── MemcoExternalUserNeedsCustomerNetworkError
+    │                                 only a customer network takes an external user
     ├── MemcoResourceExhaustedError   rate limit or quota; carries .kind
     ├── MemcoUnavailableError         service unreachable
     │   └── MemcoUnhealthyError       reachable, but reporting not-serving
     ├── MemcoTimeoutError             deadline exceeded
     └── MemcoInternalError            everything else
 ```
+
+`MemcoConfigError` means nothing was sent, with one exception: a session key
+that this host's clock already reads as expired when it arrives. Only a service
+that does not report the seconds a key has left can produce it, with a host
+clock well ahead of its own; the key's mint, and the `EndImpersonation` that
+ends it at once, have been sent by then. Correct the system clock.
 
 Two behaviours worth knowing:
 
@@ -335,7 +517,8 @@ was built from:
 from memcoai import provenance
 
 provenance().server_commit  # the commit this wheel was built from
-provenance().protos[0].path  # 'memcoai/memory/v1/memory.proto'
+[proto.path for proto in provenance().protos]
+# ['memcoai/admin/v1/admin.proto', 'memcoai/auth/v1/auth.proto', 'memcoai/memory/v1/memory.proto']
 ```
 
 ## Contributing
@@ -352,9 +535,9 @@ make check                  # lint, typecheck, test, docs — everything CI runs
 make -C python docs-serve   # build the reference and read it locally
 ```
 
-The generated client under `memcoai/memory/` is produced from the service
-contract and is replaced wholesale when regenerated; everything else in
-`memcoai/` is hand-written.
+The generated clients under `memcoai/memory/`, `memcoai/admin/` and
+`memcoai/auth/` are produced from the service contracts and are replaced
+wholesale when regenerated; everything else in `memcoai/` is hand-written.
 
 ## Licence
 

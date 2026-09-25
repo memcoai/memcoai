@@ -50,12 +50,15 @@ jobs:
     concurrency:
       group: memco-system-test-nodejs
       cancel-in-progress: false
-    # No `environment:`. MEMCO_API_TOKEN is a repository secret, so an
-    # environment is not what makes it reachable, and declaring one would
-    # subject this job to that environment's protection rules: required
-    # reviewers would park every pull request awaiting approval, and a
-    # deployment-branch policy would fail them outright, since a pull request's
-    # ref is refs/pull/N/merge and matches no branch policy.
+    # The API client's credentials are secrets of the `nodejs` environment, and a
+    # called workflow reaches an environment's secrets only by naming it here:
+    # its caller cannot hand them over. MEMCO_API_TOKEN stays a repository
+    # secret. Naming the environment subjects this job to its protection rules,
+    # so a required reviewer parks each pull request until it is approved —
+    # accepted — but a deployment-branch policy would fail pull requests
+    # outright, since their ref is refs/pull/N/merge and matches no branch
+    # policy. Keep the environment free of one.
+    environment: nodejs
     defaults:
       run:
         working-directory: nodejs
@@ -72,22 +75,27 @@ jobs:
       #
       # The check is a step because GitHub does not allow `secrets` in a
       # job-level `if:`.
+      #
+      # The administration suite needs the API client's credentials as well as
+      # the token, so all three are held to the same rule.
       - name: Check for a credential
         id: guard
         env:
           EVENT: ${{ github.event_name }}
           MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+          MEMCO_CLIENT_ID: ${{ secrets.MEMCO_CLIENT_ID }}
+          MEMCO_CLIENT_SECRET: ${{ secrets.MEMCO_CLIENT_SECRET }}
         # Runs before the checkout, so the directory this job otherwise defaults
         # into does not exist yet.
         working-directory: .
         run: |
-          if [ -n "$MEMCO_API_TOKEN" ]; then
+          if [ -n "$MEMCO_API_TOKEN" ] && [ -n "$MEMCO_CLIENT_ID" ] && [ -n "$MEMCO_CLIENT_SECRET" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT" = "pull_request" ]; then
-            echo "::notice::MEMCO_API_TOKEN is unavailable to this pull request; skipping."
+            echo "::notice::the live credentials are unavailable to this pull request; skipping."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::MEMCO_API_TOKEN did not resolve; it is a repository secret" >&2
+            echo "::error::MEMCO_API_TOKEN (a repository secret) or MEMCO_CLIENT_ID / MEMCO_CLIENT_SECRET (secrets of the nodejs environment) did not resolve" >&2
             exit 1
           fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -109,6 +117,8 @@ jobs:
         env:
           MEMCO_API_HOST: ${{ vars.MEMCO_API_HOST }}
           MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+          MEMCO_CLIENT_ID: ${{ secrets.MEMCO_CLIENT_ID }}
+          MEMCO_CLIENT_SECRET: ${{ secrets.MEMCO_CLIENT_SECRET }}
         run: npm run system-test
       - name: Say the suite was skipped
         if: steps.guard.outputs.run != 'true'
@@ -116,4 +126,4 @@ jobs:
         run: |
           echo "### System tests (nodejs)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Skipped: no \`MEMCO_API_TOKEN\` is available to this run." >> "$GITHUB_STEP_SUMMARY"
+          echo "Skipped: \`MEMCO_API_TOKEN\`, \`MEMCO_CLIENT_ID\` and \`MEMCO_CLIENT_SECRET\` are not all available to this run." >> "$GITHUB_STEP_SUMMARY"
