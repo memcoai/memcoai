@@ -7,8 +7,8 @@ import logging
 import math
 import time
 from collections import deque
-from collections.abc import Mapping
-from contextlib import suppress
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager, suppress
 from functools import partial
 from types import TracebackType
 from typing import Any
@@ -346,7 +346,8 @@ class AsyncMemco:
                 # the per-domain tag cap — is retained by the call itself.
                 await self.memory.list_domains()
             else:
-                async with self._credential.lease():
+                # Counted, so a close made meanwhile waits for the exchange.
+                async with self._counted(), self._credential.lease():
                     pass
         except MemcoAuthenticationError:
             _log.error("credential rejected by %s", self._config.target)
@@ -376,8 +377,10 @@ class AsyncMemco:
 
         Leaves the client able to open a fresh channel on the next call, which
         is what makes :meth:`connect` retryable after a transient failure.
+        Once the client is closing it leaves the channel alone: the close may
+        be waiting to end keys on it, and closes it itself.
         """
-        if self._channel is not None:
+        if self._channel is not None and not self._closed:
             channel, self._channel = self._channel, None
             self._stub = None
             self._admin = None
@@ -813,13 +816,19 @@ class AsyncMemco:
         # the request gets what is left, so the call ends when its caller
         # said it would.
         ends = time.perf_counter() + deadline
-        self._inflight += 1
-        self._idle.clear()
-        try:
+        async with self._counted():
             if self._orphans:
                 self._end_orphans()
             async with (credential or self._credential).lease(deadline) as bearer:
                 return await self._send(method, request, ends - time.perf_counter(), bearer)
+
+    @asynccontextmanager
+    async def _counted(self) -> AsyncIterator[None]:
+        """Count the work inside as in flight, so :meth:`close` waits for it."""
+        self._inflight += 1
+        self._idle.clear()
+        try:
+            yield
         finally:
             self._inflight -= 1
             if not self._inflight:

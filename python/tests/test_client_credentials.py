@@ -150,6 +150,52 @@ async def test_async_connect_again_reuses_a_token_that_is_not_due(
     assert harness.memory.calls == []
 
 
+async def test_async_a_close_made_while_connecting_waits_for_the_exchange_in_flight(
+    harness: Harness,
+):
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    client = AsyncMemco(**credentials(harness))
+    order: list[str] = []
+
+    async def connecting() -> None:
+        await client.connect()
+        order.append("connected")
+
+    async def closing() -> None:
+        await client.close()
+        order.append("closed")
+
+    connected = asyncio.ensure_future(connecting())
+    try:
+        # After the health probe, so the exchange is the call in flight.
+        assert await asyncio.to_thread(issuing.arrived.wait, 5)
+        closed = asyncio.ensure_future(closing())
+        # Long enough for a close that does not wait to shut the channel.
+        await asyncio.sleep(0.1)
+    finally:
+        issuing.released.set()
+    await asyncio.wait_for(asyncio.gather(connected, closed), 5)
+    assert order == ["connected", "closed"]
+
+
+async def test_async_a_close_waiting_on_a_connect_that_fails_does_not_raise(harness: Harness):
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    harness.tokens.transient_errors["IssueToken"] = [(grpc.StatusCode.UNAVAILABLE, "down")]
+    client = AsyncMemco(**credentials(harness))
+    connected = asyncio.ensure_future(client.connect())
+    try:
+        assert await asyncio.to_thread(issuing.arrived.wait, 5)
+        closed = asyncio.ensure_future(client.close())
+        # Long enough for the close to be waiting on the exchange.
+        await asyncio.sleep(0.1)
+    finally:
+        issuing.released.set()
+    with pytest.raises(errors.MemcoUnavailableError):
+        await asyncio.wait_for(connected, 5)
+    await asyncio.wait_for(closed, 5)
+    assert client._channel is None
+
+
 # --- the token on every call ---------------------------------------------
 
 
