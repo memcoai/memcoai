@@ -9,11 +9,15 @@ on:
         description: The Go toolchain to install. ci_go.yaml holds the pin.
         type: string
         required: true
+    # Repository secrets, which the caller passes by name. None is `required`:
+    # a fork's pull request has no secrets at all, and the guard step below is
+    # what turns that into a skip rather than a failure.
     secrets:
       MEMCO_API_TOKEN:
-        description: The live credential. Absent on a fork's pull request.
-        # Not `required`: a fork's pull request has no secrets at all, and the
-        # guard step below is what turns that into a skip rather than a failure.
+        required: false
+      MEMCO_CLIENT_ID:
+        required: false
+      MEMCO_CLIENT_SECRET:
         required: false
 
 permissions:
@@ -56,15 +60,6 @@ jobs:
     concurrency:
       group: memco-system-test-go
       cancel-in-progress: false
-    # The API client's credentials are secrets of the `go` environment, and a
-    # called workflow reaches an environment's secrets only by naming it here:
-    # its caller cannot hand them over. MEMCO_API_TOKEN stays a repository
-    # secret. Naming the environment subjects this job to its protection rules,
-    # so a required reviewer parks each pull request until it is approved —
-    # accepted — but a deployment-branch policy would fail pull requests
-    # outright, since their ref is refs/pull/N/merge and matches no branch
-    # policy. Keep the environment free of one.
-    environment: go
     defaults:
       run:
         working-directory: go
@@ -102,7 +97,7 @@ jobs:
             echo "::notice::the live credentials are unavailable to this pull request; skipping."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::MEMCO_API_TOKEN (a repository secret) or MEMCO_CLIENT_ID / MEMCO_CLIENT_SECRET (secrets of the go environment) did not resolve" >&2
+            echo "::error::MEMCO_API_TOKEN, MEMCO_CLIENT_ID or MEMCO_CLIENT_SECRET (repository secrets) did not resolve" >&2
             exit 1
           fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4

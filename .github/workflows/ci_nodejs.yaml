@@ -77,9 +77,11 @@ jobs:
       || github.event_name == 'pull_request'
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     uses: ./.github/workflows/ci_nodejs_integration.yaml
-    # Named rather than `inherit`: this is the one check that needs a
-    # credential, and this is the one it needs. A fork's pull request has none,
-    # so the value may be empty; the called workflow decides whether that is a
-    # skip or a failure.
+    # Named rather than `inherit`: this is the one check that needs
+    # credentials, and these are the ones it needs. A fork's pull request has
+    # none, so the values may be empty; the called workflow decides whether that
+    # is a skip or a failure.
     secrets:
       MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+      MEMCO_CLIENT_ID: ${{ secrets.MEMCO_CLIENT_ID }}
+      MEMCO_CLIENT_SECRET: ${{ secrets.MEMCO_CLIENT_SECRET }}
