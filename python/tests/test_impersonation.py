@@ -13,6 +13,7 @@ import asyncio
 import gc
 import logging
 import os
+import pathlib
 import signal
 import subprocess
 import sys
@@ -287,7 +288,7 @@ def test_a_key_never_reaches_a_log(
     assert f"impersonation-{XID}-" not in caplog.text
 
 
-SDK_DIRECTORY = os.path.dirname(memcoai.__file__) + os.sep
+SDK_DIRECTORY = str(pathlib.Path(memcoai.__file__).parent) + os.sep
 
 
 def frames_holding(error: BaseException, secret: str) -> list[tuple[str, str]]:
