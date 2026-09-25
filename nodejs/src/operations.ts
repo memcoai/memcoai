@@ -12,6 +12,11 @@
  *   often it is reached. It is deliberately not async-disposable — the
  *   {@link Session} it yields is, which is what makes `await using` need the
  *   inner `await`.
+ *
+ * A session can act as one of your own users, by passing their `externalId`.
+ * Every call through it then carries a key acting as that user rather than the
+ * client's own credential, which is why a session is built on operations of
+ * its own, scoped to that key, rather than on the client's.
  */
 
 import type {
@@ -22,13 +27,15 @@ import type {
 } from '@grpc/grpc-js'
 
 import { toolset, type Toolset } from './agent.js'
-import { MemcoAPIError } from './errors.js'
+import { MemcoAPIError, MemcoTimeoutError } from './errors.js'
+import type { Renewing } from './internal/auth.js'
 import * as pb from './internal/gen.js'
 import { Known } from './internal/limits.js'
 import * as convert from './internal/convert.js'
 import * as deprecation from './internal/deprecation.js'
 import { ROOT, getLogger } from './internal/logging.js'
 import * as requests from './internal/requests.js'
+import * as validate from './internal/validate.js'
 import {
   DataSource,
   type DomainList,
@@ -51,9 +58,9 @@ const log = getLogger(`${ROOT}.operations`)
  * One unary method on the generated client, in the form the SDK calls it.
  *
  * Only the four-argument overload is modelled. The SDK always has a deadline to
- * pass, so the shorter ones would be dead surface, and metadata comes before
- * options in the generated signature — the credential is attached by a
- * channel-level interceptor, so what the SDK passes here is always empty.
+ * pass, so the shorter ones would be dead surface. The metadata is where the
+ * credential travels: built fresh for each call, holding exactly the one that
+ * call was made under.
  */
 export type Invoke<Request, Response> = (
   request: Request,
@@ -66,17 +73,21 @@ export type Invoke<Request, Response> = (
  * How an operation reaches the wire.
  *
  * The client supplies this, so the operations know nothing about deadlines,
- * error translation or connection state.
+ * credentials, error translation or connection state.
  *
  * `rpc` is passed rather than derived: ts-proto messages are plain objects with
  * no constructor to ask for a name, so the name a log record shows has to be
  * handed over.
+ *
+ * `credential` is the one the call is sent under. Omitted, it is the client's
+ * own; a session acting as one of your users passes its key.
  */
 export type Caller = <Request, Response>(
   invoke: Invoke<Request, Response>,
   request: Request,
   timeout: number | undefined,
-  rpc: string
+  rpc: string,
+  credential?: Renewing
 ) => Promise<Response>
 
 /**
@@ -87,6 +98,14 @@ export type Caller = <Request, Response>(
  * built. Passing one replaces the client's own default for that call and
  * changes nothing else; the default is {@link DEFAULT_TIMEOUT} seconds unless
  * the client was constructed with another.
+ *
+ * It is one deadline for the whole call, fixed as the call starts. When the
+ * call first has to wait for a credential — the client's first token, or a new
+ * key once the current one has expired — the wait counts against it, and the
+ * RPC has what is left; with a valid credential in hand the RPC has all of it.
+ * {@link MemoryOperations.startSession} and
+ * {@link MemoryOperations.importMemories}, which make several RPCs, apply it
+ * to each of them.
  *
  * When the deadline elapses the call fails with a {@link MemcoTimeoutError},
  * and nothing is retried in its place: the deadline is the caller's own, so
@@ -100,6 +119,27 @@ export type Caller = <Request, Response>(
 export interface TimeoutOptions {
   /** Seconds to wait for this call. Defaults to the client's own timeout. */
   timeout?: number
+}
+
+/**
+ * What {@link MemoryOperations.startSession} and
+ * {@link MemoryOperations.withSession} take beyond the domain.
+ */
+export interface SessionOptions extends TimeoutOptions {
+  /**
+   * Act as one of your own users, by your id for them, as created with
+   * {@link UserOperations.create}.
+   *
+   * The client's credential mints a key acting as that user, and the session
+   * and every call through it — its tools, and the memories it returns,
+   * included — carry that key. It renews itself before it expires; a renewal
+   * that fails leaves the session on the key it has until that one expires.
+   * The session first lists the domains under the key, learning the limits and
+   * any deprecation notice as that user. Close the session when done, which
+   * ends the key. Omit it to open the session under the client's own
+   * credential.
+   */
+  externalId?: string
 }
 
 /**
@@ -342,25 +382,25 @@ export type ScopedShareFeedbackOptions = Omit<ShareFeedbackOptions, 'sessionId'>
  */
 export class MemoryOperations {
   /**
-   * What the service has reported about its own limits.
-   *
-   * Empty until {@link MemoryOperations.listDomains} has answered once, which
-   * is why the client calls it while verifying the connection. Every request
-   * built before then is checked against structural rules only.
-   */
-  private readonly known = new Known()
-
-  /**
    * @param stub The generated client to call.
    * @param call How to reach the wire, supplied by the client that owns the
-   *   connection.
+   *   connection and the credential.
+   * @param impersonate The owning client's source of impersonation keys: given
+   *   an external id, the credential a session acting as that user leases.
+   * @param known What the service has reported about its own limits, shared
+   *   with the namespace this one is scoped from. Empty until
+   *   {@link MemoryOperations.listDomains} has answered once, which is why the
+   *   client calls it while verifying the connection; every request built
+   *   before then is checked against structural rules only.
    *
    * @internal Constructed by {@link Memco}, never by a caller. It is reached as
    *   `client.memory`.
    */
   constructor(
     private readonly stub: pb.MemoryServiceClient,
-    private readonly call: Caller
+    private readonly call: Caller,
+    private readonly impersonate: (externalId: string) => Renewing,
+    private readonly known: Known = new Known()
   ) {}
 
   /**
@@ -441,15 +481,93 @@ export class MemoryOperations {
    * available rather than none, so a transient failure degrades
    * {@link Session.tools} to unfiltered rather than to empty.
    *
+   * With an `externalId`, the session acts as that user of yours: opening it
+   * mints a key acting as them, lists the domains under that key, and only
+   * then starts the session, all under the key. {@link Session.close} ends it.
+   *
    * @param domain The domain to work in.
-   * @param options Per-call deadline.
+   * @param options The user to act as, if any, and a per-call deadline.
    * @returns The open session, with every session-bound operation already
    *   applied — {@link withSession} returns the same kind of object.
-   * @throws MemcoInvalidRequestError If the domain is blank.
+   * @throws MemcoInvalidRequestError If the domain or the `externalId` is blank.
+   *   Either is refused before a key is minted.
+   * @throws MemcoAPIError If the service refuses. With an `externalId`, a
+   *   failure after the key was minted ends it before this is thrown.
+   * @throws MemcoTimeoutError If the deadline passes first. With an
+   *   `externalId`, the key is ended once its mint lands, without this waiting
+   *   for it.
+   *
+   * @example
+   * ```ts
+   * const session = await client.memory.startSession('coding', {
+   *   externalId: 'customer-42'
+   * })
+   * try {
+   *   await session.search('how do I rotate an API key')
+   * } finally {
+   *   await session.close()
+   * }
+   * ```
    */
   async startSession(
     domain: string,
-    options: TimeoutOptions = {}
+    options: SessionOptions = {}
+  ): Promise<Session> {
+    const { externalId, timeout } = options
+    // `== null` rather than `=== undefined`: a JavaScript caller's null means
+    // "no user", as everywhere else in this SDK, not a blank id.
+    if (externalId == null) {
+      return this.openSession(domain, { timeout })
+    }
+    // Checked before the mint, so a blank value costs no key.
+    validate.checkDomain(domain)
+    validate.checkIdx(externalId, 'external_id')
+    const key = this.impersonate(externalId)
+    try {
+      // Every call from here on carries the key — including what a session's
+      // tools and returned memories send, since they reach the service through
+      // the namespace their session was opened on.
+      const scoped = new MemoryOperations(
+        this.stub,
+        // A credential passed explicitly still wins, so a namespace scoped
+        // from this one sends its own key rather than this one's.
+        (invoke, request, timeout, rpc, credential) =>
+          this.call(invoke, request, timeout, rpc, credential ?? key),
+        this.impersonate,
+        this.known
+      )
+      // Its first lease mints the key, once, before the two calls below are
+      // sent together; this is also what tells the session its limits and any
+      // deprecation, as that user.
+      await scoped.listDomains({ timeout })
+      return await scoped.openSession(domain, { timeout }, () => key.close())
+    } catch (error) {
+      // Ends the key, once whatever mint is in flight has landed. Past the
+      // caller's deadline that is not waited for — the caller has given up on
+      // the mint, and waiting on it would outlast the deadline by the mint's
+      // own — but it still runs, counted in flight, so the key is ended and a
+      // client close waits for it. It never rejects.
+      const closing = key.close()
+      if (!(error instanceof MemcoTimeoutError)) {
+        await closing
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Start a session under whatever credential this namespace sends.
+   *
+   * @param domain The domain to work in.
+   * @param options Per-call deadline.
+   * @param release What closing the session does, or `undefined` for a session
+   *   holding nothing to end.
+   * @returns The open session.
+   */
+  private async openSession(
+    domain: string,
+    options: TimeoutOptions,
+    release?: () => Promise<void>
   ): Promise<Session> {
     // Run concurrently: listToolsRequest() carries no fields and does not
     // depend on the StartSession response, so there is nothing to gain from
@@ -464,24 +582,41 @@ export class MemoryOperations {
     // none, so the failure degrades Session.tools() to unfiltered rather than
     // to empty. A StartSession failure is unaffected: Promise.all still
     // rejects with it, since only the listTools promise catches here.
+    //
+    // That rejection waits for the catalog fetch to settle first. The fetch
+    // holds the session's key while it is in flight, and a key is ended only
+    // after its last call: rejecting at once would let the caller see the open
+    // fail while the key it minted was still live. The StartSession request is
+    // built before the fetch is sent, so a blank domain sends neither.
+    const request = requests.startSessionRequest(domain)
+    const catalog = this.listTools(options).catch((error: unknown) => {
+      if (!(error instanceof MemcoAPIError)) throw error
+      log.warning(
+        'listTools failed while opening a session; treating every tool as available: %s',
+        error
+      )
+      return null
+    })
     const [response, toolCatalog] = await Promise.all([
       this.call(
         this.stub.startSession.bind(this.stub),
-        requests.startSessionRequest(domain),
+        request,
         options.timeout,
         'StartSession'
-      ),
-      this.listTools(options).catch((error: unknown) => {
-        if (!(error instanceof MemcoAPIError)) throw error
-        log.warning(
-          'listTools failed while opening a session; treating every tool as available: %s',
-          error
-        )
-        return null
-      })
+      ).catch(async (error: unknown) => {
+        await catalog.catch(() => undefined)
+        throw error
+      }),
+      catalog
     ])
     const fields = convert.toSessionFields(response)
-    return new Session(this, fields.id, fields.instructions, toolCatalog)
+    return new Session(
+      this,
+      fields.id,
+      fields.instructions,
+      toolCatalog,
+      release
+    )
   }
 
   /**
@@ -490,20 +625,24 @@ export class MemoryOperations {
    * The same as {@link startSession}: kept as its own name for the
    * context-manager call site, wherever the session outlives a line or two.
    * Nothing is sent until the result is awaited, and awaiting it twice opens
-   * one session and returns the same object — which is what makes it safe to
-   * hold in a variable.
+   * one session — and, with an `externalId`, mints one key — and returns the
+   * same object, which is what makes it safe to hold in a variable. Leaving an
+   * `await using` block closes the session, which ends the key a session
+   * acting as one of your users holds.
    *
    * @param domain The domain to work in.
-   * @param options Per-call deadline.
+   * @param options The user to act as, if any, and a per-call deadline.
    * @returns An opener. Await it for the session, which is the disposable one.
    *
    * @example
    * ```ts
-   * await using session = await client.memory.withSession('coding')
+   * await using session = await client.memory.withSession('coding', {
+   *   externalId: 'customer-42'
+   * })
    * const result = await session.search('how does health checking work')
    * ```
    */
-  withSession(domain: string, options: TimeoutOptions = {}): SessionOpener {
+  withSession(domain: string, options: SessionOptions = {}): SessionOpener {
     return new SessionOpener(this, domain, options)
   }
 
@@ -747,11 +886,18 @@ export class MemoryOperations {
  * the series you were assembling quietly splits in two, and a later rating
  * lands against a search you did not mean to make.
  *
- * Nothing closes one: the contract has no operation that ends a session, so
- * this is a handle to carry rather than a resource to release. Used as an
- * async-disposable, `[Symbol.asyncDispose]` releases nothing either — it
- * exists so `await using` can bound the region of code a session belongs to,
- * which is a claim about the reader's attention rather than about a resource.
+ * A session opened with an `externalId` holds a key acting as that user, and
+ * {@link Session.close} ends it; so does leaving an `await using` block. Close
+ * it when you are done: the service caps how many live keys each user may
+ * hold. A session dropped without closing has its key ended eventually — once
+ * the session has been garbage-collected, by the next call the client makes —
+ * but closing ends it at once, and is the only way that says when.
+ *
+ * Any other session holds nothing: the contract has no operation that ends a
+ * session, and a session id stays usable for as long as it is named, so
+ * closing one changes nothing and `await using` bounds the region of code a
+ * session belongs to, which is a claim about the reader's attention rather than
+ * about a resource.
  */
 export class Session {
   /**
@@ -762,6 +908,8 @@ export class Session {
    *   this session was opened, which {@link tools} filters against. `null`
    *   when that fetch failed -- every tool is then treated as available
    *   rather than none.
+   * @param release Ends what the session holds, on {@link close}; `undefined`
+   *   for a session holding nothing.
    *
    * @internal Constructed by {@link MemoryOperations.startSession}, never by a
    *   caller.
@@ -770,16 +918,49 @@ export class Session {
     private readonly operations: MemoryOperations,
     readonly id: string,
     readonly instructions: Instructions,
-    readonly toolCatalog: readonly ToolDescriptor[] | null
+    readonly toolCatalog: readonly ToolDescriptor[] | null,
+    private readonly release?: () => Promise<void>
   ) {}
 
   /**
-   * Leave the session.
+   * Close the session at the end of an `await using` block.
    *
-   * Deliberately a no-op. See the class documentation.
+   * @returns Once {@link close} has.
    */
   async [Symbol.asyncDispose](): Promise<void> {
-    // Nothing to release. See the class documentation.
+    await this.close()
+  }
+
+  /**
+   * Close the session, ending the key it holds if it acts for one of your
+   * users.
+   *
+   * Only a session opened with an `externalId` holds anything: its key, which
+   * is revoked here rather than left live until it expires. Every later call
+   * through the session, its tools, or a memory it returned is then refused
+   * locally with {@link MemcoConfigError}. A call still in flight keeps the key
+   * until it finishes, and the key is ended then.
+   *
+   * Ending the key is best effort. If the service cannot end it, a warning
+   * naming the key's id — never its value — is logged and nothing is thrown:
+   * the client tries again before it next opens a session for that user, and
+   * when it closes, and the key expires on its own regardless. After the
+   * client is closed, this does nothing.
+   *
+   * A session opened without an `externalId` holds nothing, so closing it
+   * changes nothing and it stays usable. Safe to call more than once.
+   *
+   * @example
+   * ```ts
+   * const session = await client.memory.startSession('coding', {
+   *   externalId: 'customer-42'
+   * })
+   * await session.search('how does X work')
+   * await session.close()
+   * ```
+   */
+  async close(): Promise<void> {
+    await this.release?.()
   }
 
   /**
@@ -906,10 +1087,11 @@ export class Session {
 /**
  * A session that has not been opened yet.
  *
- * Awaiting it opens one and yields the {@link Session}; awaiting it again
- * yields the same session rather than opening a second one. Nothing is sent
- * until it is awaited, so an opener that is created and dropped costs no call
- * and produces no unhandled rejection.
+ * Awaiting it opens one and yields the {@link Session}; awaiting it again —
+ * concurrently or later — yields the same session rather than opening a second
+ * one, or minting a second key. Nothing is sent until it is awaited, so an
+ * opener that is created and dropped costs no call and produces no unhandled
+ * rejection.
  *
  * It deliberately carries no `Symbol.asyncDispose` of its own. `await using`
  * binds the expression rather than anything awaited out of it, so
@@ -923,12 +1105,12 @@ export class SessionOpener implements PromiseLike<Session> {
   /**
    * @param operations The namespace to open the session on.
    * @param domain The domain to open it in.
-   * @param options Per-call deadline.
+   * @param options The user to act as, if any, and a per-call deadline.
    */
   constructor(
     private readonly operations: MemoryOperations,
     private readonly domain: string,
-    private readonly options: TimeoutOptions
+    private readonly options: SessionOptions
   ) {}
 
   /**

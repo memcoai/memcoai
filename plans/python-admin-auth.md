@@ -51,7 +51,9 @@ Memco(token=None, host=None, *, client_id=None, client_secret=None, token_lifeti
 - `MemcoConfigError` for:
   - half a pair, in args or in env;
   - a blank value;
-  - `token_lifetime` without client credentials, or ≤ 0.
+  - a static token holding characters a request header cannot carry (non-ASCII, a lone surrogate, a control character), named without its value;
+  - `token_lifetime` without client credentials, not a whole number (a float, a bool), or ≤ 0.
+- The constructors re-raise a `MemcoConfigError` from resolution without the frames of `resolve()`, and only after deleting their own `token` and `client_secret` names, since each frame holds the secret.
 - `token_lifetime` is sent as `ttl_seconds`; `None` sends 0, the service default. No local maximum.
 - `ClientConfig` gains `client_id` and `client_secret`, with `repr=False` on the secret.
 
@@ -100,7 +102,7 @@ Memco(token=None, host=None, *, client_id=None, client_secret=None, token_lifeti
 - `ExternalUserKey(..., valid_until: datetime | None)`: UTC, 0 becomes `None`
 - `CreatedKey(key, value=field(repr=False))`
 
-**`errors.py`:** add `MemcoAlreadyExistsError(MemcoAPIError)`, mapped from `ALREADY_EXISTS`.
+**`errors.py`:** add `MemcoAlreadyExistsError(MemcoAPIError)`, mapped from `ALREADY_EXISTS`. `MemcoSunsetError` carries the ErrorInfo `metadata` like every other precondition failure, and keeps it through pickling and copying.
 
 ## Credential design
 
@@ -110,53 +112,68 @@ Memco(token=None, host=None, *, client_id=None, client_secret=None, token_lifeti
    - Every stub call goes through the client's `_send(method, request, deadline, bearer)`, where `bearer` is the leased `Minted` and `.value` is read only inline in `metadata=`, so no frame an error carries holds the bearer as a plain string. Health and IssueToken are sent without metadata, and any stray stub call carries no credential, so the design fails closed.
    - This makes the credential an argument, not ambient state, which is what rules out crosstalk between concurrent sessions.
 2. **`Renewing` / `AsyncRenewing` (private, `_auth.py`)**
-   - `Minted` holds `value` (repr hidden), `renew_at` (monotonic), `key_id`, `users` and `retired`.
-   - `lease()` is a context manager that yields the `Minted` itself (its repr hides the value). Under a lock:
+   - `Minted` holds `value` (repr hidden), `renew_at` and `expires` (both monotonic), `key_id`, `users` and `retired`.
+   - `lease(timeout=None)` is a context manager that yields the `Minted` itself (its repr hides the value):
      - raise `MemcoConfigError` if closed;
-     - if there is no value or `monotonic() >= renew_at`, mint (single-flight);
-     - retire the old value;
+     - a value before `renew_at` is leased at once;
+     - past `renew_at`, a renewal is started unless one is in flight (single-flight), and **runs apart from every call** (user decision): on a thread of its own (sync, not a daemon, counted in flight by the client) or a detached task (async);
+     - while the value held is before its `expires`, it is leased at once, so a slow or failing renewal holds up no call;
+     - only a lease with nothing honoured -- none yet, or expired -- waits for the mint in flight, bounded by `timeout`, which `_call` passes as the call's own deadline. Giving up raises `MemcoTimeoutError`, and the mint runs on to its own deadline (the client default) regardless. The sync wait is a `Condition.wait` capped at `threading.TIMEOUT_MAX`. The async one is `asyncio.wait`, which never cancels the mint and never swallows the lease's own cancellation, unlike `asyncio.wait_for` before 3.12;
      - `users += 1`.
-   - A retired value is ended only when its last lease exits. A renewal therefore never revokes a key under an in-flight call, and there is one live key per session.
-   - A failed mint raises the typed error and keeps the old value; the next call retries.
-   - `close()` is idempotent. It ends the value now if idle, otherwise on the last lease.
-   - `AsyncRenewing` uses an `asyncio.Lock` only around check-and-mint, and recreates it when the running loop changes.
-   - **Renewal point:** 0.8 of the lifetime.
-     - Client token: `t0 + 0.8*expires_in`, with `t0` taken before the send.
-     - Key: `monotonic() + 0.8*(expires_at - time())`.
+   - When a mint lands it is held, and the value it replaces is retired: ended at once, by the mint's worker, if idle, else by its last lease. **That end runs apart from the call too** (a thread or a detached task), so no lessee waits for EndImpersonation; it is still exactly once and after the last lease. A renewal therefore never revokes a key under an in-flight call, and there is one live key per session.
+   - A failed mint keeps the old value. **While that value is before its `expires`, it stays in use** (user decision): the renewal point is early precisely so that a failed renewal fails no call. The mint logs one WARNING per failed attempt, naming the key id (or "the client token") and never the value; a client that closed meanwhile is not reported. Only once the value has expired, or when there is none, do the leases waiting on the mint raise the typed error. The next lease past `renew_at` tries renewing again.
+   - Failure is single-flight too: every lease waiting on one mint shares its outcome -- the fresh value, or a copy of the failure (a copy, so no two callers share a traceback) -- instead of minting again in turn. A lease that begins after the failure starts a new attempt.
+   - `close()` is idempotent. It ends the value now if idle, otherwise on the last lease, and never waits for a mint in flight: what that produces is ended as it lands. So an open that gave up on a slow mint returns at its own deadline, and the key is still ended once it arrives.
+   - On the `expires_at` fallback only, a key the local wall clock already reads as expired when it arrives -- a host clock well ahead of the service's -- is refused with a `MemcoConfigError` naming the clock, never "closed"; the key is ended. A key carrying `expires_in` cannot hit this.
+   - `AsyncRenewing` needs no lock: nothing is awaited between reading its state and changing it. A mint left on another loop -- one closed without cancelling it, or not running -- is abandoned and a fresh one started; `detach` lets go of tasks whose loop has closed. Every mint and every end runs as a task of its own, held in the module-level set `_auth.detach` keeps (the loop holds tasks only weakly, and the holder may be collected first). `close()` awaits its end through `asyncio.shield`, so a cancelled caller, anyio's level-triggered cancellation included, cannot abort EndImpersonation part-way.
+   - **Dropped holders:** an optional `dropped(key_id)` hook. A `weakref.finalize` watches the holder, carrying the key id of the value held (only the id, so no value sits in the global finalize registry). It is re-pointed on each renewal, detached by `close()`, and never run at interpreter exit. If the holder is garbage-collected unclosed, the finalizer calls `dropped` from the collector, which may be on any thread and under any lock, so the hook must not send or lock.
+   - **Renewal point:** 0.8 of the lifetime; **expiry:** the whole of it.
+     - Client token: `t0 + 0.8*expires_in` and `t0 + expires_in`, with `t0` taken before the send.
+     - Key (`_auth.key_lifetime`): with `ImpersonationKey.expires_in` (the seconds left by the service's own count; 0 from a service that does not send it yet, or once expired), `t0 + 0.8*expires_in` and `t0 + expires_in`, with `t0` the monotonic reading taken before ImpersonateExternalUser was sent, exactly as the client token is timed: no wall clock, so a skewed host clock does not matter. Without it, the fallback: `monotonic() + 0.8*left` and `monotonic() + left`, where `left = expires_at - time()`, converted once on receipt. The `_live` registry's expiry is the same either way.
    - **The three uses:**
      - Static token: `Minted(token, inf)`.
      - Client token: `_issue`, with no end, because the contract cannot revoke one.
-     - Impersonation: `_mint(xid)` / `_end_key(xid, key)`.
+     - Impersonation: `_mint(xid)`, an end of `_end_key(xid, key.key_id)`, and `dropped=partial(client._dropped, xid)`.
 3. **Clients (`_sync.py`; `_aio.py` mirrors it)**
    - `_call(method, request, timeout, credential=None)`:
-     1. Keep the closed check and the in-flight count.
-     2. `with (credential or self._credential).lease() as bearer: return self._send(..., bearer)`.
-   - Every refresh, mint and end therefore runs counted as in flight, and its failures come back typed.
+     1. Keep the closed check and the in-flight count (sync: the `_counted()` context manager).
+     2. If any dropped session's key is queued, start ending those, without waiting. The queue is drained and every key claimed as under way before the call goes on. Sync ends them in turn on a thread of its own, stopping at the first the service refuses; async starts each as a detached task. Their failures are logged, never raised.
+     3. `with (credential or self._credential).lease(deadline) as bearer: return self._send(..., ends - now, bearer)`.
+   - **One end-to-end deadline per call** (user decision): the call's deadline D -- its `timeout`, else the client default -- is fixed as the call starts (`ends = perf_counter() + D`) and covers both the wait for a credential and the request. The wait may use as much of D as it needs; the request gets whatever remains, not a fresh D. With a credential to hand it gets all of D. Exceeding D anywhere raises `MemcoTimeoutError`, and a mint still in flight carries on in the background. Methods that send several requests -- `start_session` and `with_session`, and `import_memories` when a batch is above the service's cap per request -- keep a deadline per request for now.
+   - Every mint and end calls the service through `_call`, so it is counted in flight while it does; a failure a lease waits on comes back typed. The sync token exchange counts itself (see `_issue`); the async one is not counted, and a close cuts it short.
+   - `_live` maps key id to `Live(external_id, expires, failed)`: `expires` is the monotonic reading at which the service stops honouring the key, and `failed` marks a key whose end was refused.
+   - **Work left on a loop the async client has left** (a loop closed without cancelling its tasks, or `asyncio.run` torn down with a call in flight) can never finish. `_settle()`, run by `_open()` and `close()` on the first use of a new loop, restarts the in-flight count, and marks the `_ending` entries still pending failed, so the next mint for their user retries them there. An end cancelled with its loop marks its key failed itself; a mint cut off by its loop logs a WARNING that a key may be left live until it expires (its id never arrived).
+   - Sync `_send` re-raises anything but `grpc.RpcError` -- a signal handler's exception while grpc blocks -- without grpc's frames, whose locals hold the metadata.
+   - `_ending` holds the ends under way, by key id: sync maps it to the external id, async to the external id and the task. A dropped-key reap claims all its keys as it drains the queue, under the same lock (sync), and releases and marks them if its thread cannot start; a failed-end retry claims its key as it takes it, and every `_end_key` claims its own. **A mint waits for every end under way for its user before sending ImpersonateExternalUser**, since the service counts each against the user's cap until it has ended. This covers a mint racing a reap on another call or thread, and a session closing while another opens for the same user.
    - `_issue()`:
-     - calls `TokenService.IssueToken` directly;
+     - calls `TokenService.IssueToken` directly, on the renewal's thread or task;
+     - sync: counts itself in flight, and is allowed while the client closes (the sweep may need a fresh token) but refused once the channel is shut. `close()` waits for in-flight calls again after the sweep, then marks the channel shut, then closes it. Async: reopens a dropped channel unless closing, and maps `UsageError` to `MemcoConfigError`;
      - on failure raises `from_rpc_error(exc) from None`, because grpc's frames hold the secret;
      - never logs the secret.
    - `_mint(xid)`:
+     - runs on the renewal's thread or task. Sync counts the whole of it in flight, so registering the key cannot fall after `close()`'s snapshot;
+     - first prunes: drops every `_live` entry past its expiry, then retries the end of this user's `failed` keys, stopping at the first the service still refuses. This bounds the registry on a long-lived client, and frees a key under the user's cap before the new one is asked for;
      - sends ImpersonateExternalUser with `ttl_minutes=0` under the client token;
-     - registers `_live[key_id] = xid` under `_state`;
-     - async wraps the call and the registration in `asyncio.shield`, so a cancelled open still records its key.
-   - `_end_key(xid, key)`:
+     - registers `_live[key_id] = Live(xid, expires)` under `_state`;
+     - a cancelled open does not stop it, being the renewal's own task, so the key is still recorded, and held or ended.
+   - `_end_key(xid, key_id)`: sync returns a bool; async starts the end as a detached task, registered in `_ending` at once, and returns the task, whose result is that bool:
      - sends EndImpersonation;
-     - on success or NOT_FOUND, removes the key from `_live`;
+     - on success or NOT_FOUND, removes the key from `_live`. Sync counts itself in flight across the send and the removal, so a racing `close()` cannot snapshot the key in between and end it twice;
      - if the client is closed, leaves the key for the sweep;
-     - on any other error, logs a WARNING naming the key_id only;
-     - never raises.
+     - on any other error, marks the entry `failed` and logs a WARNING naming the key_id only;
+     - never raises; returns whether nothing is left to end.
+   - **Dropped sessions (user decision):** each session credential's `dropped` hook is the client's `_dropped`. Once the client is closed it does nothing, because the close sweep ended the key. Otherwise it calls `_auth.orphaned`, which appends `(xid, key_id)` to the client's `_orphans` deque and then issues a `ResourceWarning` naming the key id, as an unclosed file does. It sends nothing. The next `_call`, or the next mint, drains the whole queue before ending any key, so the ends do not recurse. Sync ends them in turn on a worker thread, stopping at the first key the service will not end; however that loop stops, the keys left are unclaimed and marked `failed` for the next mint for their user to retry, so no interrupt can strand a claim. Async sends them all at once and marks each refused one. Explicit `close()` stays the documented way; the docstrings and the README say a dropped session is ended only eventually.
    - Async `_LazyStub` gains an attribute name, and `_open` builds the memory, admin and token stubs.
 4. **Opening a session (`operations.py`)**
    - `MemoryOperations(stub, call, *, impersonate=None, known=None)`. The existing body moves to `_open_session(domain, timeout, release=None)`.
    - With `external_id`:
      1. Validate `domain` and `external_id` (blank sends nothing).
      2. Create `imp = impersonate(xid)`.
-     3. Mint eagerly with `with imp.lease(): pass`.
+     3. (The first lease, below, mints the key.)
      4. Build scoped ops, `MemoryOperations(stub, partial(call, credential=imp), known=self._known)`.
      5. `scoped.list_domains()`, which learns limits and deprecation under the key.
      6. `scoped._open_session(domain, timeout, release=imp.close)`.
-     7. On any `BaseException`, `imp.close()` and re-raise.
+     7. On any `BaseException`, `imp.close()` and re-raise. The close never waits for a mint still in flight, so an open whose mint outlasts its `timeout` raises `MemcoTimeoutError` at that deadline, and the key is ended once it arrives.
    - StartSession, ListTools, every Session method, `session.tools()` and `Memory.feedback()` all reach the stub through `scoped`, so `agent.py` needs no change.
    - `AsyncSessionOpener` gains `external_id` and an `asyncio.Lock` around `_open`, so concurrent awaits mint one key. Its `__aexit__` closes what it opened.
 5. **Construction and connect**
@@ -168,12 +185,13 @@ Memco(token=None, host=None, *, client_id=None, client_secret=None, token_lifeti
 6. **Client close**
    1. Set `_closed` and drain in-flight calls, as today.
    2. Snapshot and clear `_live`.
-   3. EndImpersonation each key under a client-token lease. NOT_FOUND counts as ended. Stop at the first other failure and log one WARNING listing the key_ids left to expire.
-   4. Close the channel.
+   3. EndImpersonation each key not yet past its expiry, under a client-token lease; an expired key is skipped, since the service no longer honours it. NOT_FOUND counts as ended. Stop at the first other failure and log one WARNING listing the key_ids left to expire.
+   4. Sync: wait for in-flight work again -- a token exchange the sweep set off -- then mark the channel shut, so nothing more is sent, and only then close it; closing a sync grpc channel under a call can take the process down. Async closes it at once, cutting a token exchange in flight short.
+   - Sync `close()` is resumable: one runs at a time under a lock, the keys swept are kept on the client until each is dealt with, and only a close that ran to the end makes later ones return at once. A close cut short -- a signal handler raising in it -- is finished by the next.
    - Never raises.
    - Async reopens the channel on the current loop first if `_live` is not empty.
    - After client close, `session.close()` is a quiet no-op.
-7. **Lock order:** session credential lock, then client-token lock, then `_state`, which is held only briefly.
+7. **Locks:** no lock is held across an RPC. A sync credential's `Condition` guards its own state and is released before any mint or end runs; the client's `_state` is taken only briefly, never while holding a credential's `Condition`, except by a mint's `Condition.wait` for its user's ends, which releases it. The async holders need no lock.
 
 ## Files to change
 

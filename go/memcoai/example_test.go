@@ -365,3 +365,220 @@ func ExampleBriefing() {
 		}
 	}
 }
+
+func ExampleExternalID() {
+	// A client holding an API client's credentials, from MEMCO_CLIENT_ID and
+	// MEMCO_CLIENT_SECRET, acts for one of your users by your id for them.
+	session, err := client.Memory.StartSession(ctx, "coding", memcoai.ExternalID("customer-42"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer session.Close(ctx) // ends the key the session holds
+	result, err := session.Search(ctx, "how do I rotate an API key", memcoai.ScopedSearchParams{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(len(result.Memories), "memories this user can see")
+}
+
+func ExampleSession_Close() {
+	// One session per request a user makes, closed as the request ends, so
+	// the user never holds more keys than requests in flight.
+	answer := func(ctx context.Context, user, question string) (*memcoai.SearchResult, error) {
+		session, err := client.Memory.StartSession(ctx, "coding", memcoai.ExternalID(user))
+		if err != nil {
+			return nil, err
+		}
+		defer session.Close(ctx)
+		return session.Search(ctx, question, memcoai.ScopedSearchParams{})
+	}
+	if _, err := answer(ctx, "customer-42", "how do I rotate an API key"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleNetworkOperations_List() {
+	roots, err := client.Networks.List(ctx, memcoai.ListNetworksParams{ParentID: "root", Domain: "coding"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, network := range roots.Networks {
+		fmt.Println(network.ID, network.Name)
+	}
+}
+
+func ExampleNetworkOperations_Create() {
+	acme, err := client.Networks.Create(ctx, memcoai.CreateNetworkParams{
+		Name: "Acme", ParentID: "network-root", Scope: "customer",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(acme.ID, acme.Domain) // the domain is taken from the parent
+}
+
+func ExampleNetworkOperations_Update() {
+	name, description := "Acme Corp", "" // an empty description clears it
+	if _, err := client.Networks.Update(ctx, "network-acme", memcoai.UpdateNetworkParams{
+		Name: &name, Description: &description,
+	}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleNetworkOperations_Delete() {
+	deleted, err := client.Networks.Delete(ctx, "network-acme")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(deleted.Removed["memories"], "memories went with it")
+}
+
+func ExampleNetworkOperations_ListMembers() {
+	page, err := client.Networks.ListMembers(ctx, "network-acme", memcoai.ListMembersParams{Search: "ada"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, member := range page.Members {
+		fmt.Println(member.UserID, member.Email)
+	}
+}
+
+func ExampleNetworkOperations_AddMember() {
+	user, err := client.Users.Get(ctx, "customer-42")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = client.Networks.AddMember(ctx, "network-acme", user.ID, memcoai.AddMemberParams{})
+	var assigned *memcoai.UserAlreadyAssignedNetworkError
+	if errors.As(err, &assigned) {
+		// Placed elsewhere in this domain: moving them has to be asked for.
+		fmt.Println("moving them out of", assigned.CurrentNetworkName)
+		_, err = client.Networks.AddMember(ctx, "network-acme", user.ID, memcoai.AddMemberParams{Force: true})
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleNetworkOperations_RemoveMember() {
+	if err := client.Networks.RemoveMember(ctx, "network-acme", "user-a"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleNetworkOperations_ListGroups() {
+	page, err := client.Networks.ListGroups(ctx, memcoai.ListGroupsParams{Name: "Support"})
+	var denied *memcoai.PermissionError
+	if errors.As(err, &denied) {
+		log.Fatal("groups are for enterprise organizations: ", err)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, group := range page.Groups {
+		fmt.Println(group.ID, group.MemberCount)
+	}
+}
+
+func ExampleNetworkOperations_ListGroupMembers() {
+	members, err := client.Networks.ListGroupMembers(ctx, "group-support")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, member := range members {
+		fmt.Println(member.Email)
+	}
+}
+
+func ExampleNetworkOperations_AddGroup() {
+	if err := client.Networks.AddGroup(ctx, "network-support", "group-support"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleNetworkOperations_RemoveGroup() {
+	if err := client.Networks.RemoveGroup(ctx, "network-support", "group-support"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleUserOperations_List() {
+	page, err := client.Users.List(ctx, memcoai.ListUsersParams{Search: "acme"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, user := range page.ExternalUsers {
+		fmt.Println(user.ExternalID, user.Roles)
+	}
+}
+
+func ExampleUserOperations_Get() {
+	user, err := client.Users.Get(ctx, "customer-42")
+	var missing *memcoai.NotFoundError
+	if errors.As(err, &missing) {
+		log.Fatal("no such user: ", err)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(user.ID, user.Roles)
+}
+
+func ExampleUserOperations_Create() {
+	user, err := client.Users.Create(ctx, "customer-42", memcoai.CreateUserParams{
+		Roles: []string{"creator"}, Name: "Ada",
+	})
+	var taken *memcoai.AlreadyExistsError
+	if errors.As(err, &taken) {
+		user, err = client.Users.Get(ctx, "customer-42")
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(user.ID, user.Roles) // a creator reads too
+}
+
+func ExampleUserOperations_Update() {
+	if _, err := client.Users.Update(ctx, "customer-42", memcoai.UpdateUserParams{
+		Roles: []string{"reader"},
+	}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleUserOperations_Delete() {
+	if err := client.Users.Delete(ctx, "customer-42"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleUserOperations_ListKeys() {
+	keys, err := client.Users.ListKeys(ctx, "customer-42")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, key := range keys {
+		fmt.Println(key.Name, key.ValuePrefix, key.ValidUntil)
+	}
+}
+
+func ExampleUserOperations_CreateKey() {
+	created, err := client.Users.CreateKey(ctx, "customer-42", memcoai.CreateKeyParams{
+		Preset: "mcp_ro", Name: "agent", ValidUntil: time.Now().AddDate(0, 1, 0),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(created)      // the value is left out of anything printed
+	handOver(created.Value()) // shown only this once
+}
+
+// handOver stands for giving a key's value to whoever will use it.
+func handOver(string) {}
+
+func ExampleUserOperations_DeleteKey() {
+	if err := client.Users.DeleteKey(ctx, "customer-42", "apikey-a"); err != nil {
+		log.Fatal(err)
+	}
+}

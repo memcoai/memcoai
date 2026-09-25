@@ -100,10 +100,15 @@ test('a comment inside a quoted value is not treated as a comment', () => {
 test('a status-details trailer round trips through the hand-written codecs', () => {
   const trailer = encodeStatusDetails(status.FAILED_PRECONDITION, 'too old', {
     reason: 'CLIENT_VERSION_SUNSET',
-    domain: 'memco.ai'
+    domain: 'memco.ai',
+    metadata: { sunset: '2027-01-01', remedy: 'upgrade' }
   })
   assert.deepEqual(errorDetails(trailer), [
-    { reason: 'CLIENT_VERSION_SUNSET', domain: 'memco.ai' }
+    {
+      reason: 'CLIENT_VERSION_SUNSET',
+      domain: 'memco.ai',
+      metadata: { sunset: '2027-01-01', remedy: 'upgrade' }
+    }
   ])
 })
 
@@ -148,7 +153,8 @@ test('a precondition failure naming a memco sunset becomes a sunset error', () =
     STATUS_DETAILS_KEY,
     encodeStatusDetails(status.FAILED_PRECONDITION, 'too old', {
       reason: 'CLIENT_VERSION_SUNSET',
-      domain: 'memco.ai'
+      domain: 'memco.ai',
+      metadata: {}
     })
   )
   const error = fromServiceError({
@@ -166,7 +172,8 @@ test('a precondition failure from another domain stays a plain precondition fail
     STATUS_DETAILS_KEY,
     encodeStatusDetails(status.FAILED_PRECONDITION, 'nope', {
       reason: 'CLIENT_VERSION_SUNSET',
-      domain: 'example.com'
+      domain: 'example.com',
+      metadata: {}
     })
   )
   const error = fromServiceError({

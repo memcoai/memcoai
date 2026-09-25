@@ -96,7 +96,8 @@ class NetworkOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many networks a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of networks, and how many match in all.
@@ -152,7 +153,8 @@ class NetworkOperations:
                 network.
             owner: Who the network's knowledge belongs to.
             description: What the network is for.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The network as created.
@@ -201,7 +203,8 @@ class NetworkOperations:
             scope: The new scope, ``"internal"`` or ``"customer"``.
             owner: The new owner.
             description: The new description.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The network as it now is.
@@ -231,7 +234,8 @@ class NetworkOperations:
 
         Args:
             network_id: The network to delete.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The network deleted, and how much the cascade removed from each
@@ -266,7 +270,8 @@ class NetworkOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many members a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of members, and how many match in all.
@@ -302,7 +307,8 @@ class NetworkOperations:
             force: Whether to move a user already placed in another network of
                 the same memory domain. Off by default, so moving someone is
                 never the accidental outcome.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             Where the user was placed, and the network they were moved out of,
@@ -330,7 +336,8 @@ class NetworkOperations:
         Args:
             network_id: The network to take the user out of.
             user_id: The user to take out.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``network_id`` or ``user_id`` is blank.
@@ -367,7 +374,8 @@ class NetworkOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many groups a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of groups, and how many match in all.
@@ -396,7 +404,8 @@ class NetworkOperations:
 
         Args:
             group_id: The group whose members to list.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The group's members.
@@ -421,7 +430,8 @@ class NetworkOperations:
         Args:
             network_id: The network to assign the group to.
             group_id: The group to assign.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank.
@@ -442,7 +452,8 @@ class NetworkOperations:
         Args:
             network_id: The network to take the group out of.
             group_id: The group to take out.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank.
@@ -508,7 +519,8 @@ class AsyncNetworkOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many networks a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of networks, and how many match in all.
@@ -564,7 +576,8 @@ class AsyncNetworkOperations:
                 network.
             owner: Who the network's knowledge belongs to.
             description: What the network is for.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The network as created.
@@ -613,7 +626,8 @@ class AsyncNetworkOperations:
             scope: The new scope, ``"internal"`` or ``"customer"``.
             owner: The new owner.
             description: The new description.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The network as it now is.
@@ -643,7 +657,8 @@ class AsyncNetworkOperations:
 
         Args:
             network_id: The network to delete.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The network deleted, and how much the cascade removed from each
@@ -680,7 +695,8 @@ class AsyncNetworkOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many members a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of members, and how many match in all.
@@ -718,7 +734,8 @@ class AsyncNetworkOperations:
             force: Whether to move a user already placed in another network of
                 the same memory domain. Off by default, so moving someone is
                 never the accidental outcome.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             Where the user was placed, and the network they were moved out of,
@@ -748,7 +765,8 @@ class AsyncNetworkOperations:
         Args:
             network_id: The network to take the user out of.
             user_id: The user to take out.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``network_id`` or ``user_id`` is blank.
@@ -785,7 +803,8 @@ class AsyncNetworkOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many groups a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of groups, and how many match in all.
@@ -814,7 +833,8 @@ class AsyncNetworkOperations:
 
         Args:
             group_id: The group whose members to list.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The group's members.
@@ -844,7 +864,8 @@ class AsyncNetworkOperations:
         Args:
             network_id: The network to assign the group to.
             group_id: The group to assign.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank.
@@ -867,7 +888,8 @@ class AsyncNetworkOperations:
         Args:
             network_id: The network to take the group out of.
             group_id: The group to take out.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank.
@@ -919,7 +941,8 @@ class UserOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many users a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of users, and how many match in all.
@@ -943,7 +966,8 @@ class UserOperations:
 
         Args:
             external_id: Your id for the user.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user.
@@ -983,7 +1007,8 @@ class UserOperations:
                 ``"creator"`` and ``"auditor"``. At least one.
             name: The user's name.
             email: The user's email address.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user as created.
@@ -1025,7 +1050,8 @@ class UserOperations:
             email: The new email address.
             roles: The roles to replace the user's with. At least one: to leave
                 them as they are, omit this.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user as it now is.
@@ -1050,7 +1076,8 @@ class UserOperations:
 
         Args:
             external_id: Your id for the user to delete.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``external_id`` is blank.
@@ -1069,7 +1096,8 @@ class UserOperations:
 
         Args:
             external_id: Your id for the user whose keys to list.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user's keys. A value is shown only once, when its key is
@@ -1107,7 +1135,8 @@ class UserOperations:
             name: A name to recognise the key by.
             valid_until: When the key expires, as a timezone-aware datetime, at
                 most three months ahead. Omitted, three months.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The key's description, and its value.
@@ -1137,7 +1166,8 @@ class UserOperations:
             external_id: Your id for the user the key belongs to.
             key_id: The key to revoke, as :attr:`~memcoai.types.ExternalUserKey.id`
                 gives it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``external_id`` or ``key_id`` is blank.
@@ -1189,7 +1219,8 @@ class AsyncUserOperations:
             page: The page to return, counting from 1. Omitted, the first.
             page_size: How many users a page holds. Omitted, the service's
                 default.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The page of users, and how many match in all.
@@ -1213,7 +1244,8 @@ class AsyncUserOperations:
 
         Args:
             external_id: Your id for the user.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user.
@@ -1255,7 +1287,8 @@ class AsyncUserOperations:
                 ``"creator"`` and ``"auditor"``. At least one.
             name: The user's name.
             email: The user's email address.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user as created.
@@ -1297,7 +1330,8 @@ class AsyncUserOperations:
             email: The new email address.
             roles: The roles to replace the user's with. At least one: to leave
                 them as they are, omit this.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user as it now is.
@@ -1322,7 +1356,8 @@ class AsyncUserOperations:
 
         Args:
             external_id: Your id for the user to delete.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``external_id`` is blank.
@@ -1341,7 +1376,8 @@ class AsyncUserOperations:
 
         Args:
             external_id: Your id for the user whose keys to list.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The user's keys. A value is shown only once, when its key is
@@ -1380,7 +1416,8 @@ class AsyncUserOperations:
             name: A name to recognise the key by.
             valid_until: When the key expires, as a timezone-aware datetime, at
                 most three months ahead. Omitted, three months.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The key's description, and its value.
@@ -1412,7 +1449,8 @@ class AsyncUserOperations:
             external_id: Your id for the user the key belongs to.
             key_id: The key to revoke, as :attr:`~memcoai.types.ExternalUserKey.id`
                 gives it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Raises:
             MemcoInvalidRequestError: If ``external_id`` or ``key_id`` is blank.

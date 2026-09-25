@@ -21,7 +21,7 @@ DEFAULT_PORT = 443
 """Port used when the host does not carry one of its own."""
 
 DEFAULT_TIMEOUT = 30.0
-"""Per-call deadline in seconds, used when a method is given no ``timeout``."""
+"""Deadline in seconds for each call, used when a method is given no ``timeout``."""
 
 TOKEN_ENV = "MEMCO_API_TOKEN"  # noqa: S105 - the variable name, not a credential
 """Environment variable holding the credential."""
@@ -58,7 +58,7 @@ class ClientConfig:
         host: Hostname of the service, without a port.
         port: TCP port of the service.
         tls: Whether to dial over TLS using the system trust store.
-        timeout: Default per-call deadline in seconds.
+        timeout: Default deadline in seconds for each call.
         client_id: The API client's id, or ``None`` when the client holds a
             token instead.
         client_secret: The API client's secret, exchanged with
@@ -363,7 +363,7 @@ def resolve(
             ``False`` only for a plaintext endpoint, such as a local server.
             When omitted, ``MEMCO_API_TLS`` decides -- ``true`` or ``false`` --
             falling back to ``True``.
-        timeout: Default per-call deadline in seconds.
+        timeout: Default deadline in seconds for each call.
         env: Environment mapping to read from. Defaults to :data:`os.environ`;
             supplying one is mainly useful in tests.
 
@@ -390,12 +390,25 @@ def resolve(
     client = _resolve_client(token, client_id, client_secret, environment)
     if client is None:
         resolved_token = _resolve_token(token, environment)
+        if not (resolved_token.isascii() and resolved_token.isprintable()):
+            # Refused before anything is sent, and without the value: grpc
+            # would raise an encoding error carrying the whole header.
+            raise MemcoConfigError(
+                "the token holds characters a request header cannot carry; check that it "
+                "was copied whole, as plain text"
+            )
         if token_lifetime is not None:
             # Only an issued token has a lifetime to ask for; accepting one
             # beside a static token would silently ignore it.
             raise MemcoConfigError("token_lifetime applies only to client credentials, not a token")
     else:
         resolved_token = ""
+        if token_lifetime is not None and (
+            isinstance(token_lifetime, bool) or not isinstance(token_lifetime, int)
+        ):
+            raise MemcoConfigError(
+                f"token_lifetime must be a whole number of seconds, got {token_lifetime!r}"
+            )
         if token_lifetime is not None and token_lifetime <= 0:
             raise MemcoConfigError(f"token_lifetime must be positive, got {token_lifetime!r}")
 
@@ -437,7 +450,7 @@ def deadline(timeout: float | None, default: float) -> float:
     """Resolve the deadline for one call.
 
     Args:
-        timeout: The caller's per-call deadline, or ``None`` to use the default.
+        timeout: The caller's deadline for the call, or ``None`` to use the default.
         default: The client's default deadline.
 
     Returns:

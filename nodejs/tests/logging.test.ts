@@ -15,7 +15,6 @@ import { status } from '@grpc/grpc-js'
 
 import { Memco } from '../src/client.js'
 import { MemcoConfigError } from '../src/errors.js'
-import { buildTransport } from '../src/internal/channel.js'
 import { DEFAULT_HOST, DEFAULT_PORT, resolve } from '../src/internal/config.js'
 import * as pb from '../src/internal/gen.js'
 import {
@@ -26,7 +25,6 @@ import {
   getLogger,
   setLevel
 } from '../src/internal/logging.js'
-import type { HealthCheckResponse } from '../src/internal/wire.js'
 import { withHarness } from './fakeServer.js'
 
 /** Redirect the error stream into an array until `restore` is called. */
@@ -319,60 +317,44 @@ test('a debug record names the endpoint and which setting chose it', () => {
     capture(() => {
       resolve({ token: 't', host: 'localhost:50051', tls: false, env: {} })
     }).includes(
-      'endpoint localhost:50051 tls=false (host from the host argument)'
+      'endpoint localhost:50051 tls=false (host from the host argument, tls from the tls argument)'
     )
   )
   assert.ok(
     capture(() => {
       resolve({ token: 't', env: { MEMCO_API_HOST: 'example.test' } })
-    }).includes('endpoint example.test:443 tls=true (host from MEMCO_API_HOST)')
+    }).includes(
+      'endpoint example.test:443 tls=true (host from MEMCO_API_HOST, tls from the default)'
+    )
   )
   assert.ok(
     capture(() => {
       resolve({ token: 't', env: {} })
     }).includes(
-      `endpoint ${DEFAULT_HOST}:${DEFAULT_PORT} tls=true (host from the default)`
+      `endpoint ${DEFAULT_HOST}:${DEFAULT_PORT} tls=true (host from the default, tls from the default)`
     )
   )
 })
 
 test('no credential reaches a record, over a whole exchange at debug', () => {
   // The level that logs the most is the level a credential would leak at. This
-  // runs a real exchange — resolve, dial, an authenticated call, the
-  // unauthenticated probe, teardown — with everything written to stderr kept.
+  // runs a real exchange — resolve, dial, the unauthenticated probe, an
+  // authenticated call, teardown — with everything written to stderr kept.
   const token = 'sk-live-supersecret-9f2b'
   return withHarness(async harness => {
     const written = await captureAsync(async () => {
       setLevel('debug')
-      const transport = buildTransport(
-        resolve({ token, host: harness.address, tls: false, env: {} })
-      )
+      const memco = new Memco({ token, host: harness.address, tls: false })
       try {
-        await new Promise<pb.ListDomainsResponse>((settle, fail) => {
-          transport.memory.listDomains({}, (error, response) => {
-            if (error) {
-              fail(error)
-              return
-            }
-            settle(response)
-          })
-        })
-        await new Promise<HealthCheckResponse>((settle, fail) => {
-          transport.health.check({ service: '' }, {}, (error, response) => {
-            if (error) {
-              fail(error)
-              return
-            }
-            settle(response)
-          })
-        })
+        await memco.connect()
       } finally {
-        transport.close()
+        await memco.close()
       }
     })
     // The exchange really was logged, so the absence below means something.
     assert.ok(written.includes('credential taken from the token argument'))
     assert.ok(written.includes(`endpoint ${harness.address} tls=false`))
+    assert.ok(written.includes('ListDomains ok in'))
     // And the server really did receive the credential, so it was in play.
     assert.equal(harness.memory.metadata[0]['authorization'], `Bearer ${token}`)
 
@@ -380,6 +362,71 @@ test('no credential reaches a record, over a whole exchange at debug', () => {
     assert.ok(!written.includes('supersecret'), written)
     assert.ok(!written.includes('Bearer'), written)
   })
+})
+
+test('no client secret or issued token reaches a record, over a whole exchange at debug', () => {
+  const secret = 'cs-live-supersecret-9f2b'
+  return withHarness(async harness => {
+    const written = await captureAsync(async () => {
+      setLevel('debug')
+      const memco = new Memco({
+        clientId: 'client-a',
+        clientSecret: secret,
+        host: harness.address,
+        tls: false
+      })
+      try {
+        await memco.connect()
+        await memco.networks.list()
+      } finally {
+        await memco.close()
+      }
+    })
+    assert.ok(written.includes('IssueToken ok in'), written)
+    assert.ok(written.includes('ListNetworks ok in'), written)
+    assert.equal(
+      (harness.tokens.requests.get('issueToken') as pb.auth.IssueTokenRequest)
+        .clientSecret,
+      secret
+    )
+    assert.ok(!written.includes('supersecret'), written)
+    assert.ok(!written.includes('client-token-1'), written)
+    assert.ok(!written.includes('Bearer'), written)
+  })
+})
+
+// --- TLS -----------------------------------------------------------------
+
+test('a client without TLS says so as it is built, before anything is sent', () => {
+  // WARNING, so it shows at the default level: the credential crosses the wire
+  // readable, and that should not take turning on debug to find out.
+  setLevel(DEFAULT_LEVEL)
+  for (const options of [
+    { tls: false, env: {} },
+    { env: { MEMCO_API_TLS: 'false' } }
+  ]) {
+    let memco: Memco | undefined
+    const written = capture(() => {
+      memco = new Memco({ token: 't', host: 'localhost:50052', ...options })
+    })
+    void memco?.close()
+    assert.ok(
+      written.includes(
+        'memco.client WARNING TLS is off: localhost:50052 is dialled in plaintext, credentials included'
+      ),
+      written
+    )
+  }
+})
+
+test('a client with TLS says nothing about it', () => {
+  setLevel(DEFAULT_LEVEL)
+  let memco: Memco | undefined
+  const written = capture(() => {
+    memco = new Memco({ token: 't', host: 'localhost:50052', env: {} })
+  })
+  void memco?.close()
+  assert.ok(!written.includes('TLS'), written)
 })
 
 test('a persistent listTools failure warns at the default level', async () => {

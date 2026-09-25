@@ -6,7 +6,9 @@ import logging
 import math
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections import deque
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager, suppress
 from functools import partial
 from types import TracebackType
 from typing import Any, TypeVar
@@ -19,7 +21,7 @@ from memcoai.auth.v1 import auth_pb2_grpc as _auth_pbg
 from memcoai.memory.v1 import memory_pb2_grpc as _pbg
 
 from . import _auth, _requests
-from ._auth import Minted, Renewing
+from ._auth import Live, Minted, Renewing
 from ._channel import build_channel
 from ._config import DEFAULT_TIMEOUT, resolve
 from ._config import deadline as _deadline
@@ -95,8 +97,9 @@ class Memco:
             When omitted, ``MEMCO_API_TLS`` decides -- ``true`` or ``false`` --
             falling back to ``True``. Without TLS, the client logs a
             ``WARNING`` as it is built.
-        timeout: Default per-call deadline in seconds. Individual methods can
-            override it.
+        timeout: Default deadline in seconds for each call, covering any wait
+            for a credential as well as the request itself. Individual methods
+            can override it.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`; supplying one is mainly useful in tests.
         log_level: The SDK's log level, as a name — ``"debug"``, ``"info"``,
@@ -152,18 +155,32 @@ class Memco:
         env: Mapping[str, str] | None = None,
         log_level: str | int | None = None,
     ) -> None:
-        if log_level is not None:
-            set_level(log_level)
-        self._config = resolve(
-            token,
-            host,
-            client_id=client_id,
-            client_secret=client_secret,
-            token_lifetime=token_lifetime,
-            tls=tls,
-            timeout=timeout,
-            env=env,
-        )
+        refused: MemcoConfigError | None = None
+        try:
+            if log_level is not None:
+                set_level(log_level)
+            self._config = resolve(
+                token,
+                host,
+                client_id=client_id,
+                client_secret=client_secret,
+                token_lifetime=token_lifetime,
+                tls=tls,
+                timeout=timeout,
+                env=env,
+            )
+        except MemcoConfigError as exc:
+            # Raised from here instead, without the frames of resolve() and
+            # once these names are gone: each holds the secret, and an error
+            # tracker capturing locals ships every frame of a traceback.
+            refused = exc.with_traceback(None)
+            refused.__context__ = None
+        # Any failure from here on, reaching the service included, carries
+        # this frame in its traceback. The config holds the token and the
+        # secret out of its repr; these names would not.
+        del token, client_secret
+        if refused is not None:
+            raise refused
         if not self._config.tls:
             # Said at construction, before anything is sent, and at WARNING so
             # it shows by default: the credential crosses the wire readable.
@@ -171,11 +188,6 @@ class Memco:
                 "TLS is off: %s is dialled in plaintext, credentials included",
                 self._config.target,
             )
-        # Construction goes on to reach the service, and any failure there
-        # carries this frame in its traceback, which an error tracker capturing
-        # locals ships. The config holds the token and the secret out of its
-        # repr; these names would not.
-        del token, client_secret
         self._channel = build_channel(self._config)
         self._health = health_pb2_grpc.HealthStub(self._channel)
         self._tokens = _auth_pbg.TokenServiceStub(self._channel)
@@ -197,10 +209,27 @@ class Memco:
         # happens inside the call rather than as an exception.
         self._state = threading.Condition()
         self._inflight = 0
-        # The impersonation keys minted and not yet ended, key id to external
-        # id, so close() can end those of sessions nobody closed. Guarded by
-        # _state.
-        self._live: dict[str, str] = {}
+        # The impersonation keys minted and not yet ended, so close() can end
+        # those of sessions nobody closed. Guarded by _state.
+        self._live: dict[str, Live] = {}
+        # The external id and key id of each session garbage-collected
+        # unclosed, queued by its finalizer for the next call to end. Not
+        # guarded by _state: a finalizer runs at any allocation, even one made
+        # under it, and a deque appends and pops atomically.
+        self._orphans: deque[tuple[str, str]] = deque()
+        # The keys whose end is under way, or claimed to be next, key id to
+        # external id, so a key minted for the same user waits for them: the
+        # service counts each against the user's cap until it has ended.
+        # Guarded by _state.
+        self._ending: dict[str, str] = {}
+        # Set once the channel is closed, after which nothing may be sent.
+        self._shut = False
+        # close() in stages that a later close() resumes, if one is cut short:
+        # the lock lets one run at a time, the sweep keeps the keys it has yet
+        # to end, and _done says the whole of it has run.
+        self._closing = threading.Lock()
+        self._sweep: dict[str, Live] = {}
+        self._done = False
         self.memory = MemoryOperations(
             _pbg.MemoryServiceStub(self._channel), self._call, impersonate=self._impersonate
         )
@@ -209,6 +238,19 @@ class Memco:
         """The network administration. See :class:`~memcoai.administration.NetworkOperations`."""
         self.users = UserOperations(self._admin, self._call)
         """The user administration. See :class:`~memcoai.administration.UserOperations`."""
+        self._connect()
+
+    # -- lifecycle --------------------------------------------------------
+
+    def _connect(self) -> None:
+        """Probe the service, then prove the credential, closing the client if either fails.
+
+        Raises:
+            MemcoUnavailableError: If the service cannot be reached.
+            MemcoUnhealthyError: If the service reports that it is not serving.
+            MemcoAuthenticationError: If the credential is rejected.
+            MemcoSunsetError: If what this client uses is past its sunset date.
+        """
         try:
             self._check_health()
             if self._config.client_id is None:
@@ -230,28 +272,37 @@ class Memco:
             raise
         _log.info("connected to %s (tls=%s)", self._config.target, self._config.tls)
 
-    # -- lifecycle --------------------------------------------------------
-
     def close(self) -> None:
         """End the keys of impersonated sessions left open, then close the channel.
 
         Blocks until any in-flight call has finished, so a client shared between
         threads can be closed from one of them safely, and so no key is ended
-        under a call still using it. Safe to call more than once, and never
-        raises: a key that cannot be ended is logged at ``WARNING`` and expires
+        under a call still using it. Safe to call more than once: a close on
+        another thread is waited for, and one cut short -- a signal handler
+        raising in it, say -- is finished by the next. Never raises of its own
+        accord: a key that cannot be ended is logged at ``WARNING`` and expires
         on its own. After closing, any further call raises
         :class:`~memcoai.errors.MemcoConfigError`, and closing a session changes
         nothing.
         """
-        with self._state:
-            if self._closed:
+        with self._closing:
+            if self._done:
                 return
-            self._closed = True
-            while self._inflight:
-                self._state.wait()
-            live, self._live = self._live, {}
-        self._end_live(live)
-        self._channel.close()
+            with self._state:
+                self._closed = True
+                while self._inflight:
+                    self._state.wait()
+                self._sweep.update(self._live)
+                self._live = {}
+            self._end_live(self._sweep)
+            with self._state:
+                # A token the sweep set renewing may still be being issued,
+                # and the channel must not be closed under it.
+                while self._inflight:
+                    self._state.wait()
+                self._shut = True
+            self._channel.close()
+            self._done = True
         _log.info("closed connection to %s", self._config.target)
 
     def __enter__(self) -> Memco:
@@ -312,34 +363,44 @@ class Memco:
         Sent on the stub directly rather than through :meth:`_call`: it runs
         while the client's credential is minting, and it is the one call that
         carries no bearer, since the credentials in the request are what
-        authenticate it.
+        authenticate it. Counted in flight all the same, on the thread it runs
+        on, so the channel is not closed under it; and let run while the client
+        closes, since ending the keys left open may need a fresh token.
 
         Returns:
             The token, due for renewal at :data:`~memcoai._auth.RENEW_AFTER` of
-            its lifetime. The lifetime is counted from before the request was
-            sent, so the renewal point can only fall early, never late.
+            its lifetime, and kept in use to the end of it if renewing fails.
+            The lifetime is counted from before the request was sent, so both
+            can only fall early, never late.
 
         Raises:
             MemcoAPIError: If the exchange is refused or fails.
         """
-        issued = _auth.monotonic()
-        started = time.perf_counter()
-        try:
-            # Built inline rather than held in a local, so the secret it
-            # carries is in no frame a traceback would capture.
-            response = self._tokens.IssueToken(
-                _requests.issue_token_request(self._config), timeout=self._config.timeout
-            )
-        except grpc.RpcError as exc:
-            error = from_rpc_error(exc)
-            _log.debug("IssueToken failed in %.0fms: %s", elapsed_ms(started), type(error).__name__)
-        else:
-            _log.debug("IssueToken ok in %.0fms", elapsed_ms(started))
-            return Minted(response.access_token, issued + _auth.RENEW_AFTER * response.expires_in)
-        # Raised outside the handler, so grpc's error is neither this one's
-        # cause nor its context: grpc's frames hold the request, and the
-        # request holds the secret.
-        raise error
+        with self._counted(closing=True):
+            issued = _auth.monotonic()
+            started = time.perf_counter()
+            try:
+                # Built inline rather than held in a local, so the secret it
+                # carries is in no frame a traceback would capture.
+                response = self._tokens.IssueToken(
+                    _requests.issue_token_request(self._config), timeout=self._config.timeout
+                )
+            except grpc.RpcError as exc:
+                error = from_rpc_error(exc)
+                _log.debug(
+                    "IssueToken failed in %.0fms: %s", elapsed_ms(started), type(error).__name__
+                )
+            else:
+                _log.debug("IssueToken ok in %.0fms", elapsed_ms(started))
+                return Minted(
+                    response.access_token,
+                    issued + _auth.RENEW_AFTER * response.expires_in,
+                    issued + response.expires_in,
+                )
+            # Raised outside the handler, so grpc's error is neither this one's
+            # cause nor its context: grpc's frames hold the request, and the
+            # request holds the secret.
+            raise error
 
     def _impersonate(self, external_id: str) -> Renewing:
         """Hold the key an impersonated session acts for one external user with.
@@ -348,85 +409,260 @@ class Memco:
             external_id: The user the session acts as.
 
         Returns:
-            The session's credential, which mints its first key on first use.
+            The session's credential, which mints its first key on first use,
+            and hands its key to the next call to end if it is
+            garbage-collected unclosed.
         """
-        return Renewing(partial(self._mint, external_id), partial(self._end_key, external_id))
+        return Renewing(
+            partial(self._mint, external_id),
+            lambda key: self._end_key(external_id, key.key_id),
+            partial(self._dropped, external_id),
+        )
+
+    def _dropped(self, external_id: str, key_id: str) -> None:
+        """Queue the key of a session garbage-collected unclosed. See :func:`_auth.orphaned`.
+
+        Nothing is left to do once the client is closed: its close ended the
+        key, or is ending it.
+
+        Args:
+            external_id: The user the key acts as.
+            key_id: The key the session held.
+        """
+        if not self._closed:
+            _auth.orphaned(self._orphans, external_id, key_id)
 
     def _mint(self, external_id: str) -> Minted:
         """Mint a key acting as an external user, under the client's own credential.
 
         The key is registered before it is returned, so :meth:`close` can end
-        it even if the session it was minted for is never closed.
+        it even if the session it was minted for is never closed: the whole of
+        this is counted in flight, since it runs on a thread of its own rather
+        than inside a call. It is not asked for until every end of the user's
+        keys already under way has landed, since until then the service counts
+        each of them against the user's cap.
 
         Args:
             external_id: The user the key acts as.
 
         Returns:
-            The key, due for renewal at :data:`~memcoai._auth.RENEW_AFTER` of the
-            lifetime left on it when it arrived.
+            The key, due for renewal at :data:`~memcoai._auth.RENEW_AFTER` of its
+            lifetime, and kept in use to the end of it if renewing fails. See
+            :func:`~memcoai._auth.key_lifetime` for how that lifetime is timed.
 
         Raises:
+            MemcoConfigError: If the client is closed.
             MemcoAPIError: If the service refuses to mint it.
         """
-        key = self._call(
-            self._admin.ImpersonateExternalUser, _requests.impersonate_request(external_id), None
-        )
-        with self._state:
-            self._live[key.key_id] = external_id
-        # expires_at is absolute Unix time; converted once, on receipt, into
-        # the monotonic reading every renewal decision is made against.
-        left = key.expires_at - _auth.time()
-        return Minted(key.value, _auth.monotonic() + _auth.RENEW_AFTER * left, key_id=key.key_id)
+        with self._counted():
+            if self._orphans:
+                self._end_orphans()
+            self._prune(external_id)
+            with self._state:
+                # Bounded, so that a claim somehow never released costs one
+                # wait, and a refusal at the cap, rather than every mint after.
+                self._state.wait_for(
+                    lambda: external_id not in self._ending.values(), self._config.timeout
+                )
+            sent = _auth.monotonic()
+            key = self._call(
+                self._admin.ImpersonateExternalUser,
+                _requests.impersonate_request(external_id),
+                None,
+            )
+            since, left = _auth.key_lifetime(key, sent)
+            with self._state:
+                self._live[key.key_id] = Live(external_id, since + left)
+        return Minted(key.value, since + _auth.RENEW_AFTER * left, since + left, key_id=key.key_id)
 
-    def _end_key(self, external_id: str, key: Minted) -> None:
-        """End a key a session has renewed or closed. Never raises.
+    def _prune(self, external_id: str) -> None:
+        """Forget the keys that have expired, and retry the user's ends that failed.
+
+        Run before each mint, which is what bounds the registry on a client
+        that lives for days, and what frees a key under the user's cap before
+        a new one would be refused for it. Never raises, and stops at the first
+        key the service still cannot end: it would refuse the rest too. Each
+        is unmarked as it is taken, so a mint for the same user on another
+        thread does not end it a second time; failing again marks it again.
+
+        Args:
+            external_id: The user a key is about to be minted for.
+        """
+        now = _auth.monotonic()
+        with self._state:
+            for key_id in [key_id for key_id, key in self._live.items() if key.expires <= now]:
+                del self._live[key_id]
+        while True:
+            with self._state:
+                retry = next(
+                    (
+                        key_id
+                        for key_id, key in self._live.items()
+                        if key.failed and key.external_id == external_id
+                    ),
+                    None,
+                )
+                if retry is None:
+                    return
+                self._live[retry] = self._live[retry]._replace(failed=False)
+                self._ending[retry] = external_id
+            if not self._end_key(external_id, retry):
+                return
+
+    def _end_key(self, external_id: str, key_id: str) -> bool:
+        """End a key a session has renewed, closed or dropped. Never raises.
+
+        Claimed as under way while it runs, so a key minted for the same user
+        meanwhile waits for it.
 
         Args:
             external_id: The user the key acts as.
-            key: The key to end.
+            key_id: The key to end.
+
+        Returns:
+            Whether nothing is left to end: the service ended the key, or no
+            longer knows it.
+        """
+        ended = False
+        try:
+            with self._state:
+                self._ending[key_id] = external_id
+            ended = self._ended(external_id, key_id)
+        finally:
+            self._unclaim([key_id], failed=not ended)
+        return ended
+
+    def _unclaim(self, key_ids: list[str], *, failed: bool) -> None:
+        """Mark keys no longer under way, and those left unended as failed.
+
+        Both at once, under the lock: done in two steps, a retry taking a key
+        in between would have its claim removed by the end it replaced.
+
+        Args:
+            key_ids: The keys.
+            failed: Whether they were left unended, for the next key minted
+                for their user to try again.
+        """
+        with self._state:
+            for key_id in key_ids:
+                self._ending.pop(key_id, None)
+                if failed and key_id in self._live:
+                    self._live[key_id] = self._live[key_id]._replace(failed=True)
+            self._state.notify_all()
+
+    def _ended(self, external_id: str, key_id: str) -> bool:
+        """Do what :meth:`_end_key` describes.
+
+        Args:
+            external_id: The user the key acts as.
+            key_id: The key to end.
+
+        Returns:
+            Whether nothing is left to end.
         """
         try:
-            self._call(
-                self._admin.EndImpersonation,
-                _requests.end_impersonation_request(external_id, key.key_id),
-                None,
-            )
-        except MemcoNotFoundError:
-            pass  # Already expired, or its user deleted: nothing is left to end.
+            # Counted in flight until the key is deregistered, not only while
+            # its end is sent: a close() slipping in between would find the
+            # key still registered, and end it a second time.
+            with self._counted():
+                # Not found: already expired, or its user deleted, so nothing
+                # is left to end.
+                with suppress(MemcoNotFoundError):
+                    self._call(
+                        self._admin.EndImpersonation,
+                        _requests.end_impersonation_request(external_id, key_id),
+                        None,
+                    )
+                with self._state:
+                    self._live.pop(key_id, None)
         except MemcoConfigError:
-            return  # The client is closed, and its close() ends what is left.
+            return False  # The client is closed, and its close() ends what is left.
         except MemcoError as exc:
-            # Left registered, so closing the client tries again. The key id
-            # revokes nothing, so it is safe to log; the value never is.
+            # Left registered, and marked as its claim is released, so the
+            # next key minted for the same user, or closing the client, tries
+            # again. The key id revokes nothing, so it is safe to log; the
+            # value never is.
             _log.warning(
-                "could not end impersonation key %s; closing the client tries again: %s",
-                key.key_id,
+                "could not end impersonation key %s; the next key minted for its user, "
+                "or closing the client, tries again: %s",
+                key_id,
                 exc,
             )
-            return
-        with self._state:
-            self._live.pop(key.key_id, None)
+            return False
+        return True
 
-    def _end_live(self, live: dict[str, str]) -> None:
-        """End the keys still live as the client closes. Never raises.
+    def _end_orphans(self) -> None:
+        """Start ending the keys of sessions garbage-collected unclosed.
+
+        The queue is emptied, and every key in it claimed as under way, before
+        this returns, so a key minted for one of their users meanwhile waits
+        for all of that user's. The ends themselves run on a thread of their
+        own: the call that got here waits for none of them, and an interrupt
+        aimed at it cannot strand a claim.
+        """
+        orphans: list[tuple[str, str]] = []
+        with self._state:
+            # Claimed as they are taken off the queue, under the lock a mint
+            # waits on, so no mint for their user slips in between.
+            with suppress(IndexError):
+                while True:
+                    orphans.append(self._orphans.popleft())
+            self._ending.update((key_id, external_id) for external_id, key_id in orphans)
+        try:
+            _auth.apart(self._end_each, orphans)
+        except BaseException:
+            # The thread never started -- an interrupt landed as it was, or
+            # none could be -- so what it would have ended is released, and
+            # marked for the next key minted for its user to try again.
+            self._unclaim([key_id for _, key_id in orphans], failed=True)
+            raise
+
+    def _end_each(self, orphans: list[tuple[str, str]]) -> None:
+        """End claimed keys in turn. Never raises.
+
+        Stops at the first the service cannot end, as the other sweeps do: it
+        would refuse the rest too. Whatever is left, however this stops, is
+        released and marked, for the next key minted for its user to retry.
+
+        Args:
+            orphans: The external id and key id of each key.
+        """
+        left = list(orphans)
+        try:
+            while left:
+                external_id, key_id = left[0]
+                ended = self._end_key(external_id, key_id)
+                del left[0]
+                if not ended:
+                    return
+        finally:
+            self._unclaim([key_id for _, key_id in left], failed=True)
+
+    def _end_live(self, live: dict[str, Live]) -> None:
+        """End the keys still live as the client closes. Never raises a MemcoError.
 
         Stops at the first failure: one refusal says the service cannot end
         them now, and asking again for each would only make closing slower.
-        The keys left expire on their own.
+        The keys left expire on their own, as those already expired have.
+        Each key is removed from ``live`` once it is dealt with, so a sweep
+        cut short leaves exactly what the next close has still to end.
 
         Args:
-            live: The keys to end, key id to external id.
+            live: The keys to end, by key id.
         """
         deadline = _deadline(None, self._config.timeout)
-        key_ids = list(live)
-        for ended, key_id in enumerate(key_ids):
+        now = _auth.monotonic()
+        for key_id in [key_id for key_id, key in live.items() if key.expires <= now]:
+            del live[key_id]
+        while live:
+            key_id, key = next(iter(live.items()))
             try:
                 # Sent directly: _call refuses every call once the client is
                 # closed, and nothing else can be in flight by now.
                 with self._credential.lease() as bearer:
                     self._send(
                         self._admin.EndImpersonation,
-                        _requests.end_impersonation_request(live[key_id], key_id),
+                        _requests.end_impersonation_request(key.external_id, key_id),
                         deadline,
                         bearer,
                     )
@@ -435,10 +671,38 @@ class Memco:
             except MemcoError as exc:
                 _log.warning(
                     "could not end impersonation keys %s; they expire on their own: %s",
-                    ", ".join(key_ids[ended:]),
+                    ", ".join(live),
                     exc,
                 )
+                live.clear()
                 return
+            del live[key_id]
+
+    @contextmanager
+    def _counted(self, *, closing: bool = False) -> Iterator[None]:
+        """Count what runs inside as a call in flight, which :meth:`close` waits for.
+
+        Args:
+            closing: Whether it may run while the client closes, as long as
+                the channel is still open.
+
+        Yields:
+            Nothing; the count is held for the body.
+
+        Raises:
+            MemcoConfigError: If the client is closed.
+        """
+        with self._state:
+            if self._shut or (self._closed and not closing):
+                raise MemcoConfigError("this client is closed; create a new one to make more calls")
+            self._inflight += 1
+        try:
+            yield
+        finally:
+            with self._state:
+                self._inflight -= 1
+                if self._closed and not self._inflight:
+                    self._state.notify_all()
 
     def _call(
         self,
@@ -449,14 +713,20 @@ class Memco:
     ) -> _T:
         """Invoke one RPC under a leased credential.
 
-        The lease is taken inside the in-flight count, so a token refresh or a
-        key renewal it sets off is waited for by :meth:`close`, and its failure
-        reaches the caller typed like any other.
+        A credential due for renewal is renewed apart from the call, on a
+        thread counted in flight on its own, which :meth:`close` waits for; the
+        call waits only when nothing honoured is held, and then no longer than
+        its deadline, and a failure it waits on reaches it typed like any
+        other. First, it starts ending the keys of any sessions
+        garbage-collected unclosed, without waiting for them; their failures
+        are logged and never raised.
 
         Args:
             method: The stub method to call.
             request: The request message.
-            timeout: Per-call deadline, or ``None`` to use the client default.
+            timeout: The call's deadline in seconds, or ``None`` for the client
+                default. It covers the whole call, waiting for a credential
+                included: the request gets whatever the wait left of it.
             credential: The credential to send, or ``None`` for the client's
                 own. An impersonated session passes its key.
 
@@ -469,18 +739,15 @@ class Memco:
                 credential could not be renewed.
         """
         deadline = _deadline(timeout, self._config.timeout)
-        with self._state:
-            if self._closed:
-                raise MemcoConfigError("this client is closed; create a new one to make more calls")
-            self._inflight += 1
-        try:
-            with (credential or self._credential).lease() as bearer:
-                return self._send(method, request, deadline, bearer)
-        finally:
-            with self._state:
-                self._inflight -= 1
-                if self._closed and not self._inflight:
-                    self._state.notify_all()
+        # Fixed as the call starts: waiting for a credential spends it, and
+        # the request gets what is left, so the call ends when its caller
+        # said it would.
+        ends = time.perf_counter() + deadline
+        with self._counted():
+            if self._orphans:
+                self._end_orphans()
+            with (credential or self._credential).lease(deadline) as bearer:
+                return self._send(method, request, ends - time.perf_counter(), bearer)
 
     def _send(self, method: Callable[..., _T], request: Any, deadline: float, bearer: Minted) -> _T:
         """Send one RPC carrying one credential, translating any failure.
@@ -513,6 +780,13 @@ class Memco:
                 elapsed_ms(started),
                 type(error).__name__,
             )
+        except BaseException as exc:
+            # Anything else raised while grpc blocks -- a signal handler's
+            # exception, most often: a time limit, a worker's timeout, ^C --
+            # goes on as it was, but without grpc's frames, whose locals hold
+            # the metadata and with it the bearer.
+            exc.__context__ = None
+            raise exc.with_traceback(None) from None
         else:
             _log.debug("%s ok in %.0fms", rpc_name(request), elapsed_ms(started))
             return response

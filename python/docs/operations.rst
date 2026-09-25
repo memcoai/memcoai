@@ -34,9 +34,11 @@ impersonation key for the user, lists the domains under it, so the session
 learns the limits that apply to the user, and then starts the session. Every
 call through the session carries that key, which renews itself before it
 expires. Close the session when done, by leaving its ``with`` block or calling
-``close()``. That ends the key, and the service caps how many live keys each
-user may hold. A session opened without an ``external_id`` holds nothing, and
-closing it changes nothing.
+``close()``. That ends the key at once, and the service caps how many live keys
+each user may hold. One dropped without being closed has its key ended only
+eventually, at the client's next call once it is garbage-collected, with a
+``ResourceWarning``. A session opened without an ``external_id`` holds nothing,
+and closing it changes nothing.
 
 .. autoclass:: memcoai.operations.Session
    :members:

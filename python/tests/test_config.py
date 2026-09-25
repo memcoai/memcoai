@@ -233,6 +233,31 @@ def test_token_lifetime_must_be_positive(lifetime):
         resolve(client_id="client-a", client_secret="secret-a", token_lifetime=lifetime, env={})
 
 
+@pytest.mark.parametrize("lifetime", [7200.0, True], ids=["float", "bool"])
+def test_token_lifetime_must_be_a_whole_number_of_seconds(lifetime):
+    # Refused here, typed, rather than by protobuf once the request is built.
+    with pytest.raises(errors.MemcoConfigError, match="token_lifetime"):
+        resolve(client_id="client-a", client_secret="secret-a", token_lifetime=lifetime, env={})
+
+
+@pytest.mark.parametrize(
+    ("given", "env"),
+    [
+        ({"token": "STATIC-TOKEN\udce9"}, {}),
+        ({}, {"MEMCO_API_TOKEN": "STATIC-TOKEN\udce9"}),
+        ({}, {"MEMCO_API_TOKEN": "STATIC-TOKEN\u00e9"}),
+    ],
+    ids=["lone surrogate argument", "lone surrogate in the environment", "non-ascii"],
+)
+def test_a_token_a_request_header_cannot_carry_is_refused_without_its_value(given, env):
+    # A byte that is not UTF-8, read from the environment, arrives as a lone
+    # surrogate; grpc would raise an encoding error holding the whole token.
+    with pytest.raises(errors.MemcoConfigError) as caught:
+        resolve(**given, env=env)
+    assert "STATIC-TOKEN" not in str(caught.value)
+    assert "STATIC-TOKEN" not in repr(caught.value.args)
+
+
 def test_token_lifetime_has_no_local_maximum():
     # The service owns its cap. A copy of it here would go stale and start
     # refusing lifetimes the service accepts.

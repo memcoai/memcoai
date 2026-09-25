@@ -591,6 +591,27 @@ def test_a_created_key_arriving_without_its_key_is_an_internal_error(
     assert held == []
 
 
+def test_a_created_key_whose_expiry_cannot_be_read_is_an_internal_error(
+    credentialed: Memco, harness: Harness
+):
+    # Milliseconds where seconds belong put the expiry past the year 9999;
+    # the value must not escape in the frames of a raw conversion error.
+    harness.admin.responses["CreateExternalUserKey"] = admin_pb.CreateExternalUserKeyResponse(
+        key=admin_pb.ExternalUserKey(id="apikey-new", valid_until=1767225600000),
+        value="mk_live_new-secret-value",
+    )
+    with pytest.raises(errors.MemcoInternalError) as caught:
+        credentialed.users.create_key(XID, preset="mcp_ro")
+    assert "mk_live_new-secret-value" not in str(caught.value)
+    held = [
+        (frame.f_code.co_name, name)
+        for frame, _ in traceback.walk_tb(caught.value.__traceback__)
+        for name, value in frame.f_locals.items()
+        if "mk_live_new-secret-value" in repr(value)
+    ]
+    assert held == []
+
+
 # --- patches -------------------------------------------------------------
 
 NETWORK_PATCHABLE = ["name", "parent_id", "scope", "owner", "description"]

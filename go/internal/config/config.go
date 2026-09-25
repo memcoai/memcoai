@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"math/big"
 	"net"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/memcoai/memcoai/go/internal/fault"
 	"github.com/memcoai/memcoai/go/internal/warn"
@@ -21,26 +23,37 @@ const (
 	DefaultPort    = 443
 	DefaultTimeout = 30 * time.Second
 
-	TokenEnv       = "MEMCO_API_TOKEN"
-	LegacyTokenEnv = "MEMCO_API_KEY"
-	HostEnv        = "MEMCO_API_HOST"
+	TokenEnv        = "MEMCO_API_TOKEN"
+	LegacyTokenEnv  = "MEMCO_API_KEY"
+	HostEnv         = "MEMCO_API_HOST"
+	TLSEnv          = "MEMCO_API_TLS"
+	ClientIDEnv     = "MEMCO_CLIENT_ID"
+	ClientSecretEnv = "MEMCO_CLIENT_SECRET"
 )
 
 // Input is what a caller passed; zero values mean unset.
 type Input struct {
-	Token     string
-	Host      string
-	Plaintext bool
-	Timeout   time.Duration
+	Token         string
+	ClientID      string
+	ClientSecret  string
+	TokenLifetime time.Duration
+	Host          string
+	Plaintext     bool
+	TLS           *bool
+	Timeout       time.Duration
 }
 
-// Config is the resolved configuration.
+// Config is the resolved configuration: a token in Credential, or an API
+// client's ClientID and ClientSecret.
 type Config struct {
-	Credential *Credential
-	Host       string
-	Port       int
-	TLS        bool
-	Timeout    time.Duration
+	Credential    *Credential
+	ClientID      string
+	ClientSecret  *Credential
+	TokenLifetime time.Duration
+	Host          string
+	Port          int
+	TLS           bool
+	Timeout       time.Duration
 }
 
 // Target is host:port, bracketing an IPv6 host.
@@ -56,7 +69,10 @@ const redacted = "[redacted]"
 // Credential holds the token and never prints it.
 type Credential struct{ token string }
 
-// Reveal returns the token, for the transport alone.
+// Secret holds a value that must never be printed.
+func Secret(value string) *Credential { return &Credential{token: value} }
+
+// Reveal returns the value, for the wire alone.
 func (c *Credential) Reveal() string { return c.token }
 
 func (Credential) String() string               { return redacted }
@@ -77,12 +93,33 @@ func Resolve(in Input, getenv func(string) string, log *slog.Logger) (*Config, e
 		timeout = DefaultTimeout
 	}
 
-	token, err := resolveToken(in.Token, getenv, log)
+	config := &Config{Timeout: timeout}
+	client, err := resolveClient(in, getenv, log)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkSendable(token); err != nil {
-		return nil, err
+	if client == nil {
+		token, err := resolveToken(in.Token, getenv, log)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkSendable(token); err != nil {
+			return nil, err
+		}
+		// Only an issued token has a lifetime to ask for; accepting one beside
+		// a static token would silently ignore it.
+		if in.TokenLifetime != 0 {
+			return nil, fault.Config("token_lifetime applies only to client credentials, not a token")
+		}
+		config.Credential = &Credential{token: token}
+	} else {
+		// No local maximum: the service owns it. The wire carries whole
+		// seconds in 32 bits, so anything else would be sent as another value.
+		if lifetime := in.TokenLifetime; lifetime < 0 || lifetime%time.Second != 0 || lifetime > math.MaxInt32*time.Second {
+			return nil, fault.Config(fmt.Sprintf(
+				"token_lifetime must be a positive whole number of seconds, at most %ds, got %s", math.MaxInt32, lifetime))
+		}
+		config.ClientID, config.ClientSecret, config.TokenLifetime = client.id, &Credential{token: client.secret}, in.TokenLifetime
 	}
 
 	if in.Host != "" && strings.TrimSpace(in.Host) == "" {
@@ -97,14 +134,86 @@ func Resolve(in Input, getenv func(string) string, log *slog.Logger) (*Config, e
 	default:
 		host, source = DefaultHost, "the default"
 	}
-	name, port, err := splitHostPort(strings.TrimSpace(host))
-	if err != nil {
+	if config.Host, config.Port, err = splitHostPort(strings.TrimSpace(host)); err != nil {
 		return nil, err
 	}
-
-	config := &Config{Credential: &Credential{token: token}, Host: name, Port: port, TLS: !in.Plaintext, Timeout: timeout}
+	if config.TLS, err = resolveTLS(in, getenv); err != nil {
+		return nil, err
+	}
 	log.Debug("endpoint", "target", config.Target(), "tls", config.TLS, "source", source)
 	return config, nil
+}
+
+// resolveTLS takes the TLS option, else the deprecated Plaintext, else
+// MEMCO_API_TLS, else TLS on. Whether traffic is encrypted is never guessed
+// from a typo, nor from two options that disagree.
+func resolveTLS(in Input, getenv func(string) string) (bool, error) {
+	switch {
+	case in.Plaintext && in.TLS != nil && *in.TLS:
+		return false, fault.Config("Plaintext and TLS disagree: Plaintext is deprecated, so set TLS alone")
+	case in.TLS != nil:
+		return *in.TLS, nil
+	case in.Plaintext:
+		return false, nil
+	}
+	switch value := strings.ToLower(strings.TrimSpace(getenv(TLSEnv))); value {
+	case "", "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fault.Config(fmt.Sprintf("%s must be true or false, got %q", TLSEnv, value))
+	}
+}
+
+type clientPair struct{ id, secret string }
+
+// resolveClient picks an API client's credentials, or nil for a token. It is
+// consulted first, because a complete pair in the environment wins over a
+// token there: CI exports both, and a client given no credential of its own
+// is the one that needs the pair. A token argument names the caller's
+// credential, so it skips the environment's pair.
+func resolveClient(in Input, getenv func(string) string, log *slog.Logger) (*clientPair, error) {
+	if in.ClientID != "" || in.ClientSecret != "" {
+		if in.Token != "" {
+			// Two credentials of different kinds: sending either is a guess.
+			return nil, fault.Config("pass either token=... or client_id=... with client_secret=..., not both")
+		}
+		pair := &clientPair{strings.TrimSpace(in.ClientID), strings.TrimSpace(in.ClientSecret)}
+		for _, given := range []struct{ name, raw, value string }{
+			{"client_id", in.ClientID, pair.id}, {"client_secret", in.ClientSecret, pair.secret},
+		} {
+			switch {
+			case given.raw == "":
+				return nil, fault.Config("client credentials need both client_id and client_secret; " + given.name + " is missing")
+			case given.value == "":
+				return nil, fault.Config("the " + given.name + " passed to the client is blank")
+			case !utf8.ValidString(given.value):
+				return nil, fault.Config("the " + given.name + " cannot be sent: it is not valid UTF-8")
+			}
+		}
+		log.Debug("client credentials taken from the client_id and client_secret arguments")
+		return pair, nil
+	}
+	if in.Token != "" {
+		return nil, nil
+	}
+	// Blank reads as unset, as for the token: it is what an unset CI secret
+	// expands to. Half a pair is refused even beside a token, so a deployment
+	// missing one of its secrets fails loudly rather than running as another.
+	pair := &clientPair{strings.TrimSpace(getenv(ClientIDEnv)), strings.TrimSpace(getenv(ClientSecretEnv))}
+	switch {
+	case pair.id == "" && pair.secret == "":
+		return nil, nil
+	case pair.id == "":
+		return nil, fault.Config(ClientIDEnv + " and " + ClientSecretEnv + " must be set together; " + ClientIDEnv + " is not")
+	case pair.secret == "":
+		return nil, fault.Config(ClientIDEnv + " and " + ClientSecretEnv + " must be set together; " + ClientSecretEnv + " is not")
+	case !utf8.ValidString(pair.id) || !utf8.ValidString(pair.secret):
+		return nil, fault.Config(ClientIDEnv + " or " + ClientSecretEnv + " cannot be sent: it is not valid UTF-8")
+	}
+	log.Debug("client credentials taken from " + ClientIDEnv + " and " + ClientSecretEnv)
+	return pair, nil
 }
 
 func resolveToken(token string, getenv func(string) string, log *slog.Logger) (string, error) {

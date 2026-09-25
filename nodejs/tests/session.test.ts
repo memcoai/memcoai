@@ -299,3 +299,21 @@ test('a batch taken from a generator is split across calls without losing any of
     }
   })
 })
+
+test('a blank domain is refused before anything is sent, the catalog fetch included', async () => {
+  await withHarness(async harness => {
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      harness.forget()
+      await assert.rejects(memco.memory.startSession(' '), {
+        name: 'MemcoInvalidRequestError'
+      })
+      // Long enough for a call sent anyway to have reached the server.
+      await new Promise(settle => setTimeout(settle, 50))
+      assert.deepEqual(harness.memory.calls, [])
+    } finally {
+      await memco.close()
+    }
+  })
+})

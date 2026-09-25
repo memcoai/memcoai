@@ -20,6 +20,7 @@ import type {
   ImportedMemory,
   Tag
 } from '../types.js'
+import type { ClientConfig } from './config.js'
 import * as pb from './gen.js'
 import { Known } from './limits.js'
 import * as validate from './validate.js'
@@ -593,4 +594,500 @@ export function requireMemory(
     )
   }
   return response.memory
+}
+
+/**
+ * Leave a patch field unset when the caller gave none.
+ *
+ * On a patch, unset and empty mean different things — unset leaves the field
+ * as it is, `''` clears it — and ts-proto writes anything but `undefined`. A
+ * JavaScript `null` is a caller saying "not given", so it is folded to unset
+ * rather than written as the text `null`.
+ *
+ * @param value The field as the caller gave it.
+ * @returns The value, or `undefined` when none was given.
+ */
+function patched(value: string | null | undefined): string | undefined {
+  return value ?? undefined
+}
+
+/**
+ * Build the `IssueToken` request exchanging the client's credentials for a
+ * token.
+ *
+ * @param config Resolved client settings holding the client credentials.
+ * @returns The request message. It names no scope, which takes everything the
+ *   API client was granted, and an unset `tokenLifetime` is sent as 0, which
+ *   takes the service's default.
+ */
+export function issueTokenRequest(
+  config: ClientConfig
+): pb.auth.IssueTokenRequest {
+  return {
+    grantType: 'client_credentials',
+    clientId: config.clientId ?? '',
+    clientSecret: config.clientSecret ?? '',
+    scope: [],
+    ttlSeconds: config.tokenLifetime ?? 0
+  }
+}
+
+/**
+ * Build an `ImpersonateExternalUser` request minting a session's key.
+ *
+ * @param externalId The user the key acts as, already checked for blankness by
+ *   the session opening it.
+ * @returns The request message. It asks for no lifetime, which takes the
+ *   service's default: the session renews its key before it expires, so a
+ *   longer one would only leave a leaked key usable for longer.
+ */
+export function impersonateRequest(
+  externalId: string
+): pb.admin.ImpersonateExternalUserRequest {
+  return built(() => ({ externalId, ttlMinutes: 0 }))
+}
+
+/**
+ * Build an `EndImpersonation` request revoking a session's key.
+ *
+ * @param externalId The user the key acts as.
+ * @param keyId The key to revoke, as the service named it when minting it.
+ * @returns The request message.
+ */
+export function endImpersonationRequest(
+  externalId: string,
+  keyId: string
+): pb.admin.EndImpersonationRequest {
+  return built(() => ({ externalId, keyId }))
+}
+
+/** Everything a network listing is narrowed by. */
+export interface ListNetworksOptions {
+  name?: string | null
+  scope?: string | null
+  owner?: string | null
+  domain?: string | null
+  parentId?: string | null
+  ids?: Iterable<string> | null
+  page?: number | null
+  pageSize?: number | null
+}
+
+/**
+ * Validate and build a `ListNetworks` request.
+ *
+ * @param options The filters and the page.
+ * @returns The request message, carrying only the filters given.
+ * @throws A `MemcoInvalidRequestError` if `ids` is a single string.
+ */
+export function listNetworksRequest(
+  options: ListNetworksOptions
+): pb.admin.ListNetworksRequest {
+  const ids = validate.checkStrings(options.ids, 'ids')
+  return built(() => ({
+    name: options.name ?? '',
+    scope: options.scope ?? '',
+    owner: options.owner ?? '',
+    domain: options.domain ?? '',
+    parentId: options.parentId ?? '',
+    ids,
+    page: options.page ?? 0,
+    pageSize: options.pageSize ?? 0
+  }))
+}
+
+/** Everything a new network is made from. */
+export interface CreateNetworkOptions {
+  name?: string | null
+  parentId?: string | null
+  domain?: string | null
+  region?: string | null
+  scope?: string | null
+  owner?: string | null
+  description?: string | null
+}
+
+/**
+ * Build a `CreateNetwork` request.
+ *
+ * Nothing is checked here: every field is one the service defaults or refuses
+ * on its own terms.
+ *
+ * @param options The network's name, where it goes, and what describes it.
+ * @returns The request message.
+ */
+export function createNetworkRequest(
+  options: CreateNetworkOptions
+): pb.admin.CreateNetworkRequest {
+  return built(() => ({
+    name: options.name ?? '',
+    parentId: options.parentId ?? '',
+    domain: options.domain ?? '',
+    region: options.region ?? '',
+    scope: options.scope ?? '',
+    owner: options.owner ?? '',
+    description: options.description ?? ''
+  }))
+}
+
+/** Everything a network patch may change. */
+export interface UpdateNetworkOptions {
+  name?: string | null
+  parentId?: string | null
+  scope?: string | null
+  owner?: string | null
+  description?: string | null
+}
+
+/**
+ * Validate and build an `UpdateNetwork` request.
+ *
+ * @param networkId The network to change.
+ * @param options What to change. A field left out is left unset.
+ * @returns The request message, with only the fields given set.
+ * @throws A `MemcoInvalidRequestError` if the network is blank.
+ */
+export function updateNetworkRequest(
+  networkId: string,
+  options: UpdateNetworkOptions
+): pb.admin.UpdateNetworkRequest {
+  validate.checkIdx(networkId, 'network_id')
+  return built(() => ({
+    id: networkId,
+    name: patched(options.name),
+    parentId: patched(options.parentId),
+    scope: patched(options.scope),
+    owner: patched(options.owner),
+    description: patched(options.description)
+  }))
+}
+
+/**
+ * Validate and build a `DeleteNetwork` request.
+ *
+ * @param networkId The network to delete.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the network is blank.
+ */
+export function deleteNetworkRequest(
+  networkId: string
+): pb.admin.DeleteNetworkRequest {
+  validate.checkIdx(networkId, 'network_id')
+  return built(() => ({ id: networkId }))
+}
+
+/** Everything a member listing is narrowed by. */
+export interface ListMembersOptions {
+  search?: string | null
+  page?: number | null
+  pageSize?: number | null
+}
+
+/**
+ * Validate and build a `ListNetworkMembers` request.
+ *
+ * @param networkId The network whose members to list.
+ * @param options A search and the page.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the network is blank.
+ */
+export function listNetworkMembersRequest(
+  networkId: string,
+  options: ListMembersOptions
+): pb.admin.ListNetworkMembersRequest {
+  validate.checkIdx(networkId, 'network_id')
+  return built(() => ({
+    id: networkId,
+    search: options.search ?? '',
+    page: options.page ?? 0,
+    pageSize: options.pageSize ?? 0
+  }))
+}
+
+/**
+ * Validate and build an `AddNetworkMember` request.
+ *
+ * @param networkId The network to place the user in.
+ * @param userId The user to place.
+ * @param force Whether to move a user already placed in another network of
+ *   the same memory domain.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the network or the user is blank.
+ */
+export function addNetworkMemberRequest(
+  networkId: string,
+  userId: string,
+  force: boolean
+): pb.admin.AddNetworkMemberRequest {
+  validate.checkIdx(networkId, 'network_id')
+  validate.checkIdx(userId, 'user_id')
+  return built(() => ({ id: networkId, userId, force }))
+}
+
+/**
+ * Validate and build a `RemoveNetworkMember` request.
+ *
+ * @param networkId The network to take the user out of.
+ * @param userId The user to take out.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the network or the user is blank.
+ */
+export function removeNetworkMemberRequest(
+  networkId: string,
+  userId: string
+): pb.admin.RemoveNetworkMemberRequest {
+  validate.checkIdx(networkId, 'network_id')
+  validate.checkIdx(userId, 'user_id')
+  return built(() => ({ id: networkId, userId }))
+}
+
+/** Everything a group listing is narrowed by. */
+export interface ListGroupsOptions {
+  name?: string | null
+  networkId?: string | null
+  ids?: Iterable<string> | null
+  page?: number | null
+  pageSize?: number | null
+}
+
+/**
+ * Validate and build a `ListGroups` request.
+ *
+ * @param options The filters and the page.
+ * @returns The request message, carrying only the filters given.
+ * @throws A `MemcoInvalidRequestError` if `ids` is a single string.
+ */
+export function listGroupsRequest(
+  options: ListGroupsOptions
+): pb.admin.ListGroupsRequest {
+  const ids = validate.checkStrings(options.ids, 'ids')
+  return built(() => ({
+    name: options.name ?? '',
+    networkId: options.networkId ?? '',
+    ids,
+    page: options.page ?? 0,
+    pageSize: options.pageSize ?? 0
+  }))
+}
+
+/**
+ * Validate and build a `ListGroupMembers` request.
+ *
+ * @param groupId The group whose members to list.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the group is blank.
+ */
+export function listGroupMembersRequest(
+  groupId: string
+): pb.admin.ListGroupMembersRequest {
+  validate.checkIdx(groupId, 'group_id')
+  return built(() => ({ id: groupId }))
+}
+
+/**
+ * Validate and build an `AddNetworkGroup` request.
+ *
+ * @param networkId The network to assign the group to.
+ * @param groupId The group to assign.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the network or the group is blank.
+ */
+export function addNetworkGroupRequest(
+  networkId: string,
+  groupId: string
+): pb.admin.AddNetworkGroupRequest {
+  validate.checkIdx(networkId, 'network_id')
+  validate.checkIdx(groupId, 'group_id')
+  return built(() => ({ id: networkId, groupId }))
+}
+
+/**
+ * Validate and build a `RemoveNetworkGroup` request.
+ *
+ * @param networkId The network to take the group out of.
+ * @param groupId The group to take out.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the network or the group is blank.
+ */
+export function removeNetworkGroupRequest(
+  networkId: string,
+  groupId: string
+): pb.admin.RemoveNetworkGroupRequest {
+  validate.checkIdx(networkId, 'network_id')
+  validate.checkIdx(groupId, 'group_id')
+  return built(() => ({ id: networkId, groupId }))
+}
+
+/** Everything a user listing is narrowed by. */
+export interface ListUsersOptions {
+  search?: string | null
+  page?: number | null
+  pageSize?: number | null
+}
+
+/**
+ * Build a `ListExternalUsers` request.
+ *
+ * @param options A search and the page.
+ * @returns The request message, carrying only the filters given.
+ */
+export function listExternalUsersRequest(
+  options: ListUsersOptions
+): pb.admin.ListExternalUsersRequest {
+  return built(() => ({
+    search: options.search ?? '',
+    page: options.page ?? 0,
+    pageSize: options.pageSize ?? 0
+  }))
+}
+
+/**
+ * Validate and build a `GetExternalUser` request.
+ *
+ * @param externalId The user to fetch, by your own id for them.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the id is blank.
+ */
+export function getExternalUserRequest(
+  externalId: string
+): pb.admin.GetExternalUserRequest {
+  validate.checkIdx(externalId, 'external_id')
+  return built(() => ({ externalId }))
+}
+
+/** Everything a new external user is made from. */
+export interface CreateUserOptions {
+  roles?: Iterable<string> | null
+  name?: string | null
+  email?: string | null
+}
+
+/**
+ * Validate and build a `CreateExternalUser` request.
+ *
+ * @param externalId Your own id for the new user.
+ * @param options The roles, name and email. The roles are consumed once.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the id is blank, or `roles` is a
+ *   single string or names no role.
+ */
+export function createExternalUserRequest(
+  externalId: string,
+  options: CreateUserOptions
+): pb.admin.CreateExternalUserRequest {
+  validate.checkIdx(externalId, 'external_id')
+  const roles = validate.checkRoles(options.roles)
+  return built(() => ({
+    externalId,
+    name: options.name ?? '',
+    email: options.email ?? '',
+    roles
+  }))
+}
+
+/** Everything a user patch may change. */
+export interface UpdateUserOptions {
+  name?: string | null
+  email?: string | null
+  roles?: Iterable<string> | null
+}
+
+/**
+ * Validate and build an `UpdateExternalUser` request.
+ *
+ * @param externalId The user to change.
+ * @param options What to change. A field left out is left unset.
+ * @returns The request message, with only the fields given set.
+ * @throws A `MemcoInvalidRequestError` if the id is blank, or `roles` is given
+ *   as a single string or naming no role.
+ */
+export function updateExternalUserRequest(
+  externalId: string,
+  options: UpdateUserOptions
+): pb.admin.UpdateExternalUserRequest {
+  validate.checkIdx(externalId, 'external_id')
+  const roles = options.roles == null ? [] : validate.checkRoles(options.roles)
+  return built(() => ({
+    externalId,
+    name: patched(options.name),
+    email: patched(options.email),
+    roles
+  }))
+}
+
+/**
+ * Validate and build a `DeleteExternalUser` request.
+ *
+ * @param externalId The user to delete.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the id is blank.
+ */
+export function deleteExternalUserRequest(
+  externalId: string
+): pb.admin.DeleteExternalUserRequest {
+  validate.checkIdx(externalId, 'external_id')
+  return built(() => ({ externalId }))
+}
+
+/**
+ * Validate and build a `ListExternalUserKeys` request.
+ *
+ * @param externalId The user whose keys to list.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the id is blank.
+ */
+export function listExternalUserKeysRequest(
+  externalId: string
+): pb.admin.ListExternalUserKeysRequest {
+  validate.checkIdx(externalId, 'external_id')
+  return built(() => ({ externalId }))
+}
+
+/** Everything a new key is made from. */
+export interface CreateKeyOptions {
+  preset?: string | null
+  name?: string | null
+  validUntil?: Date | null
+}
+
+/**
+ * Validate and build a `CreateExternalUserKey` request.
+ *
+ * @param externalId The user to create the key for.
+ * @param options The preset, the name and the expiry.
+ * @returns The request message, with the expiry as the Unix second it falls
+ *   in, or 0 for the service's default.
+ * @throws A `MemcoInvalidRequestError` if the id is blank, or the expiry is not
+ *   a valid `Date`.
+ */
+export function createExternalUserKeyRequest(
+  externalId: string,
+  options: CreateKeyOptions
+): pb.admin.CreateExternalUserKeyRequest {
+  validate.checkIdx(externalId, 'external_id')
+  validate.checkInstant(options.validUntil, 'valid_until')
+  const validUntil = options.validUntil
+  return built(() => ({
+    externalId,
+    name: options.name ?? '',
+    preset: options.preset ?? '',
+    validUntil: validUntil == null ? 0 : Math.floor(validUntil.getTime() / 1000)
+  }))
+}
+
+/**
+ * Validate and build a `DeleteExternalUserKey` request.
+ *
+ * @param externalId The user the key belongs to.
+ * @param keyId The key to delete.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the id or the key is blank.
+ */
+export function deleteExternalUserKeyRequest(
+  externalId: string,
+  keyId: string
+): pb.admin.DeleteExternalUserKeyRequest {
+  validate.checkIdx(externalId, 'external_id')
+  validate.checkIdx(keyId, 'key_id')
+  return built(() => ({ externalId, keyId }))
 }

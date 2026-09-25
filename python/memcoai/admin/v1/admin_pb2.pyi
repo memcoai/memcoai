@@ -402,18 +402,20 @@ class ImpersonateExternalUserRequest(_message.Message):
     def __init__(self, external_id: _Optional[str] = ..., ttl_minutes: _Optional[int] = ...) -> None: ...
 
 class ImpersonationKey(_message.Message):
-    __slots__ = ("value", "expires_at", "roles", "scopes", "key_id")
+    __slots__ = ("value", "expires_at", "roles", "scopes", "key_id", "expires_in")
     VALUE_FIELD_NUMBER: _ClassVar[int]
     EXPIRES_AT_FIELD_NUMBER: _ClassVar[int]
     ROLES_FIELD_NUMBER: _ClassVar[int]
     SCOPES_FIELD_NUMBER: _ClassVar[int]
     KEY_ID_FIELD_NUMBER: _ClassVar[int]
+    EXPIRES_IN_FIELD_NUMBER: _ClassVar[int]
     value: str
     expires_at: int
     roles: _containers.RepeatedScalarFieldContainer[str]
     scopes: _containers.RepeatedScalarFieldContainer[str]
     key_id: str
-    def __init__(self, value: _Optional[str] = ..., expires_at: _Optional[int] = ..., roles: _Optional[_Iterable[str]] = ..., scopes: _Optional[_Iterable[str]] = ..., key_id: _Optional[str] = ...) -> None: ...
+    expires_in: int
+    def __init__(self, value: _Optional[str] = ..., expires_at: _Optional[int] = ..., roles: _Optional[_Iterable[str]] = ..., scopes: _Optional[_Iterable[str]] = ..., key_id: _Optional[str] = ..., expires_in: _Optional[int] = ...) -> None: ...
 
 class EndImpersonationRequest(_message.Message):
     __slots__ = ("external_id", "key_id")

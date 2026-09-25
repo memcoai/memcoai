@@ -375,6 +375,12 @@ export interface ImpersonationKey {
   scopes: string[];
   /** key_id names the key to EndImpersonation. */
   keyId: string;
+  /**
+   * expires_in is the seconds left until expires_at as measured by the server,
+   * so a client can time the expiry without trusting its own clock. It is 0 once
+   * the key has expired.
+   */
+  expiresIn: number;
 }
 
 /** EndImpersonationRequest names the impersonation key to revoke. */
@@ -4059,7 +4065,7 @@ export const ImpersonateExternalUserRequest: MessageFns<ImpersonateExternalUserR
 };
 
 function createBaseImpersonationKey(): ImpersonationKey {
-  return { value: "", expiresAt: 0, roles: [], scopes: [], keyId: "" };
+  return { value: "", expiresAt: 0, roles: [], scopes: [], keyId: "", expiresIn: 0 };
 }
 
 export const ImpersonationKey: MessageFns<ImpersonationKey> = {
@@ -4078,6 +4084,9 @@ export const ImpersonationKey: MessageFns<ImpersonationKey> = {
     }
     if (message.keyId !== "") {
       writer.uint32(42).string(message.keyId);
+    }
+    if (message.expiresIn !== 0) {
+      writer.uint32(48).int64(message.expiresIn);
     }
     return writer;
   },
@@ -4129,6 +4138,14 @@ export const ImpersonationKey: MessageFns<ImpersonationKey> = {
           message.keyId = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.expiresIn = longToNumber(reader.int64());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4145,6 +4162,7 @@ export const ImpersonationKey: MessageFns<ImpersonationKey> = {
       roles: globalThis.Array.isArray(object?.roles) ? object.roles.map((e: any) => globalThis.String(e)) : [],
       scopes: globalThis.Array.isArray(object?.scopes) ? object.scopes.map((e: any) => globalThis.String(e)) : [],
       keyId: isSet(object.keyId) ? globalThis.String(object.keyId) : "",
+      expiresIn: isSet(object.expiresIn) ? globalThis.Number(object.expiresIn) : 0,
     };
   },
 
@@ -4165,6 +4183,9 @@ export const ImpersonationKey: MessageFns<ImpersonationKey> = {
     if (message.keyId !== "") {
       obj.keyId = message.keyId;
     }
+    if (message.expiresIn !== 0) {
+      obj.expiresIn = Math.round(message.expiresIn);
+    }
     return obj;
   },
 
@@ -4178,6 +4199,7 @@ export const ImpersonationKey: MessageFns<ImpersonationKey> = {
     message.roles = object.roles?.map((e) => e) || [];
     message.scopes = object.scopes?.map((e) => e) || [];
     message.keyId = object.keyId ?? "";
+    message.expiresIn = object.expiresIn ?? 0;
     return message;
   },
 };

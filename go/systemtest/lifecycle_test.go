@@ -21,13 +21,15 @@ import (
 // ingestion has run, so every assertion about a memory existing, or having
 // stopped existing, is a poll rather than a single call.
 //
-// The interval is 15s rather than something tighter because the service rate
-// limits search, and the ingestion poll runs longest: at 5s a single domain
-// could spend 36 searches waiting. Slower polling costs only resolution on when
-// the memory appeared, which nothing here asserts on.
+// The pause between attempts starts at a second and doubles up to 15s.
+// Ingestion often lands within a few seconds, and a fixed 15s pause spent most
+// of every wait idle. The cap is what keeps a slow wait within the service's
+// search rate limit: at a fixed 5s, one domain's ingestion poll could spend 36
+// searches, while this spends at most three more than a fixed 15s would.
 const (
 	ingestTimeout  = 180 * time.Second
 	removalTimeout = 60 * time.Second
+	firstPoll      = time.Second
 	pollInterval   = 15 * time.Second
 )
 

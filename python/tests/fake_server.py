@@ -334,13 +334,24 @@ class FakeAdminService(_Recorder, admin_pbg.AdminServiceServicer):
         clock: The wall clock a key's absolute ``expires_at`` is computed from.
             A test that moves the SDK's clock points this at the same one, so
             the lifetime the SDK reads back is the one set here.
+        key_cap: When set, how many keys one user may hold live -- minted and
+            not yet ended -- before a mint is refused ``RESOURCE_EXHAUSTED``,
+            as the real service refuses a 21st. Expiry is not modelled, so a
+            key counts until it is ended.
+        sends_expires_in: Whether a key carries ``expires_in``, the seconds it
+            has left by the service's own count, as the contract now has it.
+            Off, the key carries only ``expires_at``, as a service predating
+            the field sends it.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.key_lifetime = 3600
         self.clock: Callable[[], float] = time.time
+        self.key_cap: int | None = None
+        self.sends_expires_in = True
         self._keys = 0
+        self._live: dict[str, set[str]] = {}
 
     def ListNetworks(self, request, context):  # noqa: N802
         default = admin_pb.ListNetworksResponse(networks=[_NETWORK], total_count=1)
@@ -462,11 +473,21 @@ class FakeAdminService(_Recorder, admin_pbg.AdminServiceServicer):
         if "ImpersonateExternalUser" in self.responses:
             return self.responses["ImpersonateExternalUser"]
         with self._lock:
-            self._keys += 1
-            number = self._keys
+            live = self._live.setdefault(request.external_id, set())
+            capped = self.key_cap is not None and len(live) >= self.key_cap
+            if not capped:
+                self._keys += 1
+                number = self._keys
+                live.add(f"key-{number}")
+        if capped:
+            context.abort(
+                grpc.StatusCode.RESOURCE_EXHAUSTED,
+                f"maximum number of live impersonation keys ({self.key_cap}) reached",
+            )
         return admin_pb.ImpersonationKey(
             value=f"impersonation-{request.external_id}-{number}",
             expires_at=int(self.clock()) + self.key_lifetime,
+            expires_in=self.key_lifetime if self.sends_expires_in else 0,
             roles=["reader", "creator"],
             scopes=["memory"],
             key_id=f"key-{number}",
@@ -476,7 +497,10 @@ class FakeAdminService(_Recorder, admin_pbg.AdminServiceServicer):
         default = admin_pb.EndImpersonationResponse(
             external_id=request.external_id, key_id=request.key_id
         )
-        return self._handle("EndImpersonation", context, default, request)
+        response = self._handle("EndImpersonation", context, default, request)
+        with self._lock:
+            self._live.get(request.external_id, set()).discard(request.key_id)
+        return response
 
 
 class FakeHealthService(health_pb2_grpc.HealthServicer):  # type: ignore[misc]

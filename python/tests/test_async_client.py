@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import grpc
@@ -14,7 +15,7 @@ from memcoai._auth import Minted
 from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
-from .fake_server import Harness
+from .fake_server import Harness, Hold
 
 # --- auth ----------------------------------------------------------------
 
@@ -216,6 +217,30 @@ async def test_double_close_is_safe(harness: Harness):
     await connected.connect()
     await connected.close()
     await connected.close()
+
+
+async def test_a_failed_reconnect_returns_once_the_calls_it_waits_for_are_done(
+    async_client: AsyncMemco, harness: Harness
+):
+    # A failed connect() drops the channel and waits for the calls still on it
+    # before closing it. A call arriving meanwhile opens a fresh channel, and
+    # must not leave connect() waiting on a signal nothing will ever give.
+    session = await async_client.memory.start_session("coding")
+    hold = harness.memory.holds["Search"] = Hold()
+    held = asyncio.create_task(session.search("held"))
+    assert await asyncio.to_thread(hold.arrived.wait, 5)
+    harness.health.status = health_pb2.HealthCheckResponse.NOT_SERVING
+    reconnecting = asyncio.create_task(async_client.connect())
+    for _ in range(500):
+        if async_client._channel is None:
+            break
+        await asyncio.sleep(0.01)
+    harness.health.status = health_pb2.HealthCheckResponse.SERVING
+    await session.get_memory("memory-a-1")
+    hold.released.set()
+    await held
+    with pytest.raises(errors.MemcoUnhealthyError):
+        await asyncio.wait_for(reconnecting, 5)
 
 
 async def test_provenance_is_reachable(async_client: AsyncMemco):

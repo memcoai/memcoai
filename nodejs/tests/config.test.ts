@@ -170,24 +170,31 @@ test('a blank MEMCO_API_HOST falls through to the default', () => {
 test('the environment defaults to the real one', () => {
   // Every other test passes `env` explicitly, so without this the default is
   // never exercised and could be changed to `{}` with the suite still green.
-  const previousToken = process.env['MEMCO_API_TOKEN']
-  const previousHost = process.env['MEMCO_API_HOST']
+  //
+  // The client pair is set aside for the duration: exported in a developer's
+  // shell, it would win over the token this test sets.
+  const names = [
+    'MEMCO_API_TOKEN',
+    'MEMCO_API_HOST',
+    'MEMCO_CLIENT_ID',
+    'MEMCO_CLIENT_SECRET'
+  ]
+  const previous = names.map(name => [name, process.env[name]] as const)
   process.env['MEMCO_API_TOKEN'] = 'from-the-real-environment'
   process.env['MEMCO_API_HOST'] = 'real.test:1234'
+  delete process.env['MEMCO_CLIENT_ID']
+  delete process.env['MEMCO_CLIENT_SECRET']
   try {
     const config = resolve()
     assert.equal(config.token, 'from-the-real-environment')
     assert.equal(config.target, 'real.test:1234')
   } finally {
-    if (previousToken === undefined) {
-      delete process.env['MEMCO_API_TOKEN']
-    } else {
-      process.env['MEMCO_API_TOKEN'] = previousToken
-    }
-    if (previousHost === undefined) {
-      delete process.env['MEMCO_API_HOST']
-    } else {
-      process.env['MEMCO_API_HOST'] = previousHost
+    for (const [name, value] of previous) {
+      if (value === undefined) {
+        delete process.env[name]
+      } else {
+        process.env[name] = value
+      }
     }
   }
 })
@@ -381,6 +388,305 @@ test('the token is not an enumerable property', () => {
     Object.entries(config)
       .map(([key]) => key)
       .sort(),
-    ['host', 'port', 'timeout', 'tls']
+    ['clientId', 'host', 'port', 'timeout', 'tls', 'tokenLifetime']
   )
+})
+
+// --- TLS -----------------------------------------------------------------
+
+for (const [value, expected] of [
+  ['true', true],
+  ['false', false],
+  ['FALSE', false],
+  [' False ', false],
+  ['True', true]
+] as const) {
+  test(`MEMCO_API_TLS=${JSON.stringify(value)} reads as ${expected}`, () => {
+    assert.equal(
+      resolve({ token: 't', env: { MEMCO_API_TLS: value } }).tls,
+      expected
+    )
+  })
+}
+
+test('a blank MEMCO_API_TLS keeps TLS on', () => {
+  for (const value of ['', '   ']) {
+    assert.equal(
+      resolve({ token: 't', env: { MEMCO_API_TLS: value } }).tls,
+      true
+    )
+  }
+})
+
+test('an explicit tls wins over MEMCO_API_TLS', () => {
+  for (const explicit of [true, false]) {
+    assert.equal(
+      resolve({
+        token: 't',
+        tls: explicit,
+        env: { MEMCO_API_TLS: String(!explicit) }
+      }).tls,
+      explicit
+    )
+  }
+})
+
+test('an unreadable MEMCO_API_TLS is refused rather than guessed at', () => {
+  // Whether traffic is encrypted is not something to infer from a typo.
+  for (const value of ['0', 'no', 'off', 'flase', 'yes']) {
+    assert.throws(
+      () => resolve({ token: 't', env: { MEMCO_API_TLS: value } }),
+      {
+        name: 'MemcoConfigError',
+        message: `MEMCO_API_TLS must be true or false, got ${JSON.stringify(value)}`
+      }
+    )
+  }
+})
+
+// --- client credentials --------------------------------------------------
+
+test('client credentials are taken from the arguments', () => {
+  const config = resolve({
+    clientId: ' id ',
+    clientSecret: ' secret ',
+    env: {}
+  })
+  assert.equal(config.clientId, 'id')
+  assert.equal(config.clientSecret, 'secret')
+  // The token is issued by the service, not configured.
+  assert.equal(config.token, '')
+  assert.equal(config.tokenLifetime, null)
+})
+
+test('client credential arguments win over the environment', () => {
+  const config = resolve({
+    clientId: 'arg-id',
+    clientSecret: 'arg-secret',
+    env: {
+      MEMCO_CLIENT_ID: 'env-id',
+      MEMCO_CLIENT_SECRET: 'env-secret',
+      MEMCO_API_TOKEN: 'env-token'
+    }
+  })
+  assert.deepEqual(
+    [config.clientId, config.clientSecret],
+    ['arg-id', 'arg-secret']
+  )
+})
+
+test('client credentials in the environment win over a token there', () => {
+  // CI exports both: the token for the memory suite, the pair for the
+  // administration one.
+  const config = resolve({
+    env: {
+      MEMCO_CLIENT_ID: 'env-id',
+      MEMCO_CLIENT_SECRET: 'env-secret',
+      MEMCO_API_TOKEN: 'env-token'
+    }
+  })
+  assert.deepEqual(
+    [config.clientId, config.clientSecret, config.token],
+    ['env-id', 'env-secret', '']
+  )
+})
+
+test('a token argument ignores client credentials in the environment', () => {
+  for (const env of [
+    { MEMCO_CLIENT_ID: 'env-id', MEMCO_CLIENT_SECRET: 'env-secret' },
+    // Half a pair too: the caller named their credential, so the environment's
+    // pair is not consulted at all.
+    { MEMCO_CLIENT_ID: 'env-id' }
+  ]) {
+    const config = resolve({ token: 'arg-token', env })
+    assert.deepEqual([config.token, config.clientId], ['arg-token', null])
+  }
+})
+
+test('client credentials skip the deprecated token variable and its warning', () => {
+  const emitted = warnings(() => {
+    const config = resolve({
+      env: {
+        MEMCO_CLIENT_ID: 'env-id',
+        MEMCO_CLIENT_SECRET: 'env-secret',
+        MEMCO_API_KEY: 'legacy'
+      }
+    })
+    assert.equal(config.clientId, 'env-id')
+  })
+  assert.deepEqual(emitted, [])
+})
+
+test('a blank pair in the environment reads as unset', () => {
+  // It is what an unset CI secret expands to.
+  const config = resolve({
+    env: {
+      MEMCO_CLIENT_ID: '  ',
+      MEMCO_CLIENT_SECRET: '',
+      MEMCO_API_TOKEN: 'env-token'
+    }
+  })
+  assert.deepEqual([config.token, config.clientId], ['env-token', null])
+})
+
+test('a token argument beside client arguments is refused', () => {
+  // Two credentials of different kinds: sending either would be a guess.
+  for (const given of [
+    { clientId: 'id', clientSecret: 'secret' },
+    { clientId: 'id' },
+    { clientSecret: 'secret' }
+  ]) {
+    assert.throws(() => resolve({ token: 't', ...given, env: {} }), {
+      name: 'MemcoConfigError',
+      message: 'pass either a token or a clientId with a clientSecret, not both'
+    })
+  }
+})
+
+test('half a pair of arguments is refused, naming the half that is missing', () => {
+  assert.throws(() => resolve({ clientId: 'id', env: {} }), {
+    name: 'MemcoConfigError',
+    message:
+      'client credentials need both clientId and clientSecret; clientSecret is missing'
+  })
+  assert.throws(
+    () =>
+      resolve({
+        clientSecret: 'secret',
+        env: { MEMCO_CLIENT_ID: 'env-id' }
+      }),
+    {
+      message:
+        'client credentials need both clientId and clientSecret; clientId is missing'
+    }
+  )
+})
+
+test('half a pair in the environment is refused, even beside a token', () => {
+  // A deployment missing one of its two secrets must fail loudly rather than
+  // quietly run as something else.
+  assert.throws(
+    () =>
+      resolve({
+        env: { MEMCO_CLIENT_ID: 'env-id', MEMCO_API_TOKEN: 'env-token' }
+      }),
+    {
+      name: 'MemcoConfigError',
+      message:
+        'MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET must be set together; MEMCO_CLIENT_SECRET is not'
+    }
+  )
+  assert.throws(() => resolve({ env: { MEMCO_CLIENT_SECRET: 'env-secret' } }), {
+    message:
+      'MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET must be set together; MEMCO_CLIENT_ID is not'
+  })
+})
+
+test('a blank client credential argument is refused', () => {
+  assert.throws(
+    () => resolve({ clientId: ' ', clientSecret: 'secret', env: {} }),
+    { message: 'the clientId passed to the client is blank' }
+  )
+  assert.throws(() => resolve({ clientId: 'id', clientSecret: '', env: {} }), {
+    message: 'the clientSecret passed to the client is blank'
+  })
+})
+
+test('a client credential that is not a string is refused', () => {
+  // A JavaScript caller has no compiler to stop them.
+  assert.throws(
+    () =>
+      resolve({
+        clientId: 42 as unknown as string,
+        clientSecret: 'secret',
+        env: {}
+      }),
+    {
+      name: 'MemcoConfigError',
+      message: 'the clientId passed to the client must be a string, got number'
+    }
+  )
+})
+
+test('tokenLifetime needs client credentials', () => {
+  // Only an issued token has a lifetime to ask for; accepting one beside a
+  // static token would silently ignore it.
+  for (const options of [
+    { token: 't', env: {} },
+    { env: { MEMCO_API_TOKEN: 'env-token' } }
+  ]) {
+    assert.throws(() => resolve({ ...options, tokenLifetime: 600 }), {
+      name: 'MemcoConfigError',
+      message: 'tokenLifetime applies only to client credentials, not a token'
+    })
+  }
+})
+
+test('tokenLifetime must be a positive whole number of seconds the wire can carry', () => {
+  for (const lifetime of [
+    0,
+    -60,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    2 ** 31
+  ]) {
+    assert.throws(
+      () =>
+        resolve({
+          clientId: 'id',
+          clientSecret: 'secret',
+          tokenLifetime: lifetime,
+          env: {}
+        }),
+      {
+        name: 'MemcoConfigError',
+        message: `tokenLifetime must be a whole number of seconds from 1 to 2147483647, got ${lifetime}`
+      }
+    )
+  }
+})
+
+test('tokenLifetime has no maximum of its own: the service owns that', () => {
+  const config = resolve({
+    clientId: 'id',
+    clientSecret: 'secret',
+    tokenLifetime: 7 * 86400,
+    env: {}
+  })
+  assert.equal(config.tokenLifetime, 7 * 86400)
+})
+
+test('tokenLifetime applies to client credentials from the environment', () => {
+  const config = resolve({
+    tokenLifetime: 600,
+    env: { MEMCO_CLIENT_ID: 'env-id', MEMCO_CLIENT_SECRET: 'env-secret' }
+  })
+  assert.equal(config.tokenLifetime, 600)
+})
+
+test('the client secret is absent from every rendering of the config', () => {
+  const config = resolve({
+    clientId: 'client-a',
+    clientSecret: 'cs-live-supersecret-9f2b',
+    host: 'localhost:50051',
+    env: {}
+  })
+  for (const rendering of [
+    inspect(config),
+    inspect(config, { showHidden: true, depth: null, getters: true }),
+    JSON.stringify(config),
+    JSON.stringify({ config }),
+    String(config),
+    inspect({ ...config }),
+    JSON.stringify(structuredClone(config))
+  ]) {
+    assert.ok(
+      !rendering.includes('supersecret'),
+      `the secret leaked into ${rendering}`
+    )
+  }
+  // The id names the client and revokes nothing, so it stays legible.
+  assert.match(inspect(config), /client-a/)
+  assert.equal(config.clientSecret, 'cs-live-supersecret-9f2b')
 })

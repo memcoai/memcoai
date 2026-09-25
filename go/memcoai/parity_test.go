@@ -26,7 +26,7 @@ func TestASessionOffersEveryOperationButTheOnesItAnswers(t *testing.T) {
 			want = append(want, name)
 		}
 	}
-	want = append(want, "Tools")
+	want = append(want, "Tools", "Close")
 	slices.Sort(want)
 	if got := methods(&Session{}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Session has %v, want %v", got, want)
@@ -57,7 +57,7 @@ func TestTheOfferedToolsAreTheSessionsOperations(t *testing.T) {
 	snake := regexp.MustCompile(`([a-z])([A-Z])`)
 	var got []string
 	for _, name := range methods(&Session{}) {
-		if name == "Tools" || name == "ImportMemories" {
+		if name == "Tools" || name == "ImportMemories" || name == "Close" {
 			continue
 		}
 		got = append(got, strings.ToLower(snake.ReplaceAllString(name, "${1}_${2}")))

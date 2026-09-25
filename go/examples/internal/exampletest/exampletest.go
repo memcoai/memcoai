@@ -25,11 +25,21 @@ type Run struct {
 func Start(t *testing.T) *Run {
 	t.Helper()
 	server := testserver.Start(t)
+	plaintext := false
 	r := &Run{
 		Server:  server,
-		Options: memcoai.Options{Token: "test-token", Host: server.Address, Plaintext: true, LogLevel: "none"},
+		Options: memcoai.Options{Token: "test-token", Host: server.Address, TLS: &plaintext, LogLevel: "none"},
 	}
 	r.Out = log.New(&r.printed, "", 0)
+	return r
+}
+
+// StartAPIClient starts a fake service for t, reached with an API client's
+// credentials rather than a token.
+func StartAPIClient(t *testing.T) *Run {
+	t.Helper()
+	r := Start(t)
+	r.Options.Token, r.Options.ClientID, r.Options.ClientSecret = "", "test-client", "test-secret"
 	return r
 }
 

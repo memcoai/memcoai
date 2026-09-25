@@ -7,8 +7,11 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/memcoai/memcoai/go/internal/admin"
+	adminv1 "github.com/memcoai/memcoai/go/internal/client/memcoai/admin/v1"
 	memoryv1 "github.com/memcoai/memcoai/go/internal/client/memcoai/memory/v1"
 	"github.com/memcoai/memcoai/go/internal/memory"
+	"github.com/memcoai/memcoai/go/internal/transport"
 	"github.com/memcoai/memcoai/go/internal/warn"
 )
 
@@ -23,7 +26,33 @@ type MemoryOperations struct {
 	client *Client
 	rpc    memoryv1.MemoryServiceClient
 	log    *slog.Logger
-	known  memory.Known
+	known  *memory.Known
+	// credential is what every call made here carries: the client's own, or
+	// an impersonated session's key.
+	credential *transport.Renewing
+}
+
+// SessionOption configures a session [MemoryOperations.StartSession] opens.
+type SessionOption func(*sessionOptions)
+
+type sessionOptions struct {
+	externalID   string
+	impersonated bool
+}
+
+// ExternalID opens the session acting as one of your own users, by your id
+// for them, as created with [UserOperations.Create]. The client's credential
+// mints a short-lived key acting as that user, and the session and every call
+// through it carry that key, which renews itself before it expires: what the
+// session finds and writes is that user's, bounded by the network they are
+// in. The session first lists the domains under the key, learning the limits
+// and any deprecation notice as that user. Close the session with
+// [Session.Close] when done, which ends the key.
+//
+// Parameters:
+//   - externalID: your id for the user to act as.
+func ExternalID(externalID string) SessionOption {
+	return func(o *sessionOptions) { o.externalID, o.impersonated = externalID, true }
 }
 
 // SearchParams scope and narrow a search.
@@ -83,16 +112,10 @@ type ImportMemoriesParams struct {
 	SessionID string
 }
 
-// invoke runs one generated client method through the client's call.
+// invoke runs one generated client method under this namespace's credential.
 func invoke[Req, Resp any](ctx context.Context, m *MemoryOperations, rpc string, req Req,
 	method func(context.Context, Req, ...grpc.CallOption) (Resp, error)) (Resp, error) {
-	var response Resp
-	err := m.client.call(ctx, rpc, func(ctx context.Context) error {
-		var err error
-		response, err = method(ctx, req)
-		return err
-	})
-	return response, err
+	return unary(ctx, m.client, m.credential, rpc, req, method)
 }
 
 // ListDomains lists the memory domains the credential may name, with the
@@ -150,15 +173,64 @@ func (m *MemoryOperations) ListTools(ctx context.Context) ([]ToolDescriptor, err
 //     ctx has already ended, nothing is sent. The session and the tool catalog are fetched concurrently,
 //     and neither call outlives this one.
 //   - domain: the slug of a domain [MemoryOperations.ListDomains] listed.
+//   - opts: [ExternalID] to open the session acting as one of your own users,
+//     which mints a key for them first, lists the domains under it, and then
+//     starts the session under it. Such a session must be closed with
+//     [Session.Close].
 //
 // It returns the open session. When the tool catalog cannot be fetched, the
 // session still opens and [Session.Tools] offers every tool; a warning is
 // logged.
 //
-// Errors: [*InvalidRequestError] when domain is blank (nothing is sent);
-// [*PermissionError] when the credential may not use the domain;
-// [*NotFoundError] when there is no such domain; [*ConfigError] when the client is closed.
-func (m *MemoryOperations) StartSession(ctx context.Context, domain string) (*Session, error) {
+// Errors: [*InvalidRequestError] when domain or the external id is blank
+// (nothing is sent); [*PermissionError] when the credential may not use the
+// domain, or may not act for users; [*NotFoundError] when there is no such
+// domain or user; [*ConfigError] when the client is closed. With
+// [ExternalID], a failure after the key was minted ends the key. From a
+// service that does not yet say how many seconds a key has left, a
+// [*ConfigError] naming the clock says this machine's clock runs so far ahead
+// of the service's that the key minted had already expired by it.
+func (m *MemoryOperations) StartSession(ctx context.Context, domain string, opts ...SessionOption) (*Session, error) {
+	var chosen sessionOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&chosen)
+		}
+	}
+	if !chosen.impersonated {
+		return m.startSession(ctx, domain, nil)
+	}
+	// Checked before the mint, so a blank value costs no key.
+	if err := memory.CheckStartSession(&memoryv1.StartSessionRequest{Domain: domain}); err != nil {
+		return nil, public(err)
+	}
+	if err := admin.Check(&adminv1.ImpersonateExternalUserRequest{ExternalId: chosen.externalID}); err != nil {
+		return nil, public(err)
+	}
+	key := m.client.impersonate(chosen.externalID)
+	// Every call from here on carries the key, including those the session's
+	// tools and the memories it returns make: they reach the service through
+	// the operations the session was opened on.
+	scoped := &MemoryOperations{client: m.client, rpc: m.rpc, log: m.log, known: m.known, credential: key}
+	// The first lease mints the key, and the listing teaches the session its
+	// limits and any deprecation as that user.
+	_, err := scoped.ListDomains(ctx)
+	var session *Session
+	if err == nil {
+		session, err = scoped.startSession(ctx, domain, key)
+	}
+	if err != nil {
+		// Beside the caller, who is kept to their own deadline: the end has a
+		// timeout of its own, and the registry holds the key for a close.
+		go key.Close(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	return session, nil
+}
+
+// startSession opens a session under this namespace's credential; key is what
+// the session holds, or nil.
+func (m *MemoryOperations) startSession(ctx context.Context, domain string, key *transport.Renewing) (*Session, error) {
 	request := &memoryv1.StartSessionRequest{Domain: domain}
 	if err := memory.CheckStartSession(request); err != nil {
 		return nil, public(err)
@@ -180,7 +252,7 @@ func (m *MemoryOperations) StartSession(ctx context.Context, domain string) (*Se
 		<-catalog
 		return nil, err
 	}
-	session := &Session{ID: response.GetSessionId(), Instructions: toInstructions(response.GetInstructions()), ops: m}
+	session := &Session{ID: response.GetSessionId(), Instructions: toInstructions(response.GetInstructions()), ops: m, key: key}
 	got := <-catalog
 	var api *APIError
 	switch {

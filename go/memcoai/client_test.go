@@ -42,6 +42,8 @@ func TestSettingsAreRefusedAsConfigErrors(t *testing.T) {
 	}
 	t.Setenv("MEMCO_API_TOKEN", "")
 	t.Setenv("MEMCO_API_KEY", "")
+	t.Setenv("MEMCO_CLIENT_ID", "")
+	t.Setenv("MEMCO_CLIENT_SECRET", "")
 	for want, options := range cases {
 		client, err := NewClient(options)
 		if got := as[*ConfigError](t, err); got.Message != want || client != nil {
@@ -338,7 +340,7 @@ func TestProvenanceIsReadWithoutTheService(t *testing.T) {
 
 func TestLogLevelSetsTheDedicatedLoggersLevel(t *testing.T) {
 	t.Cleanup(func() { _ = logging.SetLevel("info") })
-	client, err := NewClient(Options{Token: testToken, LogLevel: "debug"})
+	client, err := NewClient(Options{Token: testToken, Host: "localhost:1", Plaintext: true, LogLevel: "debug"})
 	if err != nil {
 		t.Fatal(err)
 	}

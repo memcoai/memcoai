@@ -8,14 +8,17 @@
  *
  * | Variable | What it sets |
  * |---|---|
- * | `MEMCO_API_TOKEN` | the credential. Required. |
+ * | `MEMCO_API_TOKEN` | the credential, unless an API client's are set. |
+ * | `MEMCO_CLIENT_ID`, `MEMCO_CLIENT_SECRET` | an API client's credentials, exchanged for a token. Set together, they win over `MEMCO_API_TOKEN`. |
  * | `MEMCO_API_HOST` | the endpoint. Defaults to `grpc.memco.ai:443`. |
+ * | `MEMCO_API_TLS` | `false` to dial a plaintext endpoint, such as a local server. Defaults to `true`. |
  * | `MEMCO_LOG` | the log level: `critical`, `error`, `warning`, `info`, `debug`, or `none` to silence. Defaults to `info`. |
  *
  * `MEMCO_API_KEY` is still read as a fallback for `MEMCO_API_TOKEN`, and warns
  * once when it is what supplied the credential.
  *
- * No credential is ever written to a log record.
+ * No credential — token, client secret, or the key a session acting for one
+ * of your users holds — is ever written to a log record.
  *
  * @packageDocumentation
  */
@@ -32,6 +35,7 @@ export {
   MemoryOperations,
   Session,
   SessionOpener,
+  type SessionOptions,
   type CreateMemoryOptions,
   type EnrichMemoryOptions,
   type ImportMemoriesOptions,
@@ -43,6 +47,24 @@ export {
   type ShareFeedbackOptions,
   type TimeoutOptions
 } from './operations.js'
+
+export {
+  NetworkOperations,
+  UserOperations,
+  type AddMemberOptions,
+  type CreateKeyOptions,
+  type CreateNetworkOptions,
+  type CreateUserOptions,
+  type DeleteKeyOptions,
+  type ListGroupsOptions,
+  type ListMembersOptions,
+  type ListNetworksOptions,
+  type ListUsersOptions,
+  type NetworkGroupOptions,
+  type RemoveMemberOptions,
+  type UpdateNetworkOptions,
+  type UpdateUserOptions
+} from './administration.js'
 
 export {
   DEFAULT_HOST,
@@ -66,9 +88,11 @@ export { NEW_MEMORY } from './internal/validate.js'
 
 export {
   MemcoAPIError,
+  MemcoAlreadyExistsError,
   MemcoAuthenticationError,
   MemcoConfigError,
   MemcoError,
+  MemcoExternalUserNeedsCustomerNetworkError,
   MemcoInternalError,
   MemcoInvalidRequestError,
   MemcoNotFoundError,
@@ -79,12 +103,14 @@ export {
   MemcoTimeoutError,
   MemcoUnavailableError,
   MemcoUnhealthyError,
+  MemcoUserAlreadyAssignedNetworkError,
   ResourceExhaustedKind,
   SunsetKind,
   fromServiceError
 } from './errors.js'
 
 export {
+  CreatedKey,
   DataSource,
   ImportStatus,
   RevertOutcome,
@@ -94,11 +120,17 @@ export {
 } from './types.js'
 
 export type {
+  DeletedNetwork,
   DomainEntry,
   DomainList,
+  ExternalUser,
+  ExternalUserKey,
+  ExternalUserList,
   FeedbackEntry,
   FeedbackRating,
   FeedbackResult,
+  Group,
+  GroupList,
   ImportOutcome,
   ImportResult,
   ImportedInsight,
@@ -106,8 +138,13 @@ export type {
   Insight,
   Instructions,
   Limits,
+  Member,
+  MemberList,
+  MemberPlacement,
   Memory,
   MemoryFeedback,
+  Network,
+  NetworkList,
   ProtoRecord,
   Provenance,
   RevertResult,

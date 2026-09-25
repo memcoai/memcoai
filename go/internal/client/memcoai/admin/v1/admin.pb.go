@@ -2443,7 +2443,11 @@ type ImpersonationKey struct {
 	Roles     []string `protobuf:"bytes,3,rep,name=roles,proto3" json:"roles,omitempty"`
 	Scopes    []string `protobuf:"bytes,4,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	// key_id names the key to EndImpersonation.
-	KeyId         string `protobuf:"bytes,5,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	KeyId string `protobuf:"bytes,5,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	// expires_in is the seconds left until expires_at as measured by the server,
+	// so a client can time the expiry without trusting its own clock. It is 0 once
+	// the key has expired.
+	ExpiresIn     int64 `protobuf:"varint,6,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2511,6 +2515,13 @@ func (x *ImpersonationKey) GetKeyId() string {
 		return x.KeyId
 	}
 	return ""
+}
+
+func (x *ImpersonationKey) GetExpiresIn() int64 {
+	if x != nil {
+		return x.ExpiresIn
+	}
+	return 0
 }
 
 // EndImpersonationRequest names the impersonation key to revoke.
@@ -2809,14 +2820,16 @@ const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
 	"externalId\x12\x1f\n" +
 	"\vttl_minutes\x18\x02 \x01(\x05R\n" +
-	"ttlMinutes\"\x8c\x01\n" +
+	"ttlMinutes\"\xab\x01\n" +
 	"\x10ImpersonationKey\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\x03R\texpiresAt\x12\x14\n" +
 	"\x05roles\x18\x03 \x03(\tR\x05roles\x12\x16\n" +
 	"\x06scopes\x18\x04 \x03(\tR\x06scopes\x12\x15\n" +
-	"\x06key_id\x18\x05 \x01(\tR\x05keyId\"Q\n" +
+	"\x06key_id\x18\x05 \x01(\tR\x05keyId\x12\x1d\n" +
+	"\n" +
+	"expires_in\x18\x06 \x01(\x03R\texpiresIn\"Q\n" +
 	"\x17EndImpersonationRequest\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
 	"externalId\x12\x15\n" +

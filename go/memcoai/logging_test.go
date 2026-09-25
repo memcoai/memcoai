@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -208,9 +209,17 @@ func TestPrintedOptionsNeverShowTheToken(t *testing.T) {
 	var logged bytes.Buffer
 	slog.New(slog.NewTextHandler(&logged, nil)).Info("configured", "opts", opts)
 	slog.New(slog.NewJSONHandler(&logged, nil)).Info("configured", "opts", opts)
+	encoded, err := json.Marshal(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointed, err := json.Marshal(&opts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rendered := []string{
 		fmt.Sprint(opts), fmt.Sprintf("%v %+v %#v %s %q %x", opts, opts, opts, opts, opts, opts),
-		fmt.Sprint(&opts), logged.String(),
+		fmt.Sprint(&opts), logged.String(), string(encoded), string(pointed),
 	}
 	for _, text := range rendered {
 		if strings.Contains(text, "secret") || strings.Contains(text, hex.EncodeToString([]byte("secret"))) {
@@ -219,5 +228,69 @@ func TestPrintedOptionsNeverShowTheToken(t *testing.T) {
 		if !strings.Contains(text, "memco.example") && !strings.Contains(text, hex.EncodeToString([]byte("memco.example"))) {
 			t.Errorf("control: the host was not printed: %s", text)
 		}
+	}
+}
+
+// The credential crosses the wire readable, so the client says so as it is
+// built, before anything is sent, at a level shown by default.
+func TestAClientWithoutTLSSaysSoWhenItIsBuilt(t *testing.T) {
+	f := started(t)
+	warning := `level=WARN msg="TLS is off: ` + f.server.Address + ` is dialled in plaintext, credentials included"`
+	if !f.logs.Has(warning) {
+		t.Fatalf("logs %s", f.logs)
+	}
+	if calls := f.server.Calls(); len(calls) != 0 {
+		t.Fatalf("sent %v", calls)
+	}
+	off := false
+	f = started(t, func(o *Options) { o.Plaintext, o.TLS = false, &off })
+	if !f.logs.Has(`msg="TLS is off: `) {
+		t.Fatalf("TLS: false: logs %s", f.logs)
+	}
+	t.Setenv("MEMCO_API_TLS", "false")
+	f = started(t, func(o *Options) { o.Plaintext = false })
+	if !f.logs.Has(`msg="TLS is off: `) {
+		t.Fatalf("MEMCO_API_TLS=false: logs %s", f.logs)
+	}
+}
+
+// TLS: true is how a program insists on TLS whatever the environment says.
+func TestTheTLSOptionKeepsTLSOnAgainstTheEnvironment(t *testing.T) {
+	t.Setenv("MEMCO_API_TLS", "false")
+	on := true
+	logs := &captured{}
+	client, err := NewClient(Options{
+		Token: testToken, Host: "localhost:1", TLS: &on,
+		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeLater(t, client)
+	if !logs.Has("tls=true") || logs.Has("TLS is off") {
+		t.Fatalf("logs %s", logs)
+	}
+	_, err = NewClient(Options{Token: testToken, Host: "localhost:1", Plaintext: true, TLS: &on})
+	if got := as[*ConfigError](t, err); got.Message != "Plaintext and TLS disagree: Plaintext is deprecated, so set TLS alone" {
+		t.Fatalf("got %q", got.Message)
+	}
+}
+
+func TestAClientWithTLSSaysNothingAboutIt(t *testing.T) {
+	t.Setenv("MEMCO_API_TLS", "")
+	logs := &captured{}
+	client, err := NewClient(Options{
+		Token: testToken, Host: "localhost:1",
+		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeLater(t, client)
+	if !logs.Has("tls=true") {
+		t.Fatalf("control: the endpoint was not logged: %s", logs)
+	}
+	if logs.Has("TLS is off") {
+		t.Fatalf("logs %s", logs)
 	}
 }

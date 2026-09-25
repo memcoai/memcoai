@@ -134,8 +134,17 @@ test('every offered operation becomes exactly one tool', async () => {
  * mean teaching the builder to recurse. A model has no use for it either: a
  * batch mints no operation id, so nothing a model imports can be undone, and
  * bulk upload is a standalone job rather than an in-loop step.
+ *
+ * `close` ends what the session holds, which is the caller's to decide: a
+ * model that could close its own session would end the key every later tool
+ * call it makes depends on.
  */
-const NOT_AN_OPERATION = new Set(['constructor', 'tools', 'importMemories'])
+const NOT_AN_OPERATION = new Set([
+  'constructor',
+  'tools',
+  'importMemories',
+  'close'
+])
 
 test('the offered operations are exactly what the scope carries', async () => {
   // The list is written out rather than read off the scope: a tool is reachable

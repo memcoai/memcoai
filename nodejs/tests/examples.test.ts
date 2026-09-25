@@ -17,7 +17,12 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { LEGACY_TOKEN_ENV, TOKEN_ENV } from '../src/internal/config.js'
+import {
+  CLIENT_ID_ENV,
+  CLIENT_SECRET_ENV,
+  LEGACY_TOKEN_ENV,
+  TOKEN_ENV
+} from '../src/internal/config.js'
 
 // This file compiles to `<outDir>/tests/`, and every outDir is two segments
 // deep — see the walk in src/internal/resources.ts, which relies on the same
@@ -71,12 +76,16 @@ test('importing an example runs nothing', async () => {
   }
   // Taken away for the duration, so a guard that had been removed could not
   // reach the service even on a developer's machine with a live credential in
-  // the shell. Two of these examples write; a suite that can perform a write
-  // by accident is not one to run casually. Named from the SDK's own constants
-  // rather than as strings, so renaming a variable cannot quietly defeat this.
-  const held = [TOKEN_ENV, LEGACY_TOKEN_ENV].map(
-    name => [name, process.env[name]] as const
-  )
+  // the shell. Several of these examples write, and three create networks and
+  // users; a suite that can perform a write by accident is not one to run
+  // casually. Named from the SDK's own constants rather than as strings, so
+  // renaming a variable cannot quietly defeat this.
+  const held = [
+    TOKEN_ENV,
+    LEGACY_TOKEN_ENV,
+    CLIENT_ID_ENV,
+    CLIENT_SECRET_ENV
+  ].map(name => [name, process.env[name]] as const)
   for (const [name] of held) {
     delete process.env[name]
   }

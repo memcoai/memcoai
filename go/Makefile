@@ -41,7 +41,7 @@ GO_TOOLCHAINS := go1.25.13 go1.26.8 go1.27.0
 # export's to test, and internal/testserver exists to be tested against. The
 # README's coverage badge claims this floor.
 COVERAGE_FLOOR := 95
-COVERPKG := ./memcoai/...,./internal/config/...,./internal/transport/...,./internal/fault/...,./internal/logging/...,./internal/warn/...,./internal/provenance/...,./internal/memory/...
+COVERPKG := ./memcoai/...,./internal/admin/...,./internal/config/...,./internal/transport/...,./internal/fault/...,./internal/logging/...,./internal/warn/...,./internal/provenance/...,./internal/memory/...
 
 # The commit the markdown reference's source links name, so a published
 # version's line anchors stay right; `main` only where there is no git to ask.
@@ -91,21 +91,32 @@ coverage:  ## Run the suites and report coverage (fails below the floor)
 		END { printf "coverage: %s%% of statements (floor %s%%)\n", total, floor; if (total + 0 < floor) exit 1 }'
 	@echo "open go/coverage/index.html"
 
-# Not reached by `test`: the suite's files carry //go:build systemtest. It
-# needs MEMCO_API_TOKEN and a reachable service; without one it reports itself
-# skipped. -count=1 because a cached pass against a live service proves
-# nothing, and -timeout sits below CI's 45 minutes so a hang dumps its
-# goroutines instead of being killed silently.
+# Not reached by `test`: the suite's files carry //go:build systemtest. The
+# memory tests need MEMCO_API_TOKEN, and the administration and impersonation
+# tests MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET, plus a reachable service;
+# without its credential a test reports itself skipped. MEMCO_API_TLS=false
+# reaches a local development server in plaintext. -count=1 because a cached
+# pass against a live service proves nothing, and -timeout sits below CI's 45
+# minutes so a hang dumps its goroutines instead of being killed silently.
 system-test:  ## Run the live suite against the real service
 	$(GO) test -tags systemtest -count=1 -timeout 40m -v ./systemtest/...
 
+# The examples that act as an API client. Every other example is run without
+# MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET: with no credential in Options the
+# pair wins over the token, and an issued token reads no memory of its own.
+CLIENT_EXAMPLES := map_your_users act_as_your_user act_as_many_users
+
 # Unlike system-test, this does not skip without a credential: it assumes
-# MEMCO_API_TOKEN, and whatever anthropic_agent additionally needs, are already
-# in the environment (see examples/README.md).
+# MEMCO_API_TOKEN, MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET, and whatever
+# anthropic_agent additionally needs, are already in the environment (see
+# examples/README.md).
 run-examples:  ## Run every example against the real service
 	@cd examples && for pkg in $$($(GO) list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./...); do \
 		printf '\033[1m--- %s ---\033[0m\n' "$${pkg##*/}"; \
-		$(GO) run "$$pkg" || exit 1; \
+		case " $(CLIENT_EXAMPLES) " in \
+			*" $${pkg##*/} "*) $(GO) run "$$pkg" || exit 1 ;; \
+			*) env -u MEMCO_CLIENT_ID -u MEMCO_CLIENT_SECRET $(GO) run "$$pkg" || exit 1 ;; \
+		esac; \
 	done
 
 test-all:  ## Run both suites on every supported toolchain

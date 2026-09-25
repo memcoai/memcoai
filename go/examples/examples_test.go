@@ -47,7 +47,7 @@ func TestEveryExampleIsDrivableAndDoesNothingOnLoad(t *testing.T) {
 			t.Errorf("%s/main.go declares %v, not main and run", dir, declared)
 		}
 	}
-	if examples != 7 {
+	if examples != 10 {
 		t.Fatalf("found %d examples", examples)
 	}
 }

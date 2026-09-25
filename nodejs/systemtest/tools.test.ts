@@ -12,8 +12,7 @@ import { test } from 'node:test'
 
 import { OFFERED, TOOL_PREFIX } from '../src/gen/toolCopy.js'
 import { Memco } from '../src/index.js'
-
-const TOKEN_ENV = 'MEMCO_API_TOKEN'
+import { TOKEN_ENV } from './support.js'
 const EXPECTED_TOOLS = new Set(OFFERED.map(name => TOOL_PREFIX + name))
 
 /**
@@ -24,7 +23,9 @@ const EXPECTED_TOOLS = new Set(OFFERED.map(name => TOOL_PREFIX + name))
  * close either way.
  */
 async function withClient<T>(body: (client: Memco) => Promise<T>): Promise<T> {
-  const client = new Memco()
+  // Named explicitly, as in lifecycle.test.ts: the API client's variables
+  // would otherwise win over MEMCO_API_TOKEN.
+  const client = new Memco({ token: process.env[TOKEN_ENV] })
   try {
     await client.connect()
     return await body(client)

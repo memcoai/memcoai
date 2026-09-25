@@ -8,8 +8,12 @@ credential would show.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
+import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import grpc
@@ -20,10 +24,13 @@ from memcoai import AsyncMemco, Memco, errors
 from memcoai.auth.v1 import auth_pb2 as auth_pb
 
 from .conftest import CLIENT_ID, CLIENT_SECRET, TOKEN, FakeClock
-from .fake_server import Harness
+from .fake_server import Harness, Hold
 
 RENEWS_AT = 0.8 * 3600
 """Seconds after issue that the fake's default token falls due for renewal."""
+
+EXPIRES_AT = 3600
+"""Seconds after issue that the fake's default token expires."""
 
 CLIENT_ENV = {"MEMCO_CLIENT_ID": CLIENT_ID, "MEMCO_CLIENT_SECRET": CLIENT_SECRET}
 
@@ -166,26 +173,317 @@ def test_the_token_is_renewed_at_four_fifths_of_its_lifetime(
     credentialed.networks.list()
     assert harness.tokens.calls == []
     clock.advance(2)
+    # Still honoured, so the call that sets the renewal off carries it.
+    credentialed.networks.list()
+    for _ in range(500):
+        if not credentialed._credential._minting:
+            break
+        time.sleep(0.01)
     credentialed.networks.list()
     assert harness.tokens.calls == ["IssueToken"]
     assert bearers(harness.admin.raw_metadata) == [
+        ["Bearer client-token-1"],
         ["Bearer client-token-1"],
         ["Bearer client-token-2"],
     ]
 
 
-def test_a_failed_renewal_is_raised_typed_and_the_next_call_tries_again(
+def test_a_token_due_for_renewal_serves_calls_while_it_renews(
+    clock: FakeClock, credentialed: Memco, harness: Harness
+):
+    # Renewal starts at four fifths of the lifetime so that a slow token
+    # service holds up no call: the token held still works, so calls go on
+    # with it while the next is issued.
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    clock.advance(0.85 * EXPIRES_AT)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for _ in range(2):
+                pool.submit(credentialed.networks.list, timeout=0.5).result(timeout=2)
+        assert bearers(harness.admin.raw_metadata) == [["Bearer client-token-1"]] * 2
+        assert issuing.arrived.wait(5)
+    finally:
+        issuing.released.set()
+    for _ in range(500):
+        credentialed.networks.list()
+        if bearers(harness.admin.raw_metadata)[-1] == ["Bearer client-token-2"]:
+            break
+        time.sleep(0.01)
+    assert harness.tokens.calls == ["IssueToken"]
+    assert bearers(harness.admin.raw_metadata)[-1] == ["Bearer client-token-2"]
+
+
+async def test_async_a_token_due_for_renewal_serves_calls_while_it_renews(
+    clock: FakeClock, async_credentialed: AsyncMemco, harness: Harness
+):
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    clock.advance(0.85 * EXPIRES_AT)
+    try:
+        for _ in range(2):
+            await asyncio.wait_for(async_credentialed.networks.list(timeout=0.5), 2)
+        assert bearers(harness.admin.raw_metadata) == [["Bearer client-token-1"]] * 2
+        assert await asyncio.to_thread(issuing.arrived.wait, 5)
+    finally:
+        issuing.released.set()
+    for _ in range(500):
+        await async_credentialed.networks.list()
+        if bearers(harness.admin.raw_metadata)[-1] == ["Bearer client-token-2"]:
+            break
+        await asyncio.sleep(0.01)
+    assert harness.tokens.calls == ["IssueToken"]
+    assert bearers(harness.admin.raw_metadata)[-1] == ["Bearer client-token-2"]
+
+
+# --- one deadline for the whole call --------------------------------------
+
+DEADLINE = 1.0
+"""The deadline the end-to-end tests give a call, per call or as the client's default."""
+
+
+@pytest.fixture(params=[True, False], ids=["per-call timeout", "client default"])
+def per_call(request: pytest.FixtureRequest) -> bool:
+    """Whether the deadline is passed to the call, or is the client's default."""
+    return bool(request.param)
+
+
+def deadline_client(harness: Harness, per_call: bool) -> Memco:
+    return Memco(**credentials(harness), timeout=30.0 if per_call else DEADLINE)
+
+
+def async_deadline_client(harness: Harness, per_call: bool) -> AsyncMemco:
+    return AsyncMemco(**credentials(harness), timeout=30.0 if per_call else DEADLINE)
+
+
+def timed(per_call: bool) -> float | None:
+    """The timeout to pass the call: ``None`` leaves it to the client's default."""
+    return DEADLINE if per_call else None
+
+
+def test_a_call_waits_for_a_credential_no_longer_than_its_deadline(
+    clock: FakeClock, harness: Harness, per_call: bool
+):
+    # One deadline for the whole call: a token that never arrives fails it
+    # when its caller said it would end, not a second deadline later.
+    with deadline_client(harness, per_call) as client:
+        issuing = harness.tokens.holds["IssueToken"] = Hold()
+        clock.advance(EXPIRES_AT)
+        started = time.monotonic()
+        try:
+            with pytest.raises(errors.MemcoTimeoutError):
+                client.networks.list(timeout=timed(per_call))
+            took = time.monotonic() - started
+        finally:
+            issuing.released.set()
+    assert 0.9 * DEADLINE <= took < 1.3 * DEADLINE
+    assert harness.admin.calls == []
+
+
+def test_the_request_gets_only_what_the_wait_left_of_the_deadline(
+    clock: FakeClock, harness: Harness, per_call: bool
+):
+    # The deadline is fixed as the call starts, so a call that waited for a
+    # token still ends when its caller said it would.
+    with deadline_client(harness, per_call) as client:
+        issuing = harness.tokens.holds["IssueToken"] = Hold()
+        listing = harness.admin.holds["ListNetworks"] = Hold()
+        clock.advance(EXPIRES_AT)
+        threading.Timer(0.3 * DEADLINE, issuing.released.set).start()
+        started = time.monotonic()
+        try:
+            with pytest.raises(errors.MemcoTimeoutError):
+                client.networks.list(timeout=timed(per_call))
+            took = time.monotonic() - started
+        finally:
+            issuing.released.set()
+            listing.released.set()
+    assert listing.arrived.is_set()
+    assert 0.9 * DEADLINE <= took < 1.2 * DEADLINE
+
+
+def test_with_a_credential_to_hand_the_request_gets_the_whole_deadline(
+    harness: Harness, per_call: bool
+):
+    with deadline_client(harness, per_call) as client:
+        listing = harness.admin.holds["ListNetworks"] = Hold()
+        started = time.monotonic()
+        try:
+            with pytest.raises(errors.MemcoTimeoutError):
+                client.networks.list(timeout=timed(per_call))
+            took = time.monotonic() - started
+        finally:
+            listing.released.set()
+    assert 0.9 * DEADLINE <= took < 1.3 * DEADLINE
+
+
+async def test_async_a_call_waits_for_a_credential_no_longer_than_its_deadline(
+    clock: FakeClock, harness: Harness, per_call: bool
+):
+    async with async_deadline_client(harness, per_call) as client:
+        issuing = harness.tokens.holds["IssueToken"] = Hold()
+        clock.advance(EXPIRES_AT)
+        started = time.monotonic()
+        try:
+            with pytest.raises(errors.MemcoTimeoutError):
+                await client.networks.list(timeout=timed(per_call))
+            took = time.monotonic() - started
+        finally:
+            issuing.released.set()
+    assert 0.9 * DEADLINE <= took < 1.3 * DEADLINE
+    assert harness.admin.calls == []
+
+
+async def test_async_the_request_gets_only_what_the_wait_left_of_the_deadline(
+    clock: FakeClock, harness: Harness, per_call: bool
+):
+    async with async_deadline_client(harness, per_call) as client:
+        issuing = harness.tokens.holds["IssueToken"] = Hold()
+        listing = harness.admin.holds["ListNetworks"] = Hold()
+        clock.advance(EXPIRES_AT)
+        threading.Timer(0.3 * DEADLINE, issuing.released.set).start()
+        started = time.monotonic()
+        try:
+            with pytest.raises(errors.MemcoTimeoutError):
+                await client.networks.list(timeout=timed(per_call))
+            took = time.monotonic() - started
+        finally:
+            issuing.released.set()
+            listing.released.set()
+    assert listing.arrived.is_set()
+    assert 0.9 * DEADLINE <= took < 1.2 * DEADLINE
+
+
+async def test_async_with_a_credential_to_hand_the_request_gets_the_whole_deadline(
+    harness: Harness, per_call: bool
+):
+    async with async_deadline_client(harness, per_call) as client:
+        listing = harness.admin.holds["ListNetworks"] = Hold()
+        started = time.monotonic()
+        try:
+            with pytest.raises(errors.MemcoTimeoutError):
+                await client.networks.list(timeout=timed(per_call))
+            took = time.monotonic() - started
+        finally:
+            listing.released.set()
+    assert 0.9 * DEADLINE <= took < 1.3 * DEADLINE
+
+
+def test_a_token_whose_renewal_fails_stays_in_use_until_it_expires(
+    clock: FakeClock, credentialed: Memco, harness: Harness, caplog: pytest.LogCaptureFixture
+):
+    harness.tokens.error = (grpc.StatusCode.UNAVAILABLE, "token service down")
+    clock.advance(0.85 * EXPIRES_AT)
+    with caplog.at_level(logging.WARNING, logger="memcoai"):
+        credentialed.networks.list()
+        # Reported by the renewal, on its own thread, once it has failed.
+        for _ in range(500):
+            if caplog.records:
+                break
+            time.sleep(0.01)
+    assert bearers(harness.admin.raw_metadata) == [["Bearer client-token-1"]]
+    (warning,) = caplog.records
+    assert "client token" in warning.getMessage()
+    assert "client-token-1" not in caplog.text
+    clock.advance(0.15 * EXPIRES_AT)
+    with pytest.raises(errors.MemcoUnavailableError):
+        credentialed.networks.list()
+    assert harness.admin.calls == ["ListNetworks"]
+
+
+async def test_async_a_token_whose_renewal_fails_stays_in_use_until_it_expires(
+    clock: FakeClock, async_credentialed: AsyncMemco, harness: Harness
+):
+    harness.tokens.error = (grpc.StatusCode.UNAVAILABLE, "token service down")
+    clock.advance(0.85 * EXPIRES_AT)
+    await async_credentialed.networks.list()
+    assert bearers(harness.admin.raw_metadata) == [["Bearer client-token-1"]]
+    clock.advance(0.15 * EXPIRES_AT)
+    with pytest.raises(errors.MemcoUnavailableError):
+        await async_credentialed.networks.list()
+    assert harness.admin.calls == ["ListNetworks"]
+
+
+def test_a_failed_renewal_of_an_expired_token_is_raised_typed_and_the_next_call_tries_again(
     clock: FakeClock, credentialed: Memco, harness: Harness
 ):
     harness.tokens.transient_errors["IssueToken"] = [
         (grpc.StatusCode.UNAVAILABLE, "token service down")
     ]
-    clock.advance(RENEWS_AT + 1)
+    clock.advance(EXPIRES_AT)
     with pytest.raises(errors.MemcoUnavailableError):
         credentialed.networks.list()
     assert harness.admin.calls == []
     credentialed.networks.list()
     assert bearers(harness.admin.raw_metadata) == [["Bearer client-token-2"]]
+
+
+def test_callers_waiting_on_a_failed_renewal_share_its_failure(
+    clock: FakeClock, credentialed: Memco, harness: Harness
+):
+    # One IssueToken, not one per caller: minting again in turn, each would
+    # wait out every attempt before its own, far past its deadline.
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    harness.tokens.error = (grpc.StatusCode.UNAVAILABLE, "token service down")
+    clock.advance(EXPIRES_AT)
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        calls = [pool.submit(credentialed.users.list) for _ in range(5)]
+        assert issuing.arrived.wait(5)
+        time.sleep(0.2)
+        issuing.released.set()
+        raised = [call.exception(timeout=5) for call in calls]
+    assert all(isinstance(error, errors.MemcoUnavailableError) for error in raised)
+    assert harness.tokens.calls == ["IssueToken"]
+    assert harness.admin.calls == []
+
+
+def test_a_caller_waits_for_another_s_renewal_no_longer_than_its_own_timeout(
+    clock: FakeClock, credentialed: Memco, harness: Harness
+):
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    clock.advance(EXPIRES_AT)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        renewing = pool.submit(credentialed.users.list)
+        assert issuing.arrived.wait(5)
+        waited = time.monotonic()
+        with pytest.raises(errors.MemcoTimeoutError):
+            credentialed.networks.list(timeout=0.2)
+        assert time.monotonic() - waited < 1
+        issuing.released.set()
+        renewing.result(timeout=5)
+    assert harness.tokens.calls == ["IssueToken"]
+    assert harness.admin.calls == ["ListExternalUsers"]
+
+
+async def test_async_callers_waiting_on_a_failed_renewal_share_its_failure(
+    clock: FakeClock, async_credentialed: AsyncMemco, harness: Harness
+):
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    harness.tokens.error = (grpc.StatusCode.UNAVAILABLE, "token service down")
+    clock.advance(EXPIRES_AT)
+    calls = [asyncio.create_task(async_credentialed.users.list()) for _ in range(5)]
+    assert await asyncio.to_thread(issuing.arrived.wait, 5)
+    await asyncio.sleep(0.1)
+    issuing.released.set()
+    raised = await asyncio.gather(*calls, return_exceptions=True)
+    assert all(isinstance(error, errors.MemcoUnavailableError) for error in raised)
+    assert harness.tokens.calls == ["IssueToken"]
+    assert harness.admin.calls == []
+
+
+async def test_async_a_caller_waits_for_another_s_renewal_no_longer_than_its_own_timeout(
+    clock: FakeClock, async_credentialed: AsyncMemco, harness: Harness
+):
+    issuing = harness.tokens.holds["IssueToken"] = Hold()
+    clock.advance(EXPIRES_AT)
+    renewing = asyncio.create_task(async_credentialed.users.list())
+    assert await asyncio.to_thread(issuing.arrived.wait, 5)
+    waited = time.monotonic()
+    with pytest.raises(errors.MemcoTimeoutError):
+        await async_credentialed.networks.list(timeout=0.2)
+    assert time.monotonic() - waited < 1
+    issuing.released.set()
+    await renewing
+    assert harness.tokens.calls == ["IssueToken"]
+    assert harness.admin.calls == ["ListExternalUsers"]
 
 
 async def test_async_admin_calls_carry_the_issued_token(
@@ -204,8 +502,13 @@ async def test_async_the_token_is_renewed_at_four_fifths_of_its_lifetime(
     assert harness.tokens.calls == []
     clock.advance(2)
     await async_credentialed.networks.list()
+    minting = async_credentialed._credential._minting
+    assert minting is not None
+    await minting
+    await async_credentialed.networks.list()
     assert harness.tokens.calls == ["IssueToken"]
     assert bearers(harness.admin.raw_metadata) == [
+        ["Bearer client-token-1"],
         ["Bearer client-token-1"],
         ["Bearer client-token-2"],
     ]
@@ -260,6 +563,29 @@ def test_the_secret_never_reaches_a_log_or_an_error(
     # context a traceback hides but an error tracker or a debugger still walks.
     assert chain(caught.value) == [caught.value]
     assert CLIENT_SECRET not in str(caught.value)
+    assert CLIENT_SECRET not in repr(caught.value)
+
+
+@pytest.mark.parametrize(
+    "given",
+    [{"host": "grpc.memco.ai:44x"}, {"log_level": "loud"}, {"token_lifetime": 0}],
+    ids=["bad host", "bad log level", "bad lifetime"],
+)
+@pytest.mark.parametrize("client_class", [Memco, AsyncMemco], ids=["sync", "async"])
+def test_a_client_refused_its_configuration_leaves_the_secret_in_no_frame(
+    harness: Harness, client_class: type[Memco] | type[AsyncMemco], given: dict[str, Any]
+):
+    arguments = {**credentials(harness), **given}
+    with pytest.raises(errors.MemcoConfigError) as caught:
+        client_class(**arguments)
+    held = [
+        (frame.f_code.co_name, name)
+        for frame, _ in traceback.walk_tb(caught.value.__traceback__)
+        if frame.f_code.co_filename != __file__
+        for name, value in frame.f_locals.items()
+        if CLIENT_SECRET in repr(value)
+    ]
+    assert held == []
     assert CLIENT_SECRET not in repr(caught.value)
 
 

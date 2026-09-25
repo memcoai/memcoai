@@ -95,7 +95,8 @@ class MemoryOperations:
         argument.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The available domains and accompanying guidance.
@@ -125,7 +126,8 @@ class MemoryOperations:
         caller that wants the catalog itself, not for shaping what a session offers.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             One descriptor per method the contract declares.
@@ -160,9 +162,12 @@ class MemoryOperations:
                 session and every call through it carry that key, which renews
                 itself before it expires. The session first lists the domains
                 under the key, learning the limits and any deprecation notice as
-                that user. Close the session when done, which ends the key.
-                Omit it to open the session under the client's own credential.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+                that user. Close the session when done, which ends the key at
+                once; one dropped unclosed is ended only eventually, as
+                :meth:`Session.close` describes. Omit it to open the session
+                under the client's own credential.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             The open session, with every session-bound operation already
@@ -171,8 +176,9 @@ class MemoryOperations:
         Raises:
             MemcoInvalidRequestError: If the domain or ``external_id`` is blank.
             MemcoAPIError: If the service returns an error status. With an
-                ``external_id``, a failure after the key was minted ends it
-                before this is raised.
+                ``external_id``, the key minted for a session that failed to
+                open is ended: before this is raised, or, if the mint outlasted
+                ``timeout``, as the key arrives.
 
         Example:
             >>> session = client.memory.start_session("coding")
@@ -210,7 +216,8 @@ class MemoryOperations:
 
         Args:
             domain: The memory domain to operate in.
-            timeout: Per-call deadline in seconds, or ``None`` for the client's.
+            timeout: Deadline in seconds for each request, or ``None`` for the
+                client's.
             release: What closing the session does, or ``None`` for a session
                 holding nothing to end.
 
@@ -249,7 +256,8 @@ class MemoryOperations:
             domain: Slug of the domain, as returned by :meth:`list_domains`.
             external_id: Act as one of your own users, by your id for them. See
                 :meth:`start_session`.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             The open session, with every session-bound operation already
@@ -312,7 +320,8 @@ class MemoryOperations:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
                 determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -358,7 +367,8 @@ class MemoryOperations:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -432,7 +442,8 @@ class MemoryOperations:
                 determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -506,7 +517,8 @@ class MemoryOperations:
                 reaching this insight. Up to 20 sources can be included.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -555,7 +567,8 @@ class MemoryOperations:
                 in the response from :meth:`search`.
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -595,7 +608,8 @@ class MemoryOperations:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -647,7 +661,10 @@ class MemoryOperations:
                 :meth:`start_session` or a previous search. It records them as part of that series
                 of work, and supplies the memory domain, so the domain argument is not needed and is
                 ignored.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -732,7 +749,8 @@ class AsyncMemoryOperations:
         argument.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The available domains and accompanying guidance.
@@ -764,7 +782,8 @@ class AsyncMemoryOperations:
         caller that wants the catalog itself, not for shaping what a session offers.
 
         Args:
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             One descriptor per method the contract declares.
@@ -788,7 +807,8 @@ class AsyncMemoryOperations:
         so its own failure must not surface as one -- only ``StartSession``'s should.
 
         Args:
-            timeout: Per-call deadline in seconds, as given to ``start_session``.
+            timeout: Deadline in seconds for the request, as given to
+                ``start_session``.
 
         Returns:
             The catalog, or ``None`` if the fetch failed after the retries
@@ -826,9 +846,12 @@ class AsyncMemoryOperations:
                 session and every call through it carry that key, which renews
                 itself before it expires. The session first lists the domains
                 under the key, learning the limits and any deprecation notice as
-                that user. Close the session when done, which ends the key.
-                Omit it to open the session under the client's own credential.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+                that user. Close the session when done, which ends the key at
+                once; one dropped unclosed is ended only eventually, as
+                :meth:`AsyncSession.close` describes. Omit it to open the
+                session under the client's own credential.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             The open session, with every session-bound operation already
@@ -837,8 +860,9 @@ class AsyncMemoryOperations:
         Raises:
             MemcoInvalidRequestError: If the domain or ``external_id`` is blank.
             MemcoAPIError: If the service returns an error status. With an
-                ``external_id``, a failure after the key was minted ends it
-                before this is raised.
+                ``external_id``, the key minted for a session that failed to
+                open is ended: before this is raised, or, if the mint outlasted
+                ``timeout``, as the key arrives.
 
         Example:
             >>> session = await client.memory.start_session("coding")
@@ -880,7 +904,8 @@ class AsyncMemoryOperations:
 
         Args:
             domain: The memory domain to operate in.
-            timeout: Per-call deadline in seconds, or ``None`` for the client's.
+            timeout: Deadline in seconds for each request, or ``None`` for the
+                client's.
             release: What closing the session does, or ``None`` for a session
                 holding nothing to end.
 
@@ -918,7 +943,8 @@ class AsyncMemoryOperations:
             domain: Slug of the domain, as returned by :meth:`list_domains`.
             external_id: Act as one of your own users, by your id for them. See
                 :meth:`start_session`.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request the open sends, in
+                turn. Defaults to the client's.
 
         Returns:
             A handle that opens the session and yields it, on ``await`` or on
@@ -982,7 +1008,8 @@ class AsyncMemoryOperations:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`list_domains` for the tag types this domain uses. Supply as many as you can
                 determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -1028,7 +1055,8 @@ class AsyncMemoryOperations:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -1102,7 +1130,8 @@ class AsyncMemoryOperations:
                 determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -1176,7 +1205,8 @@ class AsyncMemoryOperations:
                 determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -1225,7 +1255,8 @@ class AsyncMemoryOperations:
                 in the response from :meth:`search`.
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -1269,7 +1300,8 @@ class AsyncMemoryOperations:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -1323,7 +1355,10 @@ class AsyncMemoryOperations:
                 :meth:`start_session` or a previous search. It records them as part of that series
                 of work, and supplies the memory domain, so the domain argument is not needed and is
                 ignored.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -1371,9 +1406,11 @@ class Session:
 
     Usable as a context manager, which closes it on leaving. A session opened
     with an ``external_id`` holds a key acting as that user, and closing ends
-    the key. Any other session holds nothing: the contract has no call that ends
-    a session, and a session id stays usable for as long as it is named, so
-    closing one changes nothing and the block bounds the scope for the reader.
+    the key at once; dropping it unclosed ends the key only eventually, as
+    :meth:`close` describes. Any other session holds nothing: the contract has
+    no call that ends a session, and a session id stays usable for as long as
+    it is named, so closing one changes nothing and the block bounds the scope
+    for the reader.
 
     Attributes:
         id: The session every call through this object names.
@@ -1453,9 +1490,17 @@ class Session:
         keeps the key until it finishes, and the key is ended then.
 
         Ending the key is best effort. If the service cannot end it, a warning
-        naming the key's id is logged and nothing is raised: closing the client
-        tries again, and the key expires on its own regardless. After the
-        client is closed, this does nothing.
+        naming the key's id is logged and nothing is raised: the next session
+        opened for the same user tries again, as does closing the client, and
+        the key expires on its own regardless. After the client is closed, this
+        does nothing.
+
+        A session dropped without being closed has its key ended too, but only
+        eventually: once the session, and every tool and memory it returned,
+        has been garbage-collected, a :class:`ResourceWarning` is issued, as
+        for an unclosed file, and the client ends the key at its next call.
+        Until then the key counts against the user's cap on live keys, so close
+        the session rather than rely on this.
 
         A session opened without an ``external_id`` holds nothing, so closing
         it changes nothing and it stays usable. Safe to call more than once.
@@ -1506,7 +1551,8 @@ class Session:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`~memcoai.operations.MemoryOperations.list_domains` for the tag types this
                 domain uses. Supply as many as you can determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -1542,7 +1588,8 @@ class Session:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -1603,7 +1650,8 @@ class Session:
                 domain uses. Supply as many as you can determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -1667,7 +1715,8 @@ class Session:
                 reaching this insight. Up to 20 sources can be included.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -1711,7 +1760,8 @@ class Session:
         Args:
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -1747,7 +1797,8 @@ class Session:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -1786,7 +1837,10 @@ class Session:
         Args:
             memories: (Required) The memories to contribute. At least one, at most 25 per call; send
                 several calls for more.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -1862,9 +1916,11 @@ class AsyncSession:
 
     Usable as an async context manager, which closes it on leaving. A session
     opened with an ``external_id`` holds a key acting as that user, and closing
-    ends the key. Any other session holds nothing: the contract has no call that
-    ends a session, and a session id stays usable for as long as it is named, so
-    closing one changes nothing and the block bounds the scope for the reader.
+    ends the key at once; dropping it unclosed ends the key only eventually, as
+    :meth:`close` describes. Any other session holds nothing: the contract has
+    no call that ends a session, and a session id stays usable for as long as
+    it is named, so closing one changes nothing and the block bounds the scope
+    for the reader.
 
     Attributes:
         id: The session every call through this object names.
@@ -1940,9 +1996,17 @@ class AsyncSession:
         keeps the key until it finishes, and the key is ended then.
 
         Ending the key is best effort. If the service cannot end it, a warning
-        naming the key's id is logged and nothing is raised: closing the client
-        tries again, and the key expires on its own regardless. After the
-        client is closed, this does nothing.
+        naming the key's id is logged and nothing is raised: the next session
+        opened for the same user tries again, as does closing the client, and
+        the key expires on its own regardless. After the client is closed, this
+        does nothing.
+
+        A session dropped without being closed has its key ended too, but only
+        eventually: once the session, and every tool and memory it returned,
+        has been garbage-collected, a :class:`ResourceWarning` is issued, as
+        for an unclosed file, and the client ends the key at its next call.
+        Until then the key counts against the user's cap on live keys, so close
+        the session rather than rely on this.
 
         A session opened without an ``external_id`` holds nothing, so closing
         it changes nothing and it stays usable. Safe to call more than once.
@@ -1994,7 +2058,8 @@ class AsyncSession:
             tags: Tags describing the subject and context, narrowing what this applies to. Call
                 :meth:`~memcoai.operations.AsyncMemoryOperations.list_domains` for the tag types
                 this domain uses. Supply as many as you can determine for the best results.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memories selected, with guidance on adding to and rating them.
@@ -2030,7 +2095,8 @@ class AsyncSession:
         Args:
             idx: (Required) The idx of the result to fetch, copied exactly as it appeared in a
                 search response. An insight's idx returns the memory holding it.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The memory and its insights.
@@ -2091,7 +2157,8 @@ class AsyncSession:
                 this domain uses. Supply as many as you can determine for the best results.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write, whose ``operation_id`` is ``None`` if the write
@@ -2155,7 +2222,8 @@ class AsyncSession:
                 reaching this insight. Up to 20 sources can be included.
             source: The source of the content: user for human-corrected information, or agent for
                 self-discovered insights without human correction. Unset is read as agent.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The accepted write.
@@ -2199,7 +2267,8 @@ class AsyncSession:
         Args:
             feedback: (Required) A list of ratings, one per result you want to rate. Up to 10
                 ratings can be included in each call.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             The ratings that were recorded, each with any advice it earned.
@@ -2237,7 +2306,8 @@ class AsyncSession:
         Args:
             operation_id: (Required) The operation id returned by the :meth:`create_memory` or
                 :meth:`enrich_memory` call you want to undo, for example 'create-hpc08-1'.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for the whole call, including any wait
+                for a credential. Defaults to the client's.
 
         Returns:
             What the revert actually removed.
@@ -2276,7 +2346,10 @@ class AsyncSession:
         Args:
             memories: (Required) The memories to contribute. At least one, at most 25 per call; send
                 several calls for more.
-            timeout: Per-call deadline in seconds. Defaults to the client's.
+            timeout: Deadline in seconds for each request, including any wait
+                for a credential. A batch above the service's cap per request
+                is sent as several, in turn, each with this deadline. Defaults
+                to the client's.
 
         Returns:
             One outcome per memory submitted, in the order they were sent.
@@ -2359,7 +2432,8 @@ class AsyncSessionOpener:
         Args:
             operations: The namespace the scope will forward to.
             domain: Slug of the domain to open a session in.
-            timeout: Per-call deadline for the open, or ``None``.
+            timeout: Deadline in seconds for each request the open sends, or
+                ``None``.
             external_id: The user the session acts as, or ``None`` to open it
                 under the client's own credential.
         """

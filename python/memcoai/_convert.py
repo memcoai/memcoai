@@ -732,18 +732,23 @@ def to_created_key(message: _admin_pb.CreateExternalUserKeyResponse) -> CreatedK
         The key's description, and its value.
 
     Raises:
-        MemcoInternalError: If the response carries no key. A singular message
-            field has no presence at the accessor, so converting it anyway
-            would describe a key with every field empty, as if it were real.
+        MemcoInternalError: If the response carries no key, or one whose expiry
+            no date can hold. A singular message field has no presence at the
+            accessor, so converting a missing one anyway would describe a key
+            with every field empty, as if it were real.
     """
-    if not message.HasField("key"):
+    try:
+        key = _to_external_user_key(message.key) if message.HasField("key") else None
+    except (ValueError, OverflowError, OSError):
+        key = None  # An expiry out of any date's range: seconds sent as milliseconds, say.
+    if key is None:
         # The value is left out of the message: it is a working credential,
         # and an error's text is exactly what reaches logs. It is cleared from
         # the response too, which this frame holds as the error is raised.
         message.ClearField("value")
         raise MemcoInternalError(
             grpc.StatusCode.INTERNAL,
-            "the service returned a key value but no key; list the user's keys to "
-            "see whether one was created",
+            "the service returned a key value but no key this client can read; list the "
+            "user's keys to see whether one was created",
         )
-    return CreatedKey(key=_to_external_user_key(message.key), value=message.value)
+    return CreatedKey(key=key, value=message.value)

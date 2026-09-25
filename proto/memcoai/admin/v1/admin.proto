@@ -420,6 +420,10 @@ message ImpersonationKey {
   repeated string scopes = 4;
   // key_id names the key to EndImpersonation.
   string key_id = 5;
+  // expires_in is the seconds left until expires_at as measured by the server,
+  // so a client can time the expiry without trusting its own clock. It is 0 once
+  // the key has expired.
+  int64 expires_in = 6;
 }
 
 // EndImpersonationRequest names the impersonation key to revoke.

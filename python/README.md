@@ -174,6 +174,14 @@ Arguments win over the environment, which wins over the defaults.
 The credential is either a Memco API key or a session token issued for your
 account; both go in the same header. `MEMCO_API_KEY` is still honoured but warns.
 
+The deadline is the whole call's, and every method also takes its own
+`timeout`. It starts when the call does and covers everything the call waits
+for: a credential still being issued as well as the request, which gets
+whatever is left, so a call ends when you said it would, failing with
+`MemcoTimeoutError` if it has not finished. Two methods send several requests
+and give each of them the deadline in turn: opening a session, and
+`import_memories` with a batch above the service's cap per request.
+
 TLS is on unless you turn it off, with `tls=False` or `MEMCO_API_TLS=false`, for
 a plaintext endpoint such as a local development server. A client built without
 TLS says so at `WARNING`, since its credential then crosses the wire readable.
@@ -396,17 +404,30 @@ key, and never your client's token. The API client needs the admin grant, and
 what the session can reach is scoped by the network the user is placed in.
 
 **Close the session.** Leaving the `with` block, or calling `session.close()`,
-ends the key on the service. The service caps how many live keys each user may
-hold, so a session left open holds one of them until its key expires. Closing the
-client ends any key still live; a key the service cannot end is logged by its
-id, never its value, and expires on its own. After closing, a call through the
-session raises `MemcoConfigError`. A session opened without `external_id` holds
-nothing, so closing it changes nothing.
+ends the key on the service at once. The service caps how many live keys each
+user may hold, so a session left open holds one of them until its key expires.
+A session dropped without being closed has its key ended too, but only
+eventually: once it, and every tool and memory it returned, has been
+garbage-collected, Python issues a `ResourceWarning`, as for an unclosed file,
+and the client ends the key at its next call. Closing the client ends any key
+still live. A key the service cannot end is logged by its id, never its value;
+the next session opened for the same user tries again, and the key expires on
+its own regardless. After closing, a call through the session raises
+`MemcoConfigError`. A session opened without `external_id` holds nothing, so
+closing it changes nothing.
 
 **Keys renew themselves.** A key is replaced once four fifths of its lifetime
-have passed, and the one it replaces is ended as soon as no call is still using
-it, so a long session never fails for an expired key, and a renewal never
-revokes one under a call in flight. The client's own token renews the same way.
+have passed, timed by the service's own count of the seconds it has left, so
+this host's clock does not come into it (a service that does not send that
+count yet has its expiry time read against this host's clock instead). The new
+one is minted in the background, and calls go on with the
+key held until it arrives, so a slow renewal holds none of them up. The key
+replaced is ended as soon as no call is still using it, so a long session never
+fails for an expired key, and a renewal never revokes one under a call in
+flight. The client's own token renews the same way. If a renewal fails -- the
+token service is down, say, or the user already holds as many live keys as the
+service allows -- the key or token held stays in use until it expires, a
+warning is logged, and the next call tries again.
 
 Each session carries its own key, so sessions for different users run side by
 side on one client — from several threads with `Memco`, or concurrently with
@@ -461,6 +482,12 @@ MemcoError
     ├── MemcoTimeoutError             deadline exceeded
     └── MemcoInternalError            everything else
 ```
+
+`MemcoConfigError` means nothing was sent, with one exception: a session key
+that this host's clock already reads as expired when it arrives. Only a service
+that does not report the seconds a key has left can produce it, with a host
+clock well ahead of its own; the key's mint, and the `EndImpersonation` that
+ends it at once, have been sent by then. Correct the system clock.
 
 Two behaviours worth knowing:
 

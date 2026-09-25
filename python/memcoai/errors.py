@@ -66,6 +66,13 @@ class MemcoConfigError(MemcoError):
     Raised for a missing credential, an unparseable host or port, or a
     non-positive timeout. It never indicates a problem with the service.
 
+    One case is raised after requests were sent: a session key that this
+    host's clock already reads as expired when it arrives. That takes a clock
+    well ahead of the service's, and a service that does not report the
+    seconds a key has left, so that its expiry time is read against this
+    host's clock. The key's mint was sent, and so was the EndImpersonation
+    that ends it at once; what needs correcting is the system clock.
+
     Example:
         >>> Memco(token=None)  # with no MEMCO_API_TOKEN set
         Traceback (most recent call last):
@@ -338,6 +345,7 @@ class MemcoSunsetError(MemcoPreconditionFailedError):
         message: str,
         debug_error_string: str | None,
         kind: SunsetKind,
+        metadata: Mapping[str, str] | None = None,
     ) -> None:
         """Initialise the error.
 
@@ -347,20 +355,24 @@ class MemcoSunsetError(MemcoPreconditionFailedError):
             debug_error_string: gRPC's internal diagnostic string, if available.
             kind: What the service said was blocked. Read from a structured
                 detail rather than inferred, so it is never a guess.
+            metadata: The detail the service attached, if any.
         """
-        super().__init__(code, message, debug_error_string)
+        super().__init__(code, message, debug_error_string, metadata)
         self.kind = kind
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Support pickling and copying.
 
-        The base implementation rebuilds with three arguments and would drop
-        :attr:`kind`, which this class requires.
+        The base implementation rebuilds without :attr:`kind`, which this class
+        requires.
 
         Returns:
             The callable and arguments that rebuild this exception.
         """
-        return (self.__class__, (self.code, self.message, self.debug_error_string, self.kind))
+        return (
+            self.__class__,
+            (self.code, self.message, self.debug_error_string, self.kind, dict(self.metadata)),
+        )
 
 
 class ResourceExhaustedKind(enum.Enum):
@@ -604,7 +616,7 @@ def from_rpc_error(err: grpc.RpcError) -> MemcoAPIError:
     if code is grpc.StatusCode.FAILED_PRECONDITION:
         reason, metadata = _memco_error_info(err) or ("", {})
         if reason in _SUNSET_REASONS:
-            return MemcoSunsetError(code, details or "", debug, _SUNSET_REASONS[reason])
+            return MemcoSunsetError(code, details or "", debug, _SUNSET_REASONS[reason], metadata)
         precondition = _PRECONDITION_REASONS.get(reason, MemcoPreconditionFailedError)
         return precondition(code, details or "", debug, metadata)
     return cls(code, details or "", debug)

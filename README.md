@@ -131,9 +131,6 @@ with Memco(client_id="...", client_secret="...") as client:
         result = session.search("how should a client authenticate against the memory API")
 ```
 
-Client credentials, administration and sessions acting for your users are in the
-Python SDK so far; the Go and Node.js SDKs follow.
-
 See [`python/README.md`](python/README.md) for the full guide and
 [`python/examples/`](python/examples/) for runnable programs.
 
@@ -153,6 +150,20 @@ for (const memory of result.memories) {
     console.log(insight.title, insight.updated)
   }
 }
+```
+
+To act for your own users, authenticate as an API client and open a session as
+one of them. Its calls carry a key acting as that user, which renews itself and
+is ended when the session closes:
+
+```typescript
+import { Memco } from '@memco/memcoai'
+
+await using client = await new Memco({ clientId: '...', clientSecret: '...' }).connect()
+await using session = await client.memory.withSession('coding', {
+  externalId: 'customer-42'
+})
+const result = await session.search('how should a client authenticate against the memory API')
 ```
 
 See [`nodejs/README.md`](nodejs/README.md) for the full guide and
@@ -185,6 +196,28 @@ for _, memory := range result.Memories {
 		fmt.Println(insight.Title, insight.Updated)
 	}
 }
+```
+
+To act for your own users, authenticate as an API client and open a session as
+one of them. Its calls carry a key acting as that user, which renews itself and
+is ended when the session closes:
+
+```go
+client, err := memcoai.NewClient(memcoai.Options{ClientID: "...", ClientSecret: "..."})
+if err != nil {
+	log.Fatal(err)
+}
+defer client.Close(ctx)
+if err := client.Connect(ctx); err != nil {
+	log.Fatal(err)
+}
+session, err := client.Memory.StartSession(ctx, "coding", memcoai.ExternalID("customer-42"))
+if err != nil {
+	log.Fatal(err)
+}
+defer session.Close(ctx)
+result, err := session.Search(ctx, "how should a client authenticate against the memory API",
+	memcoai.ScopedSearchParams{})
 ```
 
 See [`go/README.md`](go/README.md) for the full guide and

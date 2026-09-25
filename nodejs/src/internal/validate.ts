@@ -322,6 +322,75 @@ export function checkSources(
 }
 
 /**
+ * Materialise a collection of strings, refusing a single string in its place.
+ *
+ * @param values The strings supplied by the caller, if any. Consumed exactly
+ *   once, so a generator is safe here.
+ * @param field Field name, used verbatim in the error message.
+ * @returns The strings as an array, empty when none were given.
+ * @throws A {@link MemcoInvalidRequestError} if a bare string was passed, or
+ *   anything that cannot be iterated.
+ */
+export function checkStrings(
+  values: Iterable<string> | null | undefined,
+  field: string
+): string[] {
+  if (typeof values === 'string') {
+    // A string satisfies Iterable<string>, so the compiler does not catch
+    // this; walking it would send one entry per character.
+    throw reject(
+      `${field} must be a collection of strings, not a single string`
+    )
+  }
+  return iterated(values, `${field} must be a collection of strings`)
+}
+
+/**
+ * Validate the roles given to an external user, and materialise them.
+ *
+ * Which roles exist is the service's to say. That at least one is given is
+ * not: on the wire an empty list reads as "not given", so the service would see
+ * a new user with no roles, or an update that changes nothing, and could not
+ * tell the caller why.
+ *
+ * @param roles The roles supplied by the caller.
+ * @returns The roles as an array.
+ * @throws A {@link MemcoInvalidRequestError} if a bare string was passed, or no
+ *   role at all.
+ */
+export function checkRoles(
+  roles: Iterable<string> | null | undefined
+): string[] {
+  const materialised = checkStrings(roles, 'roles')
+  if (materialised.length === 0) {
+    throw reject('roles must name at least one role')
+  }
+  return materialised
+}
+
+/**
+ * Require a `Date` that names one instant, where one is given.
+ *
+ * An invalid `Date` names none, and a string is a guess at a format; neither
+ * can be sent as the seconds the wire carries.
+ *
+ * @param value The instant supplied by the caller, if any.
+ * @param field Field name, used verbatim in the error message.
+ * @throws A {@link MemcoInvalidRequestError} if it is not a valid `Date`.
+ */
+export function checkInstant(
+  value: Date | null | undefined,
+  field: string
+): void {
+  if (
+    value != null &&
+    !(value instanceof Date && !Number.isNaN(value.getTime()))
+  ) {
+    throw reject(`${field} must be a valid Date`)
+  }
+}
+
+/**
  * Reject a value longer than a cap the service reported.
  *
  * @param value The value supplied by the caller.

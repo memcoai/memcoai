@@ -24,10 +24,10 @@ func TestEveryFaultBecomesTheErrorThatSaysWhatHappened(t *testing.T) {
 		{&fault.Error{Code: codes.PermissionDenied, Detail: "d"}, &PermissionError{api(codes.PermissionDenied)}},
 		{&fault.Error{Code: codes.InvalidArgument, Detail: "d"}, &InvalidRequestError{api(codes.InvalidArgument)}},
 		{&fault.Error{Code: codes.NotFound, Detail: "d"}, &NotFoundError{api(codes.NotFound)}},
-		{&fault.Error{Code: codes.FailedPrecondition, Detail: "d"}, &PreconditionFailedError{api(codes.FailedPrecondition)}},
+		{&fault.Error{Code: codes.FailedPrecondition, Detail: "d"}, &PreconditionFailedError{APIError: api(codes.FailedPrecondition)}},
 		{
 			&fault.Error{Code: codes.FailedPrecondition, Detail: "d", Sunset: fault.SunsetAPIVersion},
-			&SunsetError{PreconditionFailedError{api(codes.FailedPrecondition)}, SunsetAPIVersion},
+			&SunsetError{PreconditionFailedError{APIError: api(codes.FailedPrecondition)}, SunsetAPIVersion},
 		},
 		{
 			&fault.Error{Code: codes.ResourceExhausted, Detail: "d", Exhaustion: fault.ExhaustionQuota},
@@ -36,8 +36,38 @@ func TestEveryFaultBecomesTheErrorThatSaysWhatHappened(t *testing.T) {
 		{&fault.Error{Code: codes.Unavailable, Detail: "d"}, &UnavailableError{api(codes.Unavailable)}},
 		{fault.Unhealthy("d"), &UnhealthyError{UnavailableError{api(codes.Unavailable)}}},
 		{&fault.Error{Code: codes.DeadlineExceeded, Detail: "d"}, &TimeoutError{api(codes.DeadlineExceeded)}},
+		{&fault.Error{Code: codes.AlreadyExists, Detail: "d"}, &AlreadyExistsError{api(codes.AlreadyExists)}},
+		{
+			&fault.Error{Code: codes.FailedPrecondition, Detail: "d", Reason: "NEWER_REASON", Metadata: map[string]string{"k": "v"}},
+			&PreconditionFailedError{APIError: api(codes.FailedPrecondition), Reason: "NEWER_REASON", Metadata: map[string]string{"k": "v"}},
+		},
+		{
+			&fault.Error{Code: codes.FailedPrecondition, Detail: "d", Reason: fault.ReasonUserAlreadyAssignedNetwork,
+				Metadata: map[string]string{"current_network_id": "network-a", "current_network_name": "Acme"}},
+			&UserAlreadyAssignedNetworkError{
+				PreconditionFailedError{APIError: api(codes.FailedPrecondition), Reason: fault.ReasonUserAlreadyAssignedNetwork,
+					Metadata: map[string]string{"current_network_id": "network-a", "current_network_name": "Acme"}},
+				"network-a", "Acme",
+			},
+		},
+		{
+			&fault.Error{Code: codes.FailedPrecondition, Detail: "d", Reason: fault.ReasonExternalUserNeedsCustomerNetwork,
+				Metadata: map[string]string{"required_network_scope": "customer"}},
+			&ExternalUserNeedsCustomerNetworkError{
+				PreconditionFailedError{APIError: api(codes.FailedPrecondition), Reason: fault.ReasonExternalUserNeedsCustomerNetwork,
+					Metadata: map[string]string{"required_network_scope": "customer"}},
+				"customer",
+			},
+		},
+		// A refusal whose detail the service left out still names itself.
+		{
+			&fault.Error{Code: codes.FailedPrecondition, Detail: "d", Reason: fault.ReasonUserAlreadyAssignedNetwork},
+			&UserAlreadyAssignedNetworkError{
+				PreconditionFailedError: PreconditionFailedError{APIError: api(codes.FailedPrecondition), Reason: fault.ReasonUserAlreadyAssignedNetwork},
+			},
+		},
 	}
-	for _, code := range []codes.Code{codes.OK, codes.Canceled, codes.Unknown, codes.AlreadyExists, codes.Aborted,
+	for _, code := range []codes.Code{codes.OK, codes.Canceled, codes.Unknown, codes.Aborted,
 		codes.OutOfRange, codes.Unimplemented, codes.Internal, codes.DataLoss} {
 		cases = append(cases, struct {
 			fault *fault.Error
@@ -90,6 +120,18 @@ func TestErrorsAsReachesEveryAncestor(t *testing.T) {
 	if errors.As(sunset, &unavailable) {
 		t.Error("a sunset is an unavailable error")
 	}
+
+	for _, reason := range []string{fault.ReasonUserAlreadyAssignedNetwork, fault.ReasonExternalUserNeedsCustomerNetwork} {
+		refused := public(&fault.Error{Code: codes.FailedPrecondition, Reason: reason})
+		expect[*PreconditionFailedError](t, refused)
+		expect[*APIError](t, refused)
+		expect[Error](t, refused)
+		var sunset *SunsetError
+		if errors.As(refused, &sunset) {
+			t.Errorf("%s is a sunset", reason)
+		}
+	}
+	expect[*APIError](t, public(&fault.Error{Code: codes.AlreadyExists}))
 
 	unhealthy := public(fault.Unhealthy("down"))
 	expect[*UnhealthyError](t, unhealthy)

@@ -1,10 +1,17 @@
 package memcoai
 
-import "context"
+import (
+	"context"
+
+	"github.com/memcoai/memcoai/go/internal/transport"
+)
 
 // Session is an open session in one domain. Every call made through it is
 // recorded under it, and supplies its domain. Open one with
-// [MemoryOperations.StartSession]; no call closes it.
+// [MemoryOperations.StartSession]. A session opened with [ExternalID] acts
+// for one of your users under a key of its own, which [Session.Close] ends;
+// any other session holds nothing, and stays usable. A Session is safe for
+// concurrent use.
 type Session struct {
 	// ID is the session's handle.
 	ID string
@@ -14,6 +21,9 @@ type Session struct {
 	ops          *MemoryOperations
 	catalog      []ToolDescriptor
 	catalogKnown bool
+	// key is what an impersonated session holds, and Close ends; nil for any
+	// other session.
+	key *transport.Renewing
 }
 
 // ScopedSearchParams narrow a search made in a session.
@@ -164,4 +174,35 @@ func (s *Session) RevertMemory(ctx context.Context, operationID string) (*Revert
 // Errors: as [MemoryOperations.ImportMemories].
 func (s *Session) ImportMemories(ctx context.Context, memories []ImportedMemory) (*ImportResult, error) {
 	return s.ops.ImportMemories(ctx, memories, ImportMemoriesParams{SessionID: s.ID})
+}
+
+// Close closes the session, ending the key it holds if it acts for one of
+// your users. Only a session opened with [ExternalID] holds anything: its
+// key, which is revoked here rather than left live until it expires. Every
+// later call through the session, its tools, or a memory it returned is then
+// refused locally with a [*ConfigError]. A call still in flight keeps the key
+// until it finishes, and the key is ended then.
+//
+// Ending the key is best effort, so Close returns nothing: if the service
+// cannot end it, a warning naming the key's id is logged, closing the client
+// tries again, and the key expires on its own regardless. After the client is
+// closed, Close does nothing.
+//
+// A session opened with [ExternalID] and dropped without Close still has its
+// key ended eventually: once the session, its tools and the memories it
+// returned are all unreachable, the client's next call ends the key. Close
+// ends it at once, which is what keeps the user under the service's cap on
+// live keys.
+//
+// A session opened without [ExternalID] holds nothing, so closing it changes
+// nothing and it stays usable. Closing more than once is safe.
+//
+// Parameters:
+//   - ctx: carries values to the call that ends the key. Its cancellation
+//     does not stop that call, which gets [Options.Timeout] instead: a key
+//     left live counts against its user's cap.
+func (s *Session) Close(ctx context.Context) {
+	if s.key != nil {
+		s.key.Close(ctx)
+	}
 }

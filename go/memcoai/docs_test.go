@@ -46,7 +46,7 @@ func documented(t *testing.T) (*doc.Package, map[string]bool) {
 }
 
 // exempt are methods whose meaning is fixed by an interface they satisfy.
-var exempt = []string{"Error", "Unwrap", "String", "Format", "LogValue"}
+var exempt = []string{"Error", "Unwrap", "String", "Format", "LogValue", "MarshalJSON", "MarshalXML"}
 
 func checkFunc(t *testing.T, name string, fn *doc.Func, examples map[string]bool, needExample bool) {
 	t.Helper()
@@ -85,8 +85,8 @@ func TestEveryExportedSymbolIsDocumented(t *testing.T) {
 	if strings.TrimSpace(pkg.Doc) == "" {
 		t.Error("the package has no doc comment")
 	}
-	withExamples := []string{"NewClient", "ReadProvenance", "SetLevel", "Render", "Briefing"}
-	exampleTypes := []string{"Client", "MemoryOperations", "Session", "Toolset", "Tool"}
+	withExamples := []string{"NewClient", "ReadProvenance", "SetLevel", "Render", "Briefing", "ExternalID"}
+	exampleTypes := []string{"Client", "MemoryOperations", "Session", "Toolset", "Tool", "NetworkOperations", "UserOperations"}
 	for _, fn := range pkg.Funcs {
 		checkFunc(t, fn.Name, fn, examples, slices.Contains(withExamples, fn.Name))
 	}

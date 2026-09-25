@@ -19,7 +19,6 @@ import {
   type ServiceError
 } from '@grpc/grpc-js'
 
-import { authInterceptor } from './auth.js'
 import type { ClientConfig } from './config.js'
 import * as pb from './gen.js'
 import { packageRoot } from './resources.js'
@@ -202,26 +201,35 @@ const HealthClientConstructor = makeGenericClientConstructor(
   ): HealthClient
 }
 
-/** One channel, and the two clients that speak over it. */
+/**
+ * One channel, and the clients that speak over it.
+ *
+ * None of them carries a credential of its own: the client passes one with
+ * each call, so a call made on these directly carries none at all.
+ */
 export interface Transport {
-  /** The memory service, carrying the credential on every call. */
+  /** The memory service. */
   memory: pb.MemoryServiceClient
-  /** The health service, which the credential is withheld from. */
+  /** The administration service: networks, users, and impersonation. */
+  admin: pb.admin.AdminServiceClient
+  /** The token exchange, which takes no credential: its request is one. */
+  tokens: pb.auth.TokenServiceClient
+  /** The health service, which takes no credential either. */
   health: HealthClient
   /**
    * Close the shared channel.
    *
-   * Calling `close()` on either client does the same thing, since they hold the
+   * Calling `close()` on any client does the same thing, since they hold the
    * one channel between them; this is the spelling that says so.
    */
   close(): void
 }
 
 /**
- * Open a channel with the credential interceptor attached.
+ * Open a channel, and the clients that share it.
  *
- * One channel serves both clients, so the health probe proves the connection
- * the memory calls then use rather than a sibling of it.
+ * One channel serves every client, so the health probe proves the connection
+ * the other calls then use rather than a sibling of it.
  *
  * @param config Resolved client settings.
  * @returns The clients, and the way to close what they share.
@@ -233,19 +241,14 @@ export function buildTransport(config: ClientConfig): Transport {
       ChannelCredentials.createSsl()
     : ChannelCredentials.createInsecure()
   const channel = new Channel(config.target, credentials, CHANNEL_OPTIONS)
-  const options: ClientOptions = {
-    channelOverride: channel,
-    // Client-level, which grpc-js lets an `interceptors` key in a call's own
-    // options REPLACE rather than compose with. So nothing that builds
-    // `CallOptions` for a call may ever spread a caller-supplied object into
-    // them: the credential would silently come off that one call.
-    interceptors: [authInterceptor(config.token)]
-  }
+  const options: ClientOptions = { channelOverride: channel }
   return {
-    // `config.target` and `credentials` are ignored by both constructors —
+    // `config.target` and `credentials` are ignored by every constructor —
     // `channelOverride` short-circuits them — and are passed because the
     // signatures require them, not because a second channel is configured here.
     memory: new pb.MemoryServiceClient(config.target, credentials, options),
+    admin: new pb.admin.AdminServiceClient(config.target, credentials, options),
+    tokens: new pb.auth.TokenServiceClient(config.target, credentials, options),
     health: new HealthClientConstructor(config.target, credentials, options),
     close: () => {
       channel.close()
