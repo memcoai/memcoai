@@ -27,6 +27,7 @@ from typing import Any
 import grpc
 import pytest
 
+import memcoai
 from memcoai import AsyncMemco, Memco, _auth, errors, types
 from memcoai.admin.v1 import admin_pb2 as admin_pb
 from memcoai.memory.v1 import memory_pb2 as pb
@@ -286,17 +287,22 @@ def test_a_key_never_reaches_a_log(
     assert f"impersonation-{XID}-" not in caplog.text
 
 
+SDK_DIRECTORY = os.path.dirname(memcoai.__file__) + os.sep
+
+
 def frames_holding(error: BaseException, secret: str) -> list[tuple[str, str]]:
     """The locals, by SDK frame, of the error's own traceback that show the secret.
 
     Those frames are the other thing an error tracker capturing locals ships,
     and it shows each local as its repr. The test's own frame is left out: it
-    holds whatever the test itself put there.
+    holds whatever the test itself put there. SDK frames are told apart by the
+    package's own directory, not by a path segment named after it: a checkout
+    can sit under a directory called memcoai too, as CI's does.
     """
     return [
         (frame.f_code.co_name, name)
         for frame, _ in traceback.walk_tb(error.__traceback__)
-        if f"{os.sep}memcoai{os.sep}" in frame.f_code.co_filename
+        if frame.f_code.co_filename.startswith(SDK_DIRECTORY)
         for name, value in frame.f_locals.items()
         if secret in repr(value)
     ]
