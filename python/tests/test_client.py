@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import traceback
 
 import grpc
 import pytest
@@ -10,7 +11,6 @@ from grpc_health.v1 import health_pb2
 
 import memcoai
 from memcoai import Memco, errors, types
-from memcoai._auth import _merged
 from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
@@ -35,11 +35,15 @@ def test_auth_metadata_is_sent_on_every_method(client: Memco, harness: Harness):
         assert sent["authorization"] == f"Bearer {TOKEN}"
 
 
-def test_caller_metadata_cannot_displace_the_credential(client: Memco, harness: Harness):
+def test_each_call_carries_exactly_one_credential(client: Memco, harness: Harness):
     # gRPC allows repeated keys and servers disagree about which wins, so a
-    # caller-supplied credential must be dropped rather than sent alongside.
-    merged = _merged([("authorization", "Bearer ATTACKER"), ("x-other", "keep")], "real-token")
-    assert merged == [("x-other", "keep"), ("authorization", "Bearer real-token")]
+    # second authorization entry would leave the server to pick the credential.
+    # Counted off the metadata as received, since a dict collapses repeats.
+    client.memory.list_domains()
+    client.memory.start_session("coding")  # StartSession, then ListTools
+    assert len(harness.memory.raw_metadata) == 3
+    for sent in harness.memory.raw_metadata:
+        assert [value for key, value in sent if key == "authorization"] == [f"Bearer {TOKEN}"]
 
 
 def test_the_credential_is_withheld_from_the_health_probe(harness: Harness):
@@ -52,6 +56,29 @@ def test_the_credential_is_withheld_from_the_health_probe(harness: Harness):
 
 
 # --- health gate ---------------------------------------------------------
+
+
+def test_a_rejected_token_is_left_in_no_frame(harness: Harness):
+    # An error tracker capturing locals ships every frame of the traceback, and
+    # the constructor reaches the service while its token argument is in scope.
+    harness.memory.error = (grpc.StatusCode.UNAUTHENTICATED, "invalid token")
+    with pytest.raises(errors.MemcoAuthenticationError) as caught:
+        Memco(token=TOKEN, host=harness.address, tls=False)
+    held = [
+        (frame.f_code.co_name, name)
+        for frame, _ in traceback.walk_tb(caught.value.__traceback__)
+        for name, value in frame.f_locals.items()
+        if TOKEN in repr(value)
+    ]
+    assert held == []
+
+
+def test_memco_api_tls_false_dials_a_plaintext_server(harness: Harness):
+    # The harness serves plaintext, so only a client that took the variable
+    # gets past the health check without a tls= argument.
+    env = {"MEMCO_API_TOKEN": TOKEN, "MEMCO_API_TLS": "false"}
+    with Memco(host=harness.address, env=env):
+        pass
 
 
 def test_construction_checks_health_with_the_empty_service_name(harness: Harness):

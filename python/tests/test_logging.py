@@ -40,6 +40,40 @@ def test_a_client_reports_connecting_and_closing_at_the_default_level(harness, c
     assert "test-token" not in caplog.text
 
 
+def tls_off_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.levelno == logging.WARNING and "TLS is off" in r.message]
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [{"tls": False}, {"env": {"MEMCO_API_TOKEN": "test-token", "MEMCO_API_TLS": "false"}}],
+    ids=["argument", "environment"],
+)
+def test_a_client_without_tls_says_so_when_it_is_built(harness, caplog, setting):
+    # The credential crosses the wire in plaintext, so it is said at WARNING,
+    # which shows by default, whichever way TLS was turned off.
+    kwargs = {"token": "test-token", **setting} if "tls" in setting else setting
+    with caplog.at_level(logging.INFO, logger="memcoai"), Memco(host=harness.address, **kwargs):
+        pass
+    [record] = tls_off_records(caplog)
+    assert harness.address in record.message
+    assert "test-token" not in caplog.text
+
+
+async def test_an_async_client_without_tls_says_so_when_it_is_built(harness, caplog):
+    with caplog.at_level(logging.INFO, logger="memcoai"):
+        AsyncMemco(token="test-token", host=harness.address, tls=False)
+    assert len(tls_off_records(caplog)) == 1
+
+
+def test_a_client_with_tls_says_nothing_about_it(caplog):
+    # The async client is built without connecting, so nothing needs to listen
+    # at the address: what TLS it would dial with is settled at construction.
+    with caplog.at_level(logging.INFO, logger="memcoai"):
+        AsyncMemco(token="test-token", host="localhost:1")
+    assert tls_off_records(caplog) == []
+
+
 # --- MEMCO_LOG -----------------------------------------------------------
 
 

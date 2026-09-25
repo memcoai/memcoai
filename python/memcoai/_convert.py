@@ -10,29 +10,47 @@ Two conventions apply throughout:
   un-minted operation id, a missing notice, reference or advice.
 * An empty :class:`~memcoai.types.Instructions` part stays an empty string,
   because the contract documents "nothing to say" as a real state there.
+* An instant arrives as Unix seconds and becomes an aware UTC
+  :class:`~datetime.datetime`, with zero -- no instant at all -- as ``None``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
+import grpc
+
+from memcoai.admin.v1 import admin_pb2 as _admin_pb
 from memcoai.memory.v1 import memory_pb2 as _pb
 
+from .errors import MemcoInternalError
 from .types import (
     AsyncMemory,
+    CreatedKey,
+    DeletedNetwork,
     DomainEntry,
     DomainList,
+    ExternalUser,
+    ExternalUserKey,
+    ExternalUserList,
     FeedbackEntry,
     FeedbackResult,
+    Group,
+    GroupList,
     ImportOutcome,
     ImportResult,
     ImportStatus,
     Insight,
     Instructions,
     Limits,
+    Member,
+    MemberList,
+    MemberPlacement,
     Memory,
+    Network,
+    NetworkList,
     RevertOutcome,
     RevertResult,
     SearchResult,
@@ -46,10 +64,21 @@ if TYPE_CHECKING:  # pragma: no cover - avoids a cycle with operations.py
 __all__ = [
     "to_async_memory",
     "to_async_search_result",
+    "to_created_key",
+    "to_deleted_network",
     "to_domain_list",
+    "to_external_user",
+    "to_external_user_keys",
+    "to_external_user_list",
     "to_feedback_result",
+    "to_group_list",
+    "to_group_members",
     "to_import_result",
+    "to_member_list",
+    "to_member_placement",
     "to_memory",
+    "to_network",
+    "to_network_list",
     "to_revert_result",
     "to_search_result",
     "to_session",
@@ -91,6 +120,20 @@ def _to_date(value: str) -> date | None:
         return datetime.strptime(value, "%Y-%m-%d").date()  # noqa: DTZ007
     except ValueError:
         return None
+
+
+def _to_instant(seconds: int) -> datetime | None:
+    """Convert Unix seconds into an aware UTC datetime.
+
+    Args:
+        seconds: The instant as it arrived on the wire.
+
+    Returns:
+        The instant in UTC, or ``None`` for zero, which is how the wire says
+        there is none. Aware, so comparing it with a local time cannot silently
+        be off by the local offset.
+    """
+    return datetime.fromtimestamp(seconds, tz=timezone.utc) if seconds else None
 
 
 def _to_instructions(message: _pb.Instructions) -> Instructions:
@@ -479,3 +522,228 @@ def to_import_result(
         # same; the first is as good as any and there is always one.
         instructions=_to_instructions(answered[0][1].instructions),
     )
+
+
+def to_network(message: _admin_pb.Network) -> Network:
+    """Convert a ``Network`` message.
+
+    Args:
+        message: The generated message.
+
+    Returns:
+        The immutable equivalent, with an empty parent, scope or owner mapped
+        to ``None``: each is absent rather than blank.
+    """
+    return Network(
+        id=message.id,
+        name=message.name,
+        parent_id=_optional(message.parent_id),
+        domain=message.domain,
+        region=message.region,
+        scope=_optional(message.scope),
+        owner=_optional(message.owner),
+        description=message.description,
+    )
+
+
+def to_network_list(message: _admin_pb.ListNetworksResponse) -> NetworkList:
+    """Convert a ``ListNetworksResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return NetworkList(
+        networks=tuple(to_network(network) for network in message.networks),
+        total_count=message.total_count,
+    )
+
+
+def to_deleted_network(message: _admin_pb.DeleteNetworkResponse) -> DeletedNetwork:
+    """Convert a ``DeleteNetworkResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The immutable equivalent. The removed counts arrive as a map, whose
+        order the wire does not keep, so they are sorted by table to read the
+        same way every time.
+    """
+    return DeletedNetwork(id=message.id, removed=tuple(sorted(message.removed.items())))
+
+
+def _to_member(message: _admin_pb.Member) -> Member:
+    """Convert a ``Member`` message.
+
+    Args:
+        message: The generated message.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return Member(user_id=message.user_id, email=message.email, name=message.name)
+
+
+def to_member_list(message: _admin_pb.ListNetworkMembersResponse) -> MemberList:
+    """Convert a ``ListNetworkMembersResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return MemberList(
+        members=tuple(_to_member(member) for member in message.members),
+        total_count=message.total_count,
+    )
+
+
+def to_member_placement(message: _admin_pb.AddNetworkMemberResponse) -> MemberPlacement:
+    """Convert an ``AddNetworkMemberResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The immutable equivalent, with an empty ``moved_from`` mapped to
+        ``None``: nobody was moved.
+    """
+    return MemberPlacement(
+        network_id=message.id,
+        user_id=message.user_id,
+        moved_from=_optional(message.moved_from),
+    )
+
+
+def to_group_list(message: _admin_pb.ListGroupsResponse) -> GroupList:
+    """Convert a ``ListGroupsResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The immutable equivalent, with an empty network mapped to ``None``: the
+        group is assigned to none.
+    """
+    return GroupList(
+        groups=tuple(
+            Group(
+                id=group.id,
+                name=group.name,
+                memory_network_id=_optional(group.memory_network_id),
+                member_count=group.member_count,
+            )
+            for group in message.groups
+        ),
+        total_count=message.total_count,
+    )
+
+
+def to_group_members(message: _admin_pb.ListGroupMembersResponse) -> tuple[Member, ...]:
+    """Convert a ``ListGroupMembersResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The group's members.
+    """
+    return tuple(_to_member(member) for member in message.members)
+
+
+def to_external_user(message: _admin_pb.ExternalUser) -> ExternalUser:
+    """Convert an ``ExternalUser`` message.
+
+    Args:
+        message: The generated message.
+
+    Returns:
+        The immutable equivalent, with the roles as a tuple.
+    """
+    return ExternalUser(
+        id=message.id,
+        external_id=message.external_id,
+        name=message.name,
+        email=message.email,
+        roles=tuple(message.roles),
+        active=message.active,
+    )
+
+
+def to_external_user_list(message: _admin_pb.ListExternalUsersResponse) -> ExternalUserList:
+    """Convert a ``ListExternalUsersResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The immutable equivalent.
+    """
+    return ExternalUserList(
+        external_users=tuple(to_external_user(user) for user in message.external_users),
+        total_count=message.total_count,
+    )
+
+
+def _to_external_user_key(message: _admin_pb.ExternalUserKey) -> ExternalUserKey:
+    """Convert an ``ExternalUserKey`` message.
+
+    Args:
+        message: The generated message.
+
+    Returns:
+        The immutable equivalent, with the expiry as an aware UTC datetime.
+    """
+    return ExternalUserKey(
+        id=message.id,
+        name=message.name,
+        value_prefix=message.value_prefix,
+        roles=tuple(message.roles),
+        scopes=tuple(message.scopes),
+        valid_until=_to_instant(message.valid_until),
+    )
+
+
+def to_external_user_keys(
+    message: _admin_pb.ListExternalUserKeysResponse,
+) -> tuple[ExternalUserKey, ...]:
+    """Convert a ``ListExternalUserKeysResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The user's keys, described without their values.
+    """
+    return tuple(_to_external_user_key(key) for key in message.keys)
+
+
+def to_created_key(message: _admin_pb.CreateExternalUserKeyResponse) -> CreatedKey:
+    """Convert a ``CreateExternalUserKeyResponse``.
+
+    Args:
+        message: The generated response.
+
+    Returns:
+        The key's description, and its value.
+
+    Raises:
+        MemcoInternalError: If the response carries no key. A singular message
+            field has no presence at the accessor, so converting it anyway
+            would describe a key with every field empty, as if it were real.
+    """
+    if not message.HasField("key"):
+        # The value is left out of the message: it is a working credential,
+        # and an error's text is exactly what reaches logs. It is cleared from
+        # the response too, which this frame holds as the error is raised.
+        message.ClearField("value")
+        raise MemcoInternalError(
+            grpc.StatusCode.INTERNAL,
+            "the service returned a key value but no key; list the user's keys to "
+            "see whether one was created",
+        )
+    return CreatedKey(key=_to_external_user_key(message.key), value=message.value)

@@ -8,9 +8,16 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Set as AbstractSet
+from typing import Any
 
 import memcoai as package
-from memcoai import AsyncMemco, Memco, errors, operations, types
+from memcoai import AsyncMemco, Memco, administration, errors, operations, types
+from memcoai.administration import (
+    AsyncNetworkOperations,
+    AsyncUserOperations,
+    NetworkOperations,
+    UserOperations,
+)
 from memcoai.operations import (
     AsyncMemoryOperations,
     AsyncSession,
@@ -21,20 +28,25 @@ from memcoai.types import AsyncMemory, Memory
 
 from .fake_server import Harness
 
-# Namespaces the client exposes, paired sync-to-async. A second service added
-# here is automatically held to the same parity rules.
-NAMESPACES = [(MemoryOperations, AsyncMemoryOperations)]
+# Namespaces the client exposes, by the attribute each is reached as, paired
+# sync-to-async. Written out rather than derived from the class name, which
+# stopped naming the attribute once `networks` and `users` arrived. A service
+# added here is automatically held to the same parity rules.
+NAMESPACES: dict[str, tuple[type[Any], type[Any]]] = {
+    "memory": (MemoryOperations, AsyncMemoryOperations),
+    "networks": (NetworkOperations, AsyncNetworkOperations),
+    "users": (UserOperations, AsyncUserOperations),
+}
 
-# Sessions are not reached as a client attribute, so the tests that derive one
-# from the class name run over NAMESPACES alone. Every other parity rule
-# applies to both.
+# Sessions are not reached as a client attribute, so the tests that look one
+# up run over NAMESPACES alone. Every other parity rule applies to both.
 SESSIONS = [(Session, AsyncSession)]
 
 # Neither a client attribute nor named after a namespace, for the same reason
 # sessions are held apart -- but feedback() still has to stay in step.
 MEMORIES = [(Memory, AsyncMemory)]
 
-PAIRS = NAMESPACES + SESSIONS + MEMORIES
+PAIRS: list[tuple[type[Any], type[Any]]] = [*NAMESPACES.values(), *SESSIONS, *MEMORIES]
 
 CLIENT_SKIP = {"connect"}  # async-only: the sync client verifies in its constructor
 
@@ -81,8 +93,7 @@ def test_every_namespace_is_exposed_on_both_clients(harness: Harness):
     sync = Memco(token="t", host=harness.address, tls=False)
     asynchronous = AsyncMemco(token="t", host="localhost:1", tls=False)
     try:
-        for sync_ns, async_ns in NAMESPACES:
-            attribute = sync_ns.__name__.replace("Operations", "").lower()
+        for attribute, (sync_ns, async_ns) in NAMESPACES.items():
             assert isinstance(getattr(sync, attribute), sync_ns)
             assert isinstance(getattr(asynchronous, attribute), async_ns)
     finally:
@@ -124,11 +135,11 @@ def test_every_operation_is_documented_with_an_example():
 
 
 def test_no_public_module_documents_a_flat_call():
-    # The operations moved onto client.memory. Any docstring anywhere in the
-    # public surface that still shows client.<operation>( is a copy-pasteable
+    # The operations live on the namespaces. Any docstring anywhere in the
+    # public surface that shows client.<operation>( is a copy-pasteable
     # AttributeError, and every one of these modules is published by Sphinx.
-    names = public_methods(MemoryOperations)
-    for module in (package, errors, types, operations):
+    names = set().union(*(public_methods(sync_ns) for sync_ns, _ in NAMESPACES.values()))
+    for module in (package, administration, errors, types, operations):
         source = inspect.getsource(module)
         for number, line in enumerate(source.splitlines(), 1):
             for operation in names:
@@ -142,8 +153,7 @@ def test_examples_use_the_namespaced_call_form():
     # The operations moved onto client.memory; their examples were written when
     # they hung off the client directly. A copy-pasted flat call is an
     # AttributeError, so the examples must follow the code.
-    for sync_ns, async_ns in NAMESPACES:
-        attribute = sync_ns.__name__.replace("Operations", "").replace("Async", "").lower()
+    for attribute, (sync_ns, async_ns) in NAMESPACES.items():
         for cls in (sync_ns, async_ns):
             for name in sorted(public_methods(cls)):
                 doc = inspect.getdoc(getattr(cls, name)) or ""
@@ -158,9 +168,8 @@ def test_examples_use_the_namespaced_call_form():
 def test_revert_takes_the_name_the_write_result_carries():
     # WriteResult.operation_id feeds straight into revert_memory, so the
     # argument must be callable by that name.
-    for sync_ns, async_ns in NAMESPACES:
-        for cls in (sync_ns, async_ns):
-            assert "operation_id" in inspect.signature(cls.revert_memory).parameters
+    for cls in NAMESPACES["memory"]:
+        assert "operation_id" in inspect.signature(cls.revert_memory).parameters
 
 
 def test_the_scope_covers_every_operation_that_takes_a_session():

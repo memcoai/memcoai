@@ -32,6 +32,15 @@ LEGACY_TOKEN_ENV = "MEMCO_API_KEY"  # noqa: S105 - the variable name, not a cred
 HOST_ENV = "MEMCO_API_HOST"
 """Environment variable overriding :data:`DEFAULT_HOST`."""
 
+TLS_ENV = "MEMCO_API_TLS"
+"""Environment variable turning TLS off with ``false``, for a plaintext endpoint."""
+
+CLIENT_ID_ENV = "MEMCO_CLIENT_ID"
+"""Environment variable holding an API client's id, read with :data:`CLIENT_SECRET_ENV`."""
+
+CLIENT_SECRET_ENV = "MEMCO_CLIENT_SECRET"  # noqa: S105 - the variable name, not a credential
+"""Environment variable holding an API client's secret, read with :data:`CLIENT_ID_ENV`."""
+
 
 @dataclass(frozen=True, slots=True)
 class ClientConfig:
@@ -43,11 +52,21 @@ class ClientConfig:
             account; the service accepts both in the same header. Excluded from
             ``repr`` so it cannot reach a log or a crash report: error trackers
             such as Sentry capture local variables by default, and this object is
-            live while the channel is being dialled.
+            live while the channel is being dialled. Empty when the client holds
+            API-client credentials instead, since its token is then issued by
+            the service rather than configured.
         host: Hostname of the service, without a port.
         port: TCP port of the service.
         tls: Whether to dial over TLS using the system trust store.
         timeout: Default per-call deadline in seconds.
+        client_id: The API client's id, or ``None`` when the client holds a
+            token instead.
+        client_secret: The API client's secret, exchanged with
+            :attr:`client_id` for each token the client is issued. Excluded
+            from ``repr`` for the same reason as :attr:`token`: this object is
+            live while the exchange is in flight.
+        token_lifetime: The lifetime in seconds to ask for on each issued
+            token, or ``None`` for the service's default.
     """
 
     token: str = field(repr=False)
@@ -55,6 +74,9 @@ class ClientConfig:
     port: int
     tls: bool
     timeout: float
+    client_id: str | None = None
+    client_secret: str | None = field(default=None, repr=False)
+    token_lifetime: int | None = None
 
     @property
     def target(self) -> str:
@@ -136,6 +158,70 @@ def _resolve_token(token: str | None, env: Mapping[str, str]) -> str:
     raise MemcoConfigError(f"no API token: pass token=... or set {TOKEN_ENV}")
 
 
+def _resolve_client(
+    token: str | None,
+    client_id: str | None,
+    client_secret: str | None,
+    env: Mapping[str, str],
+) -> tuple[str, str] | None:
+    """Pick the API client's credentials from the arguments or the environment.
+
+    Consulted before the token, because the pair wins over a token in the
+    environment: CI exports both, the token for the memory suite and the pair
+    for the administration one, and a client given no credential of its own is
+    the one that needs the pair. An explicit ``token`` argument is the caller
+    naming its credential, so it skips the environment's pair entirely.
+
+    Args:
+        token: Explicit token argument, or ``None``.
+        client_id: Explicit client id argument, or ``None``.
+        client_secret: Explicit client secret argument, or ``None``.
+        env: Environment mapping to read from.
+
+    Returns:
+        The whitespace-stripped id and secret, or ``None`` when the client is
+        to authenticate with a token instead.
+
+    Raises:
+        MemcoConfigError: If a token and client credentials are both passed,
+            if only half of the pair is available, or if an argument is blank.
+    """
+    if client_id is not None or client_secret is not None:
+        if token is not None:
+            # Two credentials of different kinds: sending either would be a
+            # guess at which one the caller meant.
+            raise MemcoConfigError(
+                "pass either token=... or client_id=... with client_secret=..., not both"
+            )
+        if client_id is None or client_secret is None:
+            missing = "client_id" if client_id is None else "client_secret"
+            raise MemcoConfigError(
+                f"client credentials need both client_id and client_secret; {missing} is missing"
+            )
+        for name, value in (("client_id", client_id), ("client_secret", client_secret)):
+            if not value.strip():
+                raise MemcoConfigError(f"the {name} passed to the client is blank")
+        _log.debug("client credentials taken from the client_id and client_secret arguments")
+        return client_id.strip(), client_secret.strip()
+    if token is not None:
+        return None
+
+    # Blank reads as unset, as it does for the token: it is what an unset CI
+    # secret expands to. Half a pair is still refused, even with a token beside
+    # it, because a deployment missing one of its two secrets must fail loudly
+    # rather than quietly run as something else.
+    from_env = {name: env.get(name, "").strip() for name in (CLIENT_ID_ENV, CLIENT_SECRET_ENV)}
+    unset = [name for name, value in from_env.items() if not value]
+    if len(unset) == len(from_env):
+        return None
+    if unset:
+        raise MemcoConfigError(
+            f"{CLIENT_ID_ENV} and {CLIENT_SECRET_ENV} must be set together; {unset[0]} is not"
+        )
+    _log.debug("client credentials taken from %s and %s", CLIENT_ID_ENV, CLIENT_SECRET_ENV)
+    return from_env[CLIENT_ID_ENV], from_env[CLIENT_SECRET_ENV]
+
+
 def _port(text: str, host: str) -> int:
     """Parse and range-check a port.
 
@@ -209,11 +295,39 @@ def _split_host_port(host: str) -> tuple[str, int]:
     return name, _port(port_text, host)
 
 
+def _resolve_tls(tls: bool | None, env: Mapping[str, str]) -> bool:
+    """Decide whether to dial over TLS, from the argument or the environment.
+
+    Args:
+        tls: The caller's choice, or ``None`` to read the environment.
+        env: Environment mapping to read from.
+
+    Returns:
+        Whether to dial over TLS: the argument if given, else what
+        :data:`TLS_ENV` says, else ``True``.
+
+    Raises:
+        MemcoConfigError: If :data:`TLS_ENV` holds anything but ``true`` or
+            ``false``. Whether traffic is encrypted is not guessed from a typo.
+    """
+    if tls is not None:
+        return tls
+    value = env.get(TLS_ENV, "").strip().lower()
+    if not value:
+        return True
+    if value not in ("true", "false"):
+        raise MemcoConfigError(f"{TLS_ENV} must be true or false, got {value!r}")
+    return value == "true"
+
+
 def resolve(
     token: str | None = None,
     host: str | None = None,
     *,
-    tls: bool = True,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    token_lifetime: int | None = None,
+    tls: bool | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     env: Mapping[str, str] | None = None,
 ) -> ClientConfig:
@@ -222,17 +336,33 @@ def resolve(
     Arguments always win over the environment, which always wins over the
     built-in defaults.
 
+    The credential is either a token or an API client's id and secret. With no
+    credential argument, a complete ``MEMCO_CLIENT_ID`` and
+    ``MEMCO_CLIENT_SECRET`` pair wins over ``MEMCO_API_TOKEN``; a ``token``
+    argument ignores the pair in the environment.
+
     Args:
-        token: Credential to authenticate with. When omitted, ``MEMCO_API_TOKEN``
-            is used, falling back to the deprecated ``MEMCO_API_KEY`` with a
+        token: Credential to authenticate with. When omitted, and the
+            environment holds no client credentials, ``MEMCO_API_TOKEN`` is
+            used, falling back to the deprecated ``MEMCO_API_KEY`` with a
             :class:`DeprecationWarning`.
         host: Service endpoint, optionally including a port such as
             ``localhost:50051`` or ``[2001:db8::1]:50051``. When omitted,
             ``MEMCO_API_HOST`` is used, falling back to :data:`DEFAULT_HOST`. A
             host without a port gets :data:`DEFAULT_PORT`. A blank value is
             rejected rather than treated as absent.
+        client_id: An API client's id, passed with ``client_secret`` instead of
+            a token. When both are omitted, ``MEMCO_CLIENT_ID`` and
+            ``MEMCO_CLIENT_SECRET`` are used if both are set.
+        client_secret: The API client's secret, passed with ``client_id``.
+        token_lifetime: Lifetime in seconds to ask for on each token issued for
+            the client credentials. ``None`` takes the service's default. The
+            service owns the maximum, so a value above it is refused there,
+            not here.
         tls: Whether to dial over TLS with the system trust store. Set to
             ``False`` only for a plaintext endpoint, such as a local server.
+            When omitted, ``MEMCO_API_TLS`` decides -- ``true`` or ``false`` --
+            falling back to ``True``.
         timeout: Default per-call deadline in seconds.
         env: Environment mapping to read from. Defaults to :data:`os.environ`;
             supplying one is mainly useful in tests.
@@ -241,8 +371,12 @@ def resolve(
         The resolved configuration.
 
     Raises:
-        MemcoConfigError: If no credential is available, if the host is blank or
-            carries an invalid port, or if ``timeout`` is not positive.
+        MemcoConfigError: If no credential is available, if a token is passed
+            beside client credentials, if only half of the client pair is
+            available or a value is blank, if ``token_lifetime`` is given
+            without client credentials or is not positive, if the host is blank
+            or carries an invalid port, if ``MEMCO_API_TLS`` is neither
+            ``true`` nor ``false``, or if ``timeout`` is not positive.
 
     Example:
         >>> resolve(token="sk-...", host="localhost:50051", tls=False).target
@@ -253,7 +387,17 @@ def resolve(
     if timeout <= 0:
         raise MemcoConfigError(f"timeout must be positive, got {timeout!r}")
 
-    resolved_token = _resolve_token(token, environment)
+    client = _resolve_client(token, client_id, client_secret, environment)
+    if client is None:
+        resolved_token = _resolve_token(token, environment)
+        if token_lifetime is not None:
+            # Only an issued token has a lifetime to ask for; accepting one
+            # beside a static token would silently ignore it.
+            raise MemcoConfigError("token_lifetime applies only to client credentials, not a token")
+    else:
+        resolved_token = ""
+        if token_lifetime is not None and token_lifetime <= 0:
+            raise MemcoConfigError(f"token_lifetime must be positive, got {token_lifetime!r}")
 
     # A blank argument is a caller bug, not a request for the default: it is
     # what `os.environ.get("MY_HOST", "")` and an unset CI variable both
@@ -266,13 +410,25 @@ def resolve(
     from_env = environment.get(HOST_ENV, "").strip()
     resolved_host = (host or from_env or DEFAULT_HOST).strip()
     name, port = _split_host_port(resolved_host)
+    resolved_tls = _resolve_tls(tls, environment)
 
-    config = ClientConfig(token=resolved_token, host=name, port=port, tls=tls, timeout=timeout)
+    config = ClientConfig(
+        token=resolved_token,
+        host=name,
+        port=port,
+        tls=resolved_tls,
+        timeout=timeout,
+        client_id=client[0] if client else None,
+        client_secret=client[1] if client else None,
+        token_lifetime=token_lifetime,
+    )
+    tls_from_env = tls is None and bool(environment.get(TLS_ENV, "").strip())
     _log.debug(
-        "endpoint %s tls=%s (host from %s)",
+        "endpoint %s tls=%s (host from %s, tls from %s)",
         config.target,
-        tls,
+        resolved_tls,
         "the host argument" if host else HOST_ENV if from_env else "the default",
+        "the tls argument" if tls is not None else TLS_ENV if tls_from_env else "the default",
     )
     return config
 

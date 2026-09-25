@@ -22,21 +22,24 @@ import re
 import pytest
 
 from memcoai import AsyncMemco
+from memcoai.administration import AsyncNetworkOperations, AsyncUserOperations
 from memcoai.agent import AsyncToolset
 from memcoai.operations import AsyncMemoryOperations, AsyncSession
 from memcoai.types import AsyncMemory
 
 PACKAGE = pathlib.Path(__file__).parent.parent / "memcoai"
 
-# The generated client is exported from the server repository and rewritten on
-# every export, so its docstrings are not this repository's to hold to anything.
-GENERATED = "memory"
+# The generated clients are exported from the server repository and rewritten on
+# every export, so their docstrings are not this repository's to hold to anything.
+GENERATED = {"memory", "admin", "auth"}
 
 # The name an example binds a receiver to, and the async class it stands for.
 # A receiver missing from here belongs to somebody else's SDK and is skipped.
 RECEIVERS = {
     "client": AsyncMemco,
     "client.memory": AsyncMemoryOperations,
+    "client.networks": AsyncNetworkOperations,
+    "client.users": AsyncUserOperations,
     "session": AsyncSession,
     "toolset": AsyncToolset,
     "memory": AsyncMemory,
@@ -49,7 +52,7 @@ def docstrings() -> list[tuple[str, str]]:
     """Every docstring the reference renders, paired with where it came from."""
     found = []
     for path in sorted(PACKAGE.rglob("*.py")):
-        if GENERATED in path.relative_to(PACKAGE).parts:
+        if GENERATED & set(path.relative_to(PACKAGE).parts):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

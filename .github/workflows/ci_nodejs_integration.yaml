@@ -50,12 +50,15 @@ jobs:
     concurrency:
       group: memco-system-test-nodejs
       cancel-in-progress: false
-    # No `environment:`. MEMCO_API_TOKEN is a repository secret, so an
-    # environment is not what makes it reachable, and declaring one would
-    # subject this job to that environment's protection rules: required
-    # reviewers would park every pull request awaiting approval, and a
-    # deployment-branch policy would fail them outright, since a pull request's
-    # ref is refs/pull/N/merge and matches no branch policy.
+    # The API client's credentials are secrets of the `nodejs` environment, and a
+    # called workflow reaches an environment's secrets only by naming it here:
+    # its caller cannot hand them over. MEMCO_API_TOKEN stays a repository
+    # secret. Naming the environment subjects this job to its protection rules,
+    # so a required reviewer parks each pull request until it is approved —
+    # accepted — but a deployment-branch policy would fail pull requests
+    # outright, since their ref is refs/pull/N/merge and matches no branch
+    # policy. Keep the environment free of one.
+    environment: nodejs
     defaults:
       run:
         working-directory: nodejs
@@ -109,6 +112,8 @@ jobs:
         env:
           MEMCO_API_HOST: ${{ vars.MEMCO_API_HOST }}
           MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
+          MEMCO_CLIENT_ID: ${{ secrets.MEMCO_CLIENT_ID }}
+          MEMCO_CLIENT_SECRET: ${{ secrets.MEMCO_CLIENT_SECRET }}
         run: npm run system-test
       - name: Say the suite was skipped
         if: steps.guard.outputs.run != 'true'

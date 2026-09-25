@@ -39,7 +39,10 @@ def built(client: Memco) -> dict[str, agent.Tool]:
 # it would mean teaching the schema builder to recurse. A model has no use for
 # it either: a batch mints no operation id, so nothing a model imports can be
 # undone, and bulk upload is a standalone job rather than an in-loop step.
-NOT_AN_OPERATION = {"tools", "import_memories"}
+#
+# `close` ends an impersonated session's key. When the session is done is the
+# caller's decision, never a model's.
+NOT_AN_OPERATION = {"tools", "import_memories", "close"}
 
 
 def test_the_offered_operations_are_exactly_what_the_scope_carries():

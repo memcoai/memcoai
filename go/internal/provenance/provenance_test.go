@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -21,13 +23,30 @@ func TestTheEmbeddedDescriptorNamesTheContract(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(record.ServerCommit) {
 		t.Errorf("server commit %q", record.ServerCommit)
 	}
-	contract, err := os.ReadFile("../../../proto/memcoai/memory/v1/memory.proto")
+	// Every contract in the repository, in the lexical order the export writes
+	// them, so a contract the descriptor drops or a stale checksum both show.
+	const root = "../../../proto"
+	var want []Proto
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || filepath.Ext(path) != ".proto" {
+			return err
+		}
+		contract, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(contract)
+		want = append(want, Proto{Path: filepath.ToSlash(rel), SHA256: hex.EncodeToString(sum[:])})
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(contract)
-	want := Proto{Path: "memcoai/memory/v1/memory.proto", SHA256: hex.EncodeToString(sum[:])}
-	if !reflect.DeepEqual(record.Protos, []Proto{want}) {
+	if !reflect.DeepEqual(record.Protos, want) {
 		t.Errorf("protos %+v, want %+v", record.Protos, want)
 	}
 }

@@ -30,6 +30,10 @@ class FakeRpcError(grpc.RpcError):  # type: ignore[misc]
         (grpc.StatusCode.PERMISSION_DENIED, errors.MemcoPermissionError),
         (grpc.StatusCode.INVALID_ARGUMENT, errors.MemcoInvalidRequestError),
         (grpc.StatusCode.NOT_FOUND, errors.MemcoNotFoundError),
+        # A duplicate network name or external id is the caller's to handle.
+        # Left unmapped it would arrive as MemcoInternalError: a failure the
+        # service did not attribute to the request, the opposite of a duplicate.
+        (grpc.StatusCode.ALREADY_EXISTS, errors.MemcoAlreadyExistsError),
         (grpc.StatusCode.FAILED_PRECONDITION, errors.MemcoPreconditionFailedError),
         (grpc.StatusCode.RESOURCE_EXHAUSTED, errors.MemcoResourceExhaustedError),
         (grpc.StatusCode.UNAVAILABLE, errors.MemcoUnavailableError),

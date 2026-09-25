@@ -95,7 +95,8 @@ jobs:
 
           source = {
               str(p).replace("\\", "/")
-              for p in pathlib.Path("memcoai/memory").rglob("*")
+              for tree in ("memcoai/admin", "memcoai/auth", "memcoai/memory")
+              for p in pathlib.Path(tree).rglob("*")
               if p.is_file() and p.suffix in {".py", ".pyi", ".json"}
           }
           shipped = set(zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[0]).namelist())

@@ -17,6 +17,7 @@ search path.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 
 import pytest
 
@@ -28,13 +29,23 @@ from memcoai.types import DataSource, FeedbackRating, Insight, Memory, RevertOut
 # has run, so every assertion about a memory existing — or having stopped
 # existing — is a poll rather than a single call.
 #
-# The interval is 15s rather than something tighter because the service rate
-# limits search, and the ingestion poll is the one that runs longest: at 5s a
-# single domain could spend 36 searches waiting. Slower polling costs only
-# resolution on when the memory appeared, which nothing here asserts on.
+# The pause between attempts starts short and doubles up to 15s. Ingestion often
+# lands within a few seconds, and a fixed 15s pause spent most of every wait
+# idle. The cap is what keeps a slow wait within the service's search rate
+# limit: at a fixed 5s, one domain's ingestion poll could spend 36 searches,
+# while this spends at most three more than a fixed 15s would.
 INGEST_TIMEOUT = 180.0
 REMOVAL_TIMEOUT = 60.0
+FIRST_POLL = 1.0
 POLL_INTERVAL = 15.0
+
+
+def poll_waits() -> Iterator[float]:
+    """The pauses between one poll's attempts: 1s, 2s, 4s, 8s, then 15s each."""
+    wait = FIRST_POLL
+    while True:
+        yield min(wait, POLL_INTERVAL)
+        wait *= 2
 
 
 def probe(nonce: str) -> dict[str, str]:
@@ -97,13 +108,12 @@ def addition() -> dict[str, str]:
     return {
         "title": "Python SDK credential withholding",
         "content": (
-            "The Memco Python SDK attaches its credential with a channel interceptor rather "
-            "than with call credentials. gRPC refuses call credentials on an insecure "
-            "channel, so the interceptor is what lets `tls=False` work against a local "
+            "The Memco Python SDK passes its credential as explicit metadata on each call "
+            "rather than with call credentials. gRPC refuses call credentials on an insecure "
+            "channel, so per-call metadata is what lets `tls=False` work against a local "
             "plaintext endpoint — which is how the whole offline test suite runs.\n\n"
-            "The interceptor withholds the credential from any method under "
-            "`/grpc.health.v1.`, so the health probe the constructor makes is unauthenticated "
-            "and a bad token cannot be mistaken for an unhealthy service."
+            "The health probe the constructor makes is sent with no metadata at all, so it "
+            "is unauthenticated and a bad token cannot be mistaken for an unhealthy service."
         ),
     }
 
@@ -151,6 +161,7 @@ def _search_until_found(
     """
     deadline = time.monotonic() + INGEST_TIMEOUT
     seen = 0
+    waits = poll_waits()
     while time.monotonic() < deadline:
         result = client.memory.search(query, session_id=session_id)
         seen = len(result.memories)
@@ -162,7 +173,7 @@ def _search_until_found(
             if insight is not None:
                 return memory, insight
         print(f"  waiting for ingestion; search returned {seen} memories, none ours")
-        time.sleep(POLL_INTERVAL)
+        time.sleep(next(waits))
     pytest.fail(
         f"the memory never became searchable within {INGEST_TIMEOUT:.0f}s "
         f"(last search returned {seen} memories, none whose intent names {nonce!r}). "
@@ -188,6 +199,7 @@ def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, tit
     onwards would have nothing to look at.
     """
     deadline = time.monotonic() + INGEST_TIMEOUT
+    waits = poll_waits()
     while time.monotonic() < deadline:
         for candidate in client.memory.search(query, domain=domain).memories:
             if not _is_ours(candidate, nonce):
@@ -196,7 +208,7 @@ def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, tit
             if insight is not None:
                 return insight
         print("  waiting for the enrichment to be ingested")
-        time.sleep(POLL_INTERVAL)
+        time.sleep(next(waits))
     pytest.fail(
         f"the enrichment never appeared within {INGEST_TIMEOUT:.0f}s. Either ingestion "
         "is slower than the budget, or the service endorsed the addition as a duplicate "
@@ -207,6 +219,7 @@ def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, tit
 def _search_until_absent(client: Memco, query: str, domain: str, nonce: str) -> None:
     """Poll a fresh search until this run's memory is no longer returned."""
     deadline = time.monotonic() + REMOVAL_TIMEOUT
+    waits = poll_waits()
     while time.monotonic() < deadline:
         found = [
             m for m in client.memory.search(query, domain=domain).memories if _is_ours(m, nonce)
@@ -214,7 +227,7 @@ def _search_until_absent(client: Memco, query: str, domain: str, nonce: str) -> 
         if not found:
             return
         print("  waiting for the removal to take effect")
-        time.sleep(POLL_INTERVAL)
+        time.sleep(next(waits))
     pytest.fail(
         f"the memory was still returned by search {REMOVAL_TIMEOUT:.0f}s after a revert "
         "reported MEMORY_REMOVED"
@@ -224,13 +237,14 @@ def _search_until_absent(client: Memco, query: str, domain: str, nonce: str) -> 
 def _get_until_gone(client: Memco, idx: str) -> None:
     """Poll GetMemory until it reports the memory is gone."""
     deadline = time.monotonic() + REMOVAL_TIMEOUT
+    waits = poll_waits()
     while time.monotonic() < deadline:
         try:
             client.memory.get_memory(idx)
         except MemcoNotFoundError:
             return
         print("  waiting for the removal to take effect")
-        time.sleep(POLL_INTERVAL)
+        time.sleep(next(waits))
     pytest.fail(
         f"{idx} was still retrievable {REMOVAL_TIMEOUT:.0f}s after a revert reported MEMORY_REMOVED"
     )

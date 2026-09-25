@@ -15,15 +15,24 @@ os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 os.environ.pop("MEMCO_LOG", None)
 
 import logging
+import time
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
 
-from memcoai import AsyncMemco, Memco
+from memcoai import AsyncMemco, Memco, _auth
 
 from .fake_server import Harness
 
 TOKEN = "test-token"
+
+CLIENT_ID = "client-test"
+CLIENT_SECRET = "client-secret-test"
+"""The API-client credentials the ``credentialed`` clients are built with.
+
+The secret is distinctive enough that finding it in a log or an error can only
+mean it leaked there.
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -80,14 +89,85 @@ async def async_client(harness: Harness) -> AsyncIterator[AsyncMemco]:
         await connected.close()
 
 
+@pytest.fixture
+def credentialed(harness: Harness) -> Iterator[Memco]:
+    """A synchronous client holding API-client credentials rather than a token."""
+    with Memco(
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, host=harness.address, tls=False
+    ) as connected:
+        _forget_the_construction_calls(harness)
+        yield connected
+
+
+@pytest.fixture
+async def async_credentialed(harness: Harness) -> AsyncIterator[AsyncMemco]:
+    """An asynchronous client holding API-client credentials rather than a token."""
+    connected = AsyncMemco(
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, host=harness.address, tls=False
+    )
+    await connected.connect()
+    _forget_the_construction_calls(harness)
+    try:
+        yield connected
+    finally:
+        await connected.close()
+
+
 def _forget_the_construction_calls(harness: Harness) -> None:
     """Clear what connecting recorded, so a test starts from a clean server.
 
-    Connecting fetches the service's limits, so without this every test would
-    open with a ``ListDomains`` already on the record — and the suite proves
-    "this was rejected before any request was sent" by asserting the server saw
-    no calls at all.
+    Connecting fetches the service's limits, or issues a token when the client
+    holds API-client credentials, so without this every test would open with
+    that call already on the record — and the suite proves "this was rejected
+    before any request was sent" by asserting the server saw no calls at all.
     """
-    harness.memory.calls.clear()
-    harness.memory.metadata.clear()
-    harness.memory.requests.clear()
+    for recorder in (harness.memory, harness.tokens, harness.admin):
+        recorder.clear()
+
+
+class FakeClock:
+    """A clock that moves only when a test moves it.
+
+    Stands in for both clocks the SDK schedules renewal by: the monotonic one a
+    renewal point is measured on, and the wall clock an impersonation key's
+    absolute expiry is read against. They move together.
+
+    Both start at whole seconds of the real time. Real, so a renewal point
+    computed before the clock was patched still lines up with it; whole, so a
+    test stepping to either side of a renewal point lands exactly where it
+    means to.
+    """
+
+    def __init__(self) -> None:
+        self.now = float(int(time.monotonic()))
+        self.wall = float(int(time.time()))
+
+    def monotonic(self) -> float:
+        """Stand in for :func:`time.monotonic`."""
+        return self.now
+
+    def time(self) -> float:
+        """Stand in for :func:`time.time`."""
+        return self.wall
+
+    def advance(self, seconds: float) -> None:
+        """Move both clocks forward.
+
+        Args:
+            seconds: How far.
+        """
+        self.now += seconds
+        self.wall += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
+    """Put the SDK's renewal clocks in the test's hands.
+
+    The SDK reads both through ``memcoai._auth``, so patching them there moves
+    every renewal decision and nothing else: grpc's deadlines keep real time.
+    """
+    fake = FakeClock()
+    monkeypatch.setattr(_auth, "monotonic", fake.monotonic)
+    monkeypatch.setattr(_auth, "time", fake.time)
+    return fake

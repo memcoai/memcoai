@@ -43,8 +43,10 @@ Everything under these paths is produced from the service contract and is
 will be silently discarded:
 
 ```
-proto/                    the service contract
+proto/                    the service contracts: memory, admin and auth
 python/memcoai/memory/    generated Python client, and the tool manifest
+python/memcoai/admin/     generated Python client for administration
+python/memcoai/auth/      generated Python client for the token exchange
 go/internal/client/       generated Go client, and the tool manifest
 nodejs/client/            generated Node client, and the tool manifest
 ```
@@ -231,16 +233,19 @@ python/
     types.py          the result types every operation returns
     errors.py         the exception hierarchy
     operations.py     the namespaces reached as client.memory
+    administration.py the namespaces reached as client.networks and client.users
     _sync.py _aio.py  the clients
     _*.py             internals: config, auth, channel, conversion, validation
     memory/           GENERATED — do not edit
+    admin/ auth/      GENERATED — do not edit
   tests/              the test suite
   examples/           runnable programs, checked by the suite
   docs/               Sphinx sources for the reference
 ```
 
-Anything under `memcoai/memory/` comes from the service contract. Everything else
-in `memcoai/` is hand-written, `__init__.py` included.
+Anything under `memcoai/memory/`, `memcoai/admin/` or `memcoai/auth/` comes from
+the service contracts. Everything else in `memcoai/` is hand-written,
+`__init__.py` included.
 
 ## Tests
 
@@ -272,20 +277,38 @@ suite.
 hermetic. It runs the whole command lifecycle — create, search, rate, fetch,
 enrich, revert both writes, confirm the memory is gone — against the real
 service, once per domain the credential can reach, and checks that a creator
-credential is offered every tool. CI runs it on every pull request.
+credential is offered every tool. As an API client, it also administers a
+customer network and its external users, and opens memory sessions acting as
+those users, two of them at once. CI runs it on every pull request.
 
 It leaves nothing behind. It reverts every write it makes and asserts on the
 outcome, and the `written` fixture reverts them again on the way out, so a run
-that fails part-way still cleans up. It imports nothing: an import mints no
-operation id, so nothing could undo it.
+that fails part-way still cleans up. The networks and users it creates are
+deleted the same way, by the `customer_networks` and `external_users` fixtures,
+and a network's deletion takes the memories its users wrote with it. It imports
+nothing: an import mints no operation id, so nothing could undo it.
 
 It is not collected by `make test`: `testpaths` names `tests/` only, so
-`make -C python system-test` is the only way to reach it. Without
-`MEMCO_API_TOKEN` it reports itself skipped rather than failing, so you can run
-it, and `make check`, with no server access at all. In CI a missing credential
+`make -C python system-test` is the only way to reach it. The memory tests need
+`MEMCO_API_TOKEN`; the administration and impersonation tests need
+`MEMCO_CLIENT_ID` and `MEMCO_CLIENT_SECRET`, for an API client holding the admin
+grant and the `network-management` and `user-management` scopes. A test without
+its credential reports itself skipped rather than failing, so you can run it,
+and `make check`, with no server access at all. In CI a missing credential
 is a skip only on a pull request; anywhere else — a push to main, or a release —
 it fails, because a publish that silently never reached the service is worse
 than a red build.
+
+Against a local development server, which serves plaintext,
+`MEMCO_API_TLS=false` turns TLS off:
+
+```bash
+MEMCO_API_TOKEN= MEMCO_API_TLS=false MEMCO_API_HOST=localhost:50052 MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=... make -C python system-test
+```
+
+`MEMCO_API_TOKEN` is blanked because a token exported for the live service is
+rejected by the local server, and a rejected token fails collection rather than
+skipping. Set it to a token the local server issued to run the memory tests too.
 
 Two more things to know before changing it. A write is accepted
 **asynchronously**, so the create returns an operation id rather than a memory

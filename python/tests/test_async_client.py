@@ -10,6 +10,7 @@ from grpc_health.v1 import health_pb2
 
 import memcoai
 from memcoai import AsyncMemco, errors, types
+from memcoai._auth import Minted
 from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
@@ -29,6 +30,15 @@ async def test_auth_metadata_is_sent_on_every_method(async_client: AsyncMemco, h
     assert len(harness.memory.metadata) == 3
     for sent in harness.memory.metadata:
         assert sent["authorization"] == f"Bearer {TOKEN}"
+
+
+async def test_each_call_carries_exactly_one_credential(async_client: AsyncMemco, harness: Harness):
+    # Counted off the metadata as received, since a dict collapses repeats.
+    await async_client.memory.list_domains()
+    await async_client.memory.start_session("coding")  # StartSession and ListTools
+    assert len(harness.memory.raw_metadata) == 3
+    for sent in harness.memory.raw_metadata:
+        assert [value for key, value in sent if key == "authorization"] == [f"Bearer {TOKEN}"]
 
 
 async def test_the_credential_is_withheld_from_the_health_probe(harness: Harness):
@@ -119,6 +129,24 @@ async def test_server_errors_arrive_typed(
     with pytest.raises(expected) as caught:
         await async_client.memory.list_domains()
     assert caught.value.code is code
+
+
+async def test_a_call_landing_on_a_closed_channel_is_refused_unchained(async_client: AsyncMemco):
+    # The race close() leaves open: a call past the closed check reaches the
+    # channel as it is torn down. grpc's frames hold the metadata the call was
+    # sent with, bearer and all, so its error is chained to nothing raised.
+    async def torn_down(request: object, **sent: object) -> None:
+        raise grpc.aio.UsageError("Channel is closed")
+
+    with pytest.raises(errors.MemcoConfigError, match="closed") as caught:
+        await async_client._send(torn_down, pb.ListDomainsRequest(), 1.0, Minted(TOKEN, 0.0))
+    assert (caught.value.__cause__, caught.value.__context__) == (None, None)
+
+
+async def test_memco_api_tls_false_dials_a_plaintext_server(harness: Harness):
+    env = {"MEMCO_API_TOKEN": TOKEN, "MEMCO_API_TLS": "false"}
+    async with AsyncMemco(host=harness.address, env=env):
+        pass
 
 
 async def test_validation_fires_before_any_rpc(async_client: AsyncMemco, harness: Harness):

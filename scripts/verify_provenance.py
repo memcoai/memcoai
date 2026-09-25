@@ -4,8 +4,8 @@
 Asserts agreement between the contract, the generated clients and what each
 SDK declares, so a stale or hand-edited export cannot pass review unnoticed:
 
-1. The contract's SHA-256 matches the checksum every ``SDK_PROVENANCE.yaml``
-   records, and all of them name the same server commit.
+1. Every contract's SHA-256 matches the checksum every ``SDK_PROVENANCE.yaml``
+   records for it, and all of them name the same server commit.
 2. ``python/requirements.txt`` matches the ``requires.python`` block in
    the descriptor.
 3. Both match the floors the generated modules assert at import time.
@@ -25,16 +25,17 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PROTO = ROOT / "proto" / "memcoai" / "memory" / "v1" / "memory.proto"
+PROTO_ROOT = ROOT / "proto"
 # Python's generated client lives inside the package it ships in; Node keeps
 # its under nodejs/client/, and Go under go/internal/client/, where the go
 # command refuses an import from any other module.
 PYTHON_ROOT = ROOT / "python"
 PYTHON_GENERATED = PYTHON_ROOT / "memcoai" / "memory"
+PYTHON_SERVICES = ("admin", "auth", "memory")
+"""Every service whose generated Python client the package ships."""
 GO_ROOT = ROOT / "go"
 GO_GENERATED = GO_ROOT / "internal" / "client"
 GO_MODULE_PATH = "github.com/memcoai/memcoai/go"
-CONTRACT_PATH = "memcoai/memory/v1/memory.proto"
 MANIFESTS = (
     "go/internal/client/tools/tools.json",
     "nodejs/client/src/gen/tools.json",
@@ -176,11 +177,14 @@ def main() -> int:
     Returns:
         ``0`` if all checks passed, ``1`` otherwise.
     """
-    if not PROTO.is_file():
-        print(f"contract missing: {PROTO}")
+    contracts = {
+        path.relative_to(PROTO_ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(PROTO_ROOT.rglob("*.proto"))
+    }
+    if not contracts:
+        print(f"no contract under {PROTO_ROOT}")
         return 1
 
-    digest = hashlib.sha256(PROTO.read_bytes()).hexdigest()
     descriptors = sorted(
         [
             *ROOT.glob("*/client/SDK_PROVENANCE.yaml"),
@@ -188,23 +192,23 @@ def main() -> int:
             *ROOT.glob("python/memcoai/SDK_PROVENANCE.yaml"),
         ]
     )
-    print(f"contract {PROTO.relative_to(ROOT)} sha256={digest[:16]}...")
+    for contract, digest in contracts.items():
+        print(f"contract {contract} sha256={digest[:16]}...")
 
     check(bool(descriptors), "at least one SDK_PROVENANCE.yaml is present")
     if not descriptors:
         print(f"\n{len(failures)} check(s) failed")
         return 1
 
-    print("\n1. contract checksum and server commit")
+    print("\n1. contract checksums and server commit")
     commits = set()
     for descriptor in descriptors:
         text = descriptor.read_text(encoding="utf-8")
         where = descriptor.relative_to(ROOT)
         recorded = dict(re.findall(r"-\s*path:\s*(\S+)\s*\n\s*sha256:\s*(\S+)", text))
-        check(
-            recorded.get(CONTRACT_PATH) == digest,
-            f"{where} binds {CONTRACT_PATH} to the contract's checksum",
-        )
+        # Compared as a whole: a contract the descriptor omits, or one it names
+        # that the repository does not hold, is as stale as a wrong checksum.
+        check(recorded == contracts, f"{where} binds every contract to its checksum")
         # Anchored: a nested server_commit must not be mistaken for the real one.
         top_level = re.search(r"^server_commit:\s*(\S+)", text, re.MULTILINE)
         commit = top_level.group(1).strip("\"'") if top_level else None
@@ -219,8 +223,11 @@ def main() -> int:
     required = [
         PYTHON_ROOT / "requirements.txt",
         PYTHON_ROOT / "memcoai" / "SDK_PROVENANCE.yaml",
-        PYTHON_GENERATED / "v1" / "memory_pb2_grpc.py",
-        PYTHON_GENERATED / "v1" / "memory_pb2.py",
+        *(
+            PYTHON_ROOT / "memcoai" / service / "v1" / f"{service}_{suffix}.py"
+            for service in PYTHON_SERVICES
+            for suffix in ("pb2", "pb2_grpc")
+        ),
     ]
     missing = [path for path in required if not path.is_file()]
     for path in missing:

@@ -15,17 +15,20 @@ def test_provenance_is_readable_from_the_installed_package():
     p = provenance()
     assert p.server_commit
     assert p.protos
-    assert p.protos[0].path == "memcoai/memory/v1/memory.proto"
+    assert "memcoai/memory/v1/memory.proto" in {proto.path for proto in p.protos}
 
 
 def test_provenance_is_cached():
     assert provenance() is provenance()
 
 
-def test_checksum_matches_the_contract_in_the_repository():
-    proto = REPO / "proto" / "memcoai" / "memory" / "v1" / "memory.proto"
-    expected = hashlib.sha256(proto.read_bytes()).hexdigest()
-    assert provenance().protos[0].sha256 == expected
+def test_every_contract_in_the_repository_is_recorded_with_its_checksum():
+    root = REPO / "proto"
+    expected = {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in root.rglob("*.proto")
+    }
+    assert {proto.path: proto.sha256 for proto in provenance().protos} == expected
 
 
 def test_parse_reads_the_generated_shape():

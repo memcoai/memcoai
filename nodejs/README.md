@@ -290,7 +290,8 @@ Which version of the service contract this package was generated from:
 import { provenance } from '@memco/memcoai'
 
 provenance().serverCommit // '93ec8030bac33afa1bf2aa376d5f5a406098d81a'
-provenance().protos[0].path // 'memcoai/memory/v1/memory.proto'
+provenance().protos.map(proto => proto.path)
+// ['memcoai/admin/v1/admin.proto', 'memcoai/auth/v1/auth.proto', 'memcoai/memory/v1/memory.proto']
 ```
 
 ## Contributing

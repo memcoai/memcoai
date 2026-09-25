@@ -43,19 +43,33 @@ coverage:  ## Run the suite and report coverage (fails below the floor)
 	@echo "open python/htmlcov/index.html"
 
 # Not collected by `test`: pyproject's testpaths names tests/ only, so the live
-# suite is reached solely through this target. It needs MEMCO_API_TOKEN and a
-# reachable service; without one it reports itself skipped rather than failing.
+# suite is reached solely through this target. It needs a reachable service:
+# the memory tests need MEMCO_API_TOKEN, and the administration and
+# impersonation tests an API client's MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET.
+# Each test without its credential reports itself skipped rather than failing.
+# MEMCO_API_TLS=false turns TLS off, for a local development server.
+# Blank MEMCO_API_TOKEN unless it is a token that server issued: a token it
+# rejects fails collection rather than skipping.
+#
+#   MEMCO_API_TOKEN= MEMCO_API_TLS=false MEMCO_API_HOST=localhost:50052 MEMCO_CLIENT_ID=... MEMCO_CLIENT_SECRET=... make -C python system-test
 system-test:  ## Run the live suite against the real service
 	$(RUN) pytest -q systemtest
 
 # Unlike system-test, this does not skip without a credential -- it assumes
-# MEMCO_API_TOKEN, and whatever langchain_agent.py additionally needs, are
-# already in the environment (see examples/README.md). Each script guards its
-# own entry point, so this is exactly what running it by hand would do.
+# MEMCO_API_TOKEN, MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET, and whatever
+# langchain_agent.py additionally needs, are already in the environment (see
+# examples/README.md). Each script guards its own entry point, so this is
+# exactly what running it by hand would do. The API client's pair reaches only
+# the examples that name it: it wins over MEMCO_API_TOKEN, and would turn every
+# token example into one acting with credentials that read no memory.
 run-examples:  ## Run every example against the real service
 	@for f in examples/*.py; do \
 		printf '\033[1m--- %s ---\033[0m\n' "$$f"; \
-		$(RUN) python "$$f" || exit 1; \
+		if grep -q MEMCO_CLIENT_ID "$$f"; then \
+			$(RUN) python "$$f" || exit 1; \
+		else \
+			env -u MEMCO_CLIENT_ID -u MEMCO_CLIENT_SECRET $(RUN) python "$$f" || exit 1; \
+		fi; \
 	done
 
 test-all:  ## Run the suite on every supported interpreter
