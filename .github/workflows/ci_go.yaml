@@ -99,5 +99,5 @@ jobs:
     # is a skip or a failure.
     secrets:
       MEMCO_API_TOKEN: ${{ secrets.MEMCO_API_TOKEN }}
-      MEMCO_CLIENT_ID: ${{ secrets.MEMCO_CLIENT_ID }}
-      MEMCO_CLIENT_SECRET: ${{ secrets.MEMCO_CLIENT_SECRET }}
+      MEMCO_CLIENT_ID: ${{ secrets.GO_MEMCO_CLIENT_ID }}
+      MEMCO_CLIENT_SECRET: ${{ secrets.GO_MEMCO_CLIENT_SECRET }}
