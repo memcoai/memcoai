@@ -555,7 +555,7 @@ class MemoryOperations:
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
-        answered the query, and these ratings shape which results are shown next.
+        was useful in answering the query, and these ratings shape which results are shown next.
 
         Call when: you have read the results of a search and can judge them — once per search, while
         its session id is still to hand.
@@ -1243,7 +1243,7 @@ class AsyncMemoryOperations:
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
-        answered the query, and these ratings shape which results are shown next.
+        was useful in answering the query, and these ratings shape which results are shown next.
 
         Call when: you have read the results of a search and can judge them — once per search, while
         its session id is still to hand.
@@ -1750,7 +1750,7 @@ class Session:
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
-        answered the query, and these ratings shape which results are shown next.
+        was useful in answering the query, and these ratings shape which results are shown next.
 
         Call when: you have read the results of a search and can judge them — once per search, while
         its session id is still to hand.
@@ -2257,7 +2257,7 @@ class AsyncSession:
         timeout: float | None = None,
     ) -> FeedbackResult:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
-        answered the query, and these ratings shape which results are shown next.
+        was useful in answering the query, and these ratings shape which results are shown next.
 
         Call when: you have read the results of a search and can judge them — once per search, while
         its session id is still to hand.

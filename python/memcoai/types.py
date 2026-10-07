@@ -641,7 +641,8 @@ class FeedbackRating:
             response; it cannot be constructed by hand. Use an insight's idx for a specific insight,
             or a memory's own idx to apply the rating to every insight under it.
         relevant: Set to true if the result was a good match for the query.
-        correct: Set to true if the result's content was accurate.
+        correct: (Required) Set to true if the result's content was accurate, false if not. An unset
+            value is read as false.
         comment: An optional comment on the result, at most 5000 characters.
 
     Example:
