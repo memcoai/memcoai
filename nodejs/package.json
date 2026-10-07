@@ -1,6 +1,6 @@
 {
   "name": "@memco/memcoai",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Node.js SDK for Memco Shared Memory.",
   "keywords": [
     "memco",
@@ -65,7 +65,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.1",
-    "@grpc/grpc-js": "^1.14.4"
+    "@grpc/grpc-js": "^1.14.5"
   },
   "devDependencies": {
     "@langchain/core": "1.2.9",
