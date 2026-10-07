@@ -247,7 +247,7 @@ def _watch(
     # Not at interpreter exit: the holder is not garbage then, and its client
     # makes no next call. typeshed gives finalize empty __slots__, but atexit
     # is a property of it.
-    watch.atexit = False  # type: ignore[misc]
+    watch.atexit = False
     return watch
 
 
