@@ -65,8 +65,15 @@ func TestACustomerNetworkIsCreatedChangedFoundAndDeleted(t *testing.T) {
 
 	network := customerNetwork(t, admin, root)
 	t.Logf("created network %s under %s in %s", network.ID, root.ID, network.Domain)
-	if network.ParentID != root.ID || network.Domain != root.Domain || network.Scope != "customer" {
+	if network.ParentID != root.ID || !slices.Equal(network.ParentIDs, []string{root.ID}) || network.Domain != root.Domain || network.Scope != "customer" {
 		t.Fatalf("created %+v", network)
+	}
+	reparented, err := admin.Networks.Update(ctx, network.ID, memcoai.UpdateNetworkParams{ParentIDs: &[]string{root.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(reparented.ParentIDs, []string{root.ID}) {
+		t.Fatalf("reparented %+v", reparented)
 	}
 
 	description := "A network the Go SDK system test has changed."

@@ -457,7 +457,7 @@ class Memory:
     _session_id: str = field(default="", repr=False, compare=False)
 
     def feedback(
-        self, *, relevant: bool, correct: bool, comment: str | None = None
+        self, *, relevant: bool, correct: bool | None = None, comment: str | None = None
     ) -> FeedbackEntry:
         """Rate this memory: whether it was relevant, and whether it was correct.
 
@@ -466,7 +466,8 @@ class Memory:
 
         Args:
             relevant: Whether the result was a good match for the query.
-            correct: Whether its content was accurate.
+            correct: Whether its content was accurate, or ``None`` when that
+                cannot be judged.
             comment: An optional note about this result.
 
         Returns:
@@ -535,7 +536,7 @@ class AsyncMemory:
     _session_id: str = field(default="", repr=False, compare=False)
 
     async def feedback(
-        self, *, relevant: bool, correct: bool, comment: str | None = None
+        self, *, relevant: bool, correct: bool | None = None, comment: str | None = None
     ) -> FeedbackEntry:
         """Rate this memory: whether it was relevant, and whether it was correct.
 
@@ -545,7 +546,8 @@ class AsyncMemory:
 
         Args:
             relevant: Whether the result was a good match for the query.
-            correct: Whether its content was accurate.
+            correct: Whether its content was accurate, or ``None`` when that
+                cannot be judged.
             comment: An optional note about this result.
 
         Returns:
@@ -641,8 +643,8 @@ class FeedbackRating:
             response; it cannot be constructed by hand. Use an insight's idx for a specific insight,
             or a memory's own idx to apply the rating to every insight under it.
         relevant: Set to true if the result was a good match for the query.
-        correct: (Required) Set to true if the result's content was accurate, false if not. An unset
-            value is read as false.
+        correct: Set to true if the result's content was accurate, false if not. Leave it out when
+            you cannot judge it.
         comment: An optional comment on the result, at most 5000 characters.
 
     Example:
@@ -653,17 +655,19 @@ class FeedbackRating:
 
     idx: str
     relevant: bool
-    correct: bool
+    correct: bool | None = None
     comment: str | None = None
 
     def to_proto(self) -> _pb.FeedbackRating:
         """Convert to the wire message.
 
         Returns:
-            The protobuf ``FeedbackRating``, with ``comment`` left unset when it
-            is ``None``.
+            The protobuf ``FeedbackRating``, with ``correct`` and ``comment``
+            left unset when they are ``None``.
         """
-        message = _pb.FeedbackRating(idx=self.idx, relevant=self.relevant, correct=self.correct)
+        message = _pb.FeedbackRating(idx=self.idx, relevant=self.relevant)
+        if self.correct is not None:
+            message.correct = self.correct
         if self.comment is not None:
             message.comment = self.comment
         return message
@@ -676,7 +680,8 @@ class FeedbackEntry:
     Attributes:
         idx: The handle that was rated.
         relevant: The relevance verdict that was recorded.
-        correct: The correctness verdict that was recorded.
+        correct: The correctness verdict that was recorded, or ``None`` when
+            the rating left it out.
         advice: The suggestion this particular verdict earned, or ``None`` when
             the verdict suggests nothing. It addresses one result, so it belongs
             to the entry rather than to the batch.
@@ -684,7 +689,7 @@ class FeedbackEntry:
 
     idx: str
     relevant: bool
-    correct: bool
+    correct: bool | None
     advice: str | None
 
 
@@ -829,14 +834,16 @@ class ImportResult:
 class Network:
     """One memory network: the unit of knowledge scoping an organization places its people in.
 
-    Networks form trees, one per memory domain. What a member can find is scoped
-    by the network they are placed in.
+    Networks form a hierarchy, one per memory domain, in which a network may
+    have several parents. What a member can find is scoped by the network they
+    are placed in.
 
     Attributes:
         id: Handle addressing this network, for every other network method.
         name: The network's name.
-        parent_id: The network this one is a child of, or ``None`` for a root.
-        domain: The memory domain the network's tree belongs to.
+        parent_id: Deprecated: read ``parent_ids``, since a network may have
+            several parents. The first of them, or ``None`` for a root.
+        domain: The memory domain the network belongs to.
         region: The network's data residency. ``"global"`` replicates everywhere.
         scope: ``"internal"`` or ``"customer"``, or ``None`` where the
             organization does not use scopes. An external user can be placed
@@ -844,6 +851,7 @@ class Network:
         owner: Who the network's knowledge belongs to, or ``None`` where none
             is named.
         description: What the network is for. Empty when none was given.
+        parent_ids: The networks this one is a child of, empty for a root.
     """
 
     id: str
@@ -854,6 +862,7 @@ class Network:
     scope: str | None
     owner: str | None
     description: str
+    parent_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

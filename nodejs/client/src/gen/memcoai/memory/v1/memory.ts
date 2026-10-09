@@ -556,8 +556,13 @@ export interface FeedbackRating {
   idx: string;
   /** relevant reports whether the result was a good match for the query. */
   relevant: boolean;
-  /** correct reports whether its content was accurate. */
-  correct: boolean;
+  /**
+   * correct reports whether its content was accurate. Leave it out when its
+   * accuracy cannot be judged.
+   */
+  correct?:
+    | boolean
+    | undefined;
   /** comment is an optional note about this result. */
   comment?: string | undefined;
 }
@@ -572,7 +577,10 @@ export interface ShareFeedbackResponse {
 export interface FeedbackEntry {
   idx: string;
   relevant: boolean;
-  correct: boolean;
+  /** correct is absent when the rating left it out. */
+  correct?:
+    | boolean
+    | undefined;
   /**
    * advice is the suggestion this particular verdict earned, empty when the
    * verdict suggests nothing. It addresses one result, so it belongs to the
@@ -2846,7 +2854,7 @@ export const ShareFeedbackRequest: MessageFns<ShareFeedbackRequest> = {
 };
 
 function createBaseFeedbackRating(): FeedbackRating {
-  return { idx: "", relevant: false, correct: false, comment: undefined };
+  return { idx: "", relevant: false, correct: undefined, comment: undefined };
 }
 
 export const FeedbackRating: MessageFns<FeedbackRating> = {
@@ -2857,7 +2865,7 @@ export const FeedbackRating: MessageFns<FeedbackRating> = {
     if (message.relevant !== false) {
       writer.uint32(16).bool(message.relevant);
     }
-    if (message.correct !== false) {
+    if (message.correct !== undefined) {
       writer.uint32(24).bool(message.correct);
     }
     if (message.comment !== undefined) {
@@ -2918,7 +2926,7 @@ export const FeedbackRating: MessageFns<FeedbackRating> = {
     return {
       idx: isSet(object.idx) ? globalThis.String(object.idx) : "",
       relevant: isSet(object.relevant) ? globalThis.Boolean(object.relevant) : false,
-      correct: isSet(object.correct) ? globalThis.Boolean(object.correct) : false,
+      correct: isSet(object.correct) ? globalThis.Boolean(object.correct) : undefined,
       comment: isSet(object.comment) ? globalThis.String(object.comment) : undefined,
     };
   },
@@ -2931,7 +2939,7 @@ export const FeedbackRating: MessageFns<FeedbackRating> = {
     if (message.relevant !== false) {
       obj.relevant = message.relevant;
     }
-    if (message.correct !== false) {
+    if (message.correct !== undefined) {
       obj.correct = message.correct;
     }
     if (message.comment !== undefined) {
@@ -2947,7 +2955,7 @@ export const FeedbackRating: MessageFns<FeedbackRating> = {
     const message = createBaseFeedbackRating();
     message.idx = object.idx ?? "";
     message.relevant = object.relevant ?? false;
-    message.correct = object.correct ?? false;
+    message.correct = object.correct ?? undefined;
     message.comment = object.comment ?? undefined;
     return message;
   },
@@ -3050,7 +3058,7 @@ export const ShareFeedbackResponse: MessageFns<ShareFeedbackResponse> = {
 };
 
 function createBaseFeedbackEntry(): FeedbackEntry {
-  return { idx: "", relevant: false, correct: false, advice: "" };
+  return { idx: "", relevant: false, correct: undefined, advice: "" };
 }
 
 export const FeedbackEntry: MessageFns<FeedbackEntry> = {
@@ -3061,7 +3069,7 @@ export const FeedbackEntry: MessageFns<FeedbackEntry> = {
     if (message.relevant !== false) {
       writer.uint32(16).bool(message.relevant);
     }
-    if (message.correct !== false) {
+    if (message.correct !== undefined) {
       writer.uint32(24).bool(message.correct);
     }
     if (message.advice !== "") {
@@ -3122,7 +3130,7 @@ export const FeedbackEntry: MessageFns<FeedbackEntry> = {
     return {
       idx: isSet(object.idx) ? globalThis.String(object.idx) : "",
       relevant: isSet(object.relevant) ? globalThis.Boolean(object.relevant) : false,
-      correct: isSet(object.correct) ? globalThis.Boolean(object.correct) : false,
+      correct: isSet(object.correct) ? globalThis.Boolean(object.correct) : undefined,
       advice: isSet(object.advice) ? globalThis.String(object.advice) : "",
     };
   },
@@ -3135,7 +3143,7 @@ export const FeedbackEntry: MessageFns<FeedbackEntry> = {
     if (message.relevant !== false) {
       obj.relevant = message.relevant;
     }
-    if (message.correct !== false) {
+    if (message.correct !== undefined) {
       obj.correct = message.correct;
     }
     if (message.advice !== "") {
@@ -3151,7 +3159,7 @@ export const FeedbackEntry: MessageFns<FeedbackEntry> = {
     const message = createBaseFeedbackEntry();
     message.idx = object.idx ?? "";
     message.relevant = object.relevant ?? false;
-    message.correct = object.correct ?? false;
+    message.correct = object.correct ?? undefined;
     message.advice = object.advice ?? "";
     return message;
   },

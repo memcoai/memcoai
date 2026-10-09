@@ -61,7 +61,7 @@ type Operation struct {
 var tagFields = []Field{{"type", String, true}, {"value", String, true}, {"version", String, false}}
 
 var feedbackFields = []Field{
-	{"idx", String, true}, {"relevant", Boolean, true}, {"correct", Boolean, true}, {"comment", String, false},
+	{"idx", String, true}, {"relevant", Boolean, true}, {"correct", Boolean, false}, {"comment", String, false},
 }
 
 var (

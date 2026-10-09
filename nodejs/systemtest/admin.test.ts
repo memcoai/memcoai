@@ -83,9 +83,13 @@ test(
         `\ncreated network ${network.id} under ${root.id} in ${network.domain}`
       )
       assert.deepEqual(
-        [network.parentId, network.domain, network.scope],
-        [root.id, root.domain, 'customer']
+        [network.parentId, network.parentIds, network.domain, network.scope],
+        [root.id, [root.id], root.domain, 'customer']
       )
+      const reparented = await admin.networks.update(network.id, {
+        parentIds: [root.id]
+      })
+      assert.deepEqual(reparented.parentIds, [root.id])
 
       const description = 'A network the Node.js SDK system test has changed.'
       const changed = await admin.networks.update(network.id, { description })

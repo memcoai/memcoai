@@ -275,6 +275,32 @@ test('feedback() on a memory from a plain search sends the right session and idx
   })
 })
 
+test('feedback() leaves correct unsent when not given, and reads it back as null', async () => {
+  await withHarness(async harness => {
+    harness.memory.responses.set('search', searchResponse())
+    harness.memory.responses.set(
+      'shareFeedback',
+      pb.ShareFeedbackResponse.fromPartial({
+        sessionId: 'session-a',
+        entries: [{ idx: 'memory-a-1', relevant: false }]
+      })
+    )
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const result = await memco.memory.search('q', { domain: 'coding' })
+      const entry = await result.memories[0]!.feedback({ relevant: false })
+      const request = harness.memory.requests.get(
+        'shareFeedback'
+      ) as pb.ShareFeedbackRequest
+      assert.equal(request.feedback[0]!.correct, undefined)
+      assert.equal(entry.correct, null)
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
 test('feedback() on a memory from a session-bound search also works', async () => {
   await withHarness(async harness => {
     harness.memory.responses.set(

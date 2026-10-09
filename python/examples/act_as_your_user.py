@@ -30,7 +30,7 @@ def main() -> None:
         # map_your_users.py. Removed again at the end.
         root = client.networks.list(parent_id="root", domain=DOMAIN).networks[0]
         network = client.networks.create(
-            name=f"Acme Corp ({run})", parent_id=root.id, scope="customer"
+            name=f"Acme Corp ({run})", parent_ids=[root.id], scope="customer"
         )
         user = client.users.create(f"acme-alice-{run}", name="Alice Andersson", roles=["creator"])
         try:

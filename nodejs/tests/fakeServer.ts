@@ -412,6 +412,7 @@ export const NETWORK = pb.admin.Network.fromPartial({
   id: 'network-a',
   name: 'Acme',
   parentId: 'network-root',
+  parentIds: ['network-root'],
   domain: 'coding',
   region: 'global',
   scope: 'customer',
@@ -512,6 +513,7 @@ export class FakeAdminService extends Recorder<AdminMethod> {
             id: 'network-new',
             name: request.name,
             parentId: request.parentId,
+            parentIds: request.parentIds,
             domain: request.domain || 'coding',
             region: request.region || 'global',
             scope: request.scope,
@@ -522,10 +524,15 @@ export class FakeAdminService extends Recorder<AdminMethod> {
       updateNetwork: this.on(
         'updateNetwork',
         (request: pb.admin.UpdateNetworkRequest) => {
+          const { parentIds, ...rest } = request
           const changed = Object.fromEntries(
-            Object.entries(request).filter(([, value]) => value !== undefined)
+            Object.entries(rest).filter(([, value]) => value !== undefined)
           )
-          return a.Network.fromPartial({ ...NETWORK, ...changed })
+          return a.Network.fromPartial({
+            ...NETWORK,
+            ...changed,
+            ...(parentIds && { parentIds: parentIds.ids })
+          })
         }
       ),
       deleteNetwork: this.on(

@@ -139,7 +139,7 @@ export class Created {
     this.networks.push(name)
     return this.admin.networks.create({
       name,
-      parentId: this.root.id,
+      parentIds: [this.root.id],
       scope: 'customer',
       description:
         'A network the Node.js SDK system test creates and deletes again.'

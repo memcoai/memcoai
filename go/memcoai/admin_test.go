@@ -22,8 +22,8 @@ import (
 func text(s string) *string { return &s }
 
 var canned = Network{
-	ID: "network-a", Name: "Acme", ParentID: "network-root", Domain: "coding", Region: "global",
-	Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
+	ID: "network-a", Name: "Acme", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding",
+	Region: "global", Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
 }
 
 var cannedMember = Member{UserID: "user-a", Email: "ada@example.com", Name: "Ada"}
@@ -58,18 +58,18 @@ func roundTrips() []roundTrip {
 		}, &NetworkList{Networks: []Network{canned}, TotalCount: 1}},
 		{"CreateNetwork", func(c *Client) (any, error) {
 			return c.Networks.Create(ctx, CreateNetworkParams{
-				Name: "Acme", ParentID: "network-root", Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
+				Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
 			})
 		}, &adminv1.CreateNetworkRequest{
-			Name: "Acme", ParentId: "network-root", Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
+			Name: "Acme", ParentIds: []string{"network-root", "network-shared"}, Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
 		}, &Network{
-			ID: "network-1", Name: "Acme", ParentID: "network-root", Domain: "coding", Region: "eu",
+			ID: "network-1", Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Domain: "coding", Region: "eu",
 			Scope: "customer", Owner: "acme", Description: "d",
 		}},
 		{"UpdateNetwork", func(c *Client) (any, error) {
 			return c.Networks.Update(ctx, "network-a", UpdateNetworkParams{Name: text("Acme Corp"), Description: text("")})
 		}, &adminv1.UpdateNetworkRequest{Id: "network-a", Name: text("Acme Corp"), Description: text("")}, &Network{
-			ID: "network-a", Name: "Acme Corp", ParentID: "network-root", Domain: "coding", Region: "global",
+			ID: "network-a", Name: "Acme Corp", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding", Region: "global",
 			Scope: "customer", Owner: "acme",
 		}},
 		{"DeleteNetwork", func(c *Client) (any, error) {
@@ -193,6 +193,29 @@ func TestEachMethodSendsItsRequestAndReturnsItsResult(t *testing.T) {
 				t.Fatalf("authorization %q", got)
 			}
 		})
+	}
+}
+
+func TestAnUpdateReplacesTheWholeParentSetOnlyWhenGiven(t *testing.T) {
+	f := credentialed(t)
+	for _, params := range []UpdateNetworkParams{
+		{ParentIDs: &[]string{"network-b", "network-c"}},
+		{ParentIDs: &[]string{}},
+		{Name: text("Acme")},
+	} {
+		if _, err := f.client.Networks.Update(ctx, "network-a", params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []proto.Message{
+		&adminv1.UpdateNetworkRequest{Id: "network-a", ParentIds: &adminv1.NetworkParents{Ids: []string{"network-b", "network-c"}}},
+		&adminv1.UpdateNetworkRequest{Id: "network-a", ParentIds: &adminv1.NetworkParents{}},
+		&adminv1.UpdateNetworkRequest{Id: "network-a", Name: text("Acme")},
+	}
+	for i, sent := range f.server.Admin.Received() {
+		if !proto.Equal(sent, want[i]) {
+			t.Errorf("sent %v, want %v", sent, want[i])
+		}
 	}
 }
 

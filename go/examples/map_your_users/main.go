@@ -107,14 +107,14 @@ func run(ctx context.Context, opts memcoai.Options, out *log.Logger) (err error)
 		return nil
 	}
 	if err := place("company", memcoai.CreateNetworkParams{
-		Name: tag + " " + company, ParentID: root.ID, Scope: "customer",
+		Name: tag + " " + company, ParentIDs: []string{root.ID}, Scope: "customer",
 		Description: "Practice that applies to every client project",
 	}); err != nil {
 		return err
 	}
 	for _, project := range projects {
 		if err := place(project.key, memcoai.CreateNetworkParams{
-			Name: tag + " " + company + " / " + project.title, ParentID: networks["company"].ID, Scope: "customer",
+			Name: tag + " " + company + " / " + project.title, ParentIDs: []string{networks["company"].ID}, Scope: "customer",
 		}); err != nil {
 			return err
 		}

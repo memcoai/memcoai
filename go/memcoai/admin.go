@@ -49,12 +49,18 @@ type ListNetworksParams struct {
 }
 
 // CreateNetworkParams describe a new network: a root in a memory domain, or
-// the child of another network, whose domain it takes.
+// the child of other networks, whose domain it takes.
 type CreateNetworkParams struct {
 	// Name is the network's name. Required.
 	Name string
-	// ParentID is the network to create this one under; empty makes a root.
+	// ParentID is the network to create this one under, read as ParentIDs
+	// holding that one network.
+	//
+	// Deprecated: Set ParentIDs instead, never both.
 	ParentID string
+	// ParentIDs are the networks to create this one under, each named once and
+	// all in one domain, which the new network takes; empty makes a root.
+	ParentIDs []string
 	// Domain is a root network's memory domain; empty is your organization's
 	// default. A child names none.
 	Domain string
@@ -75,8 +81,14 @@ type CreateNetworkParams struct {
 type UpdateNetworkParams struct {
 	// Name is the new name.
 	Name *string
-	// ParentID is the network to move this one under.
+	// ParentID is the network to move this one under, replacing every other
+	// parent; a pointer to "" makes a root.
+	//
+	// Deprecated: Set ParentIDs instead, never both.
 	ParentID *string
+	// ParentIDs replaces the network's whole parent set; a pointer to an empty
+	// or nil slice makes a root.
+	ParentIDs *[]string
 	// Scope is the new scope, "internal" or "customer".
 	Scope *string
 	// Owner is the new owner.
@@ -150,8 +162,8 @@ func (n *NetworkOperations) List(ctx context.Context, p ListNetworksParams) (*Ne
 // Parameters:
 //   - ctx: bounds the call. Without a deadline, [Options.Timeout] applies; if
 //     ctx has already ended, nothing is sent.
-//   - p: the network to create. Name is required; ParentID places it under
-//     another network, and Scope "customer" lets it take external users.
+//   - p: the network to create. Name is required; ParentIDs place it under
+//     other networks, and Scope "customer" lets it take external users.
 //
 // It returns the network as created.
 //
@@ -160,8 +172,8 @@ func (n *NetworkOperations) List(ctx context.Context, p ListNetworksParams) (*Ne
 // [*PermissionError]; [*ConfigError] when the client is closed.
 func (n *NetworkOperations) Create(ctx context.Context, p CreateNetworkParams) (*Network, error) {
 	response, err := administer(ctx, n.client, "CreateNetwork", &adminv1.CreateNetworkRequest{
-		Name: p.Name, ParentId: p.ParentID, Domain: p.Domain, Region: p.Region, Scope: p.Scope,
-		Owner: p.Owner, Description: p.Description,
+		Name: p.Name, ParentId: p.ParentID, ParentIds: slices.Clone(p.ParentIDs), Domain: p.Domain,
+		Region: p.Region, Scope: p.Scope, Owner: p.Owner, Description: p.Description,
 	}, n.rpc.CreateNetwork)
 	if err != nil {
 		return nil, err
@@ -178,7 +190,7 @@ func (n *NetworkOperations) Create(ctx context.Context, p CreateNetworkParams) (
 //     ctx has already ended, nothing is sent.
 //   - networkID: the network to change.
 //   - p: the changes; a nil field is left as it is, and a pointer to "" clears
-//     the field.
+//     the field. A pointer to an empty ParentIDs makes the network a root.
 //
 // It returns the network as it now is.
 //
@@ -187,10 +199,14 @@ func (n *NetworkOperations) Create(ctx context.Context, p CreateNetworkParams) (
 // such as making a network holding external users internal;
 // [*NotFoundError]; [*ConfigError] when the client is closed.
 func (n *NetworkOperations) Update(ctx context.Context, networkID string, p UpdateNetworkParams) (*Network, error) {
-	response, err := administer(ctx, n.client, "UpdateNetwork", &adminv1.UpdateNetworkRequest{
+	request := &adminv1.UpdateNetworkRequest{
 		Id: networkID, Name: cloned(p.Name), ParentId: cloned(p.ParentID), Scope: cloned(p.Scope),
 		Owner: cloned(p.Owner), Description: cloned(p.Description),
-	}, n.rpc.UpdateNetwork)
+	}
+	if p.ParentIDs != nil {
+		request.ParentIds = &adminv1.NetworkParents{Ids: slices.Clone(*p.ParentIDs)}
+	}
+	response, err := administer(ctx, n.client, "UpdateNetwork", request, n.rpc.UpdateNetwork)
 	if err != nil {
 		return nil, err
 	}

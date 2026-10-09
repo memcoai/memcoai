@@ -361,7 +361,7 @@ from memcoai import Memco
 
 with Memco(client_id="...", client_secret="...") as client:
     root = client.networks.list(parent_id="root", domain="coding").networks[0]
-    acme = client.networks.create(name="Acme", parent_id=root.id, scope="customer")
+    acme = client.networks.create(name="Acme", parent_ids=[root.id], scope="customer")
 
     user = client.users.create("customer-42", roles=["creator"], name="Ada")
     client.networks.add_member(acme.id, user.id)

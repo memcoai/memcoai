@@ -384,6 +384,10 @@ test('a structured argument is described from this SDK own type', async () => {
       'version'
     ])
     assert.deepEqual(items.required, ['type', 'value'])
+    const feedback = by.memco_share_feedback!.parameters.properties
+      .feedback as Record<string, Record<string, unknown>>
+    const rating = feedback.items as unknown as typeof items
+    assert.deepEqual(rating.required, ['idx', 'relevant'])
     // A statement of the shape, not a claim to any vendor's strict mode: what
     // arrives anyway is ignored rather than refused.
     assert.equal(items.additionalProperties, false)
@@ -552,6 +556,18 @@ test('a rating arrives as an object and reaches the wire', async () => {
       sent.map(one => [one.idx, one.relevant, one.correct]),
       [['memory-a-1', true, false]]
     )
+  })
+})
+
+test('a rating without correct is accepted and reaches the wire without it', async () => {
+  await withToolset(async (_toolset, by, harness) => {
+    await by.memco_share_feedback!.call({
+      feedback: [{ idx: 'memory-a-1', relevant: false }]
+    })
+    const sent = (
+      harness.memory.requests.get('shareFeedback') as pb.ShareFeedbackRequest
+    ).feedback
+    assert.equal(sent[0]!.correct, undefined)
   })
 })
 
@@ -1157,14 +1173,16 @@ test('a rating is rendered with the advice it earned and without it', () => {
     sessionId: 'session-a',
     entries: [
       { idx: 'memory-a-1', relevant: true, correct: false, advice: 'say why' },
-      { idx: 'memory-a-2', relevant: false, correct: true, advice: null }
+      { idx: 'memory-a-2', relevant: false, correct: true, advice: null },
+      { idx: 'memory-a-3', relevant: false, correct: null, advice: null }
     ],
     instructions: guidance('')
   })
   assert.equal(
     rendered,
     'memory-a-1  relevant=true correct=false  say why\n' +
-      'memory-a-2  relevant=false correct=true'
+      'memory-a-2  relevant=false correct=true\n' +
+      'memory-a-3  relevant=false'
   )
 })
 

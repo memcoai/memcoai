@@ -327,7 +327,7 @@ const [root] = (
 ).networks
 const acme = await client.networks.create({
   name: 'Acme',
-  parentId: root.id,
+  parentIds: [root.id],
   scope: 'customer'
 })
 

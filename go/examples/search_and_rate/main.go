@@ -91,6 +91,7 @@ func search(ctx context.Context, session *memcoai.Session, out *log.Logger) (*me
 
 // review prints each insight a search returned, and rates it.
 func review(memories []memcoai.Memory, out *log.Logger) []memcoai.FeedbackRating {
+	correct := true
 	var ratings []memcoai.FeedbackRating
 	for _, memory := range memories {
 		for _, insight := range memory.Insights {
@@ -103,7 +104,7 @@ func review(memories []memcoai.Memory, out *log.Logger) []memcoai.FeedbackRating
 			ratings = append(ratings, memcoai.FeedbackRating{
 				Idx:      insight.Idx,
 				Relevant: true,
-				Correct:  true,
+				Correct:  &correct,
 				Comment:  "answered the question directly",
 			})
 		}

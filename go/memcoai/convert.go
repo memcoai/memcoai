@@ -125,7 +125,7 @@ func toWriteResult(operationID string, instructions *memoryv1.Instructions) *Wri
 func toFeedbackResult(m *memoryv1.ShareFeedbackResponse) *FeedbackResult {
 	entries := make([]FeedbackEntry, 0, len(m.GetEntries()))
 	for _, e := range m.GetEntries() {
-		entries = append(entries, FeedbackEntry{Idx: e.GetIdx(), Relevant: e.GetRelevant(), Correct: e.GetCorrect(), Advice: e.GetAdvice()})
+		entries = append(entries, FeedbackEntry{Idx: e.GetIdx(), Relevant: e.GetRelevant(), Correct: cloned(e.Correct), Advice: e.GetAdvice()})
 	}
 	return &FeedbackResult{SessionID: m.GetSessionId(), Entries: entries, Instructions: toInstructions(m.GetInstructions())}
 }
@@ -182,7 +182,7 @@ func wireRatings(ratings []FeedbackRating) []*memoryv1.FeedbackRating {
 		out = append(out, &memoryv1.FeedbackRating{
 			Idx:      rating.Idx,
 			Relevant: rating.Relevant,
-			Correct:  rating.Correct,
+			Correct:  cloned(rating.Correct),
 			Comment:  optional(rating.Comment),
 		})
 	}
@@ -217,8 +217,8 @@ func copied(values []string) []string {
 
 func toNetwork(m *adminv1.Network) Network {
 	return Network{
-		ID: m.GetId(), Name: m.GetName(), ParentID: m.GetParentId(), Domain: m.GetDomain(),
-		Region: m.GetRegion(), Scope: m.GetScope(), Owner: m.GetOwner(), Description: m.GetDescription(),
+		ID: m.GetId(), Name: m.GetName(), ParentID: m.GetParentId(), ParentIDs: slices.Clone(m.GetParentIds()),
+		Domain: m.GetDomain(), Region: m.GetRegion(), Scope: m.GetScope(), Owner: m.GetOwner(), Description: m.GetDescription(),
 	}
 }
 
@@ -288,11 +288,11 @@ func toCreatedKey(m *adminv1.CreateExternalUserKeyResponse) (*CreatedKey, error)
 	return &CreatedKey{Key: toExternalUserKey(m.GetKey()), value: &value}, nil
 }
 
-// cloned is s, never shared with a message.
-func cloned(s *string) *string {
-	if s == nil {
+// cloned is v, never shared with a message.
+func cloned[T any](v *T) *T {
+	if v == nil {
 		return nil
 	}
-	copied := *s
+	copied := *v
 	return &copied
 }

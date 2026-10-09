@@ -335,9 +335,15 @@ async function lifecycle(domain: string): Promise<void> {
 
       const feedback = await client.memory.shareFeedback({
         sessionId: session.id,
-        feedback: [{ idx: insight.idx, relevant: true, correct: true }]
+        feedback: [{ idx: insight.idx, relevant: true }]
       })
-      assert.ok(feedback.entries.some(entry => entry.idx === insight.idx))
+      // Left out, correct is recorded as unjudged rather than false.
+      assert.deepEqual(
+        feedback.entries
+          .filter(entry => entry.idx === insight.idx)
+          .map(entry => entry.correct),
+        [null]
+      )
 
       const fetched = await client.memory.getMemory(memory.idx)
       assert.equal(fetched.idx, memory.idx)

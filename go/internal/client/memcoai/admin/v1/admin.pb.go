@@ -27,7 +27,10 @@ type Network struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// parent_id is empty for a root network.
+	// parent_id is the first of parent_ids, empty for a root network. Read
+	// parent_ids instead: a network may have several parents.
+	//
+	// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 	ParentId string `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	// domain is the memory domain the network's tree belongs to.
 	Domain string `protobuf:"bytes,4,opt,name=domain,proto3" json:"domain,omitempty"`
@@ -36,8 +39,10 @@ type Network struct {
 	// scope is "internal" or "customer", where the organization uses it.
 	Scope string `protobuf:"bytes,6,opt,name=scope,proto3" json:"scope,omitempty"`
 	// owner names who the network's knowledge belongs to, where it is used.
-	Owner         string `protobuf:"bytes,7,opt,name=owner,proto3" json:"owner,omitempty"`
-	Description   string `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`
+	Owner       string `protobuf:"bytes,7,opt,name=owner,proto3" json:"owner,omitempty"`
+	Description string `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`
+	// parent_ids are the network's parents, empty for a root network.
+	ParentIds     []string `protobuf:"bytes,9,rep,name=parent_ids,json=parentIds,proto3" json:"parent_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -86,6 +91,7 @@ func (x *Network) GetName() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 func (x *Network) GetParentId() string {
 	if x != nil {
 		return x.ParentId
@@ -128,6 +134,13 @@ func (x *Network) GetDescription() string {
 	return ""
 }
 
+func (x *Network) GetParentIds() []string {
+	if x != nil {
+		return x.ParentIds
+	}
+	return nil
+}
+
 // ListNetworksRequest pages through the organization's networks.
 type ListNetworksRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -141,7 +154,8 @@ type ListNetworksRequest struct {
 	PageSize int32  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// domain keeps networks of that memory domain.
 	Domain string `protobuf:"bytes,6,opt,name=domain,proto3" json:"domain,omitempty"`
-	// parent_id keeps the children of that network; "root" keeps root networks.
+	// parent_id keeps the children of that network, each of which may have other
+	// parents too; "root" keeps root networks.
 	ParentId string `protobuf:"bytes,7,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	// ids keeps only those networks, at most 100.
 	Ids           []string `protobuf:"bytes,8,rep,name=ids,proto3" json:"ids,omitempty"`
@@ -292,17 +306,22 @@ func (x *ListNetworksResponse) GetTotalCount() int64 {
 type CreateNetworkRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// parent_id makes this a child of another network, which it takes its domain
-	// from. Empty creates a root.
+	// parent_id makes this a child of one network; it is read as parent_ids
+	// holding that one network. Set parent_ids instead, never both.
+	//
+	// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 	ParentId string `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	// domain places a root network; empty takes the organization's default. A child
 	// must not name one.
 	Domain string `protobuf:"bytes,3,opt,name=domain,proto3" json:"domain,omitempty"`
 	// region is the data residency; empty takes the organization's default.
-	Region        string `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
-	Scope         string `protobuf:"bytes,5,opt,name=scope,proto3" json:"scope,omitempty"`
-	Owner         string `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
-	Description   string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	Region      string `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	Scope       string `protobuf:"bytes,5,opt,name=scope,proto3" json:"scope,omitempty"`
+	Owner       string `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
+	Description string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	// parent_ids makes this a child of each of those networks, each named once,
+	// which all share the domain it takes. Empty creates a root.
+	ParentIds     []string `protobuf:"bytes,8,rep,name=parent_ids,json=parentIds,proto3" json:"parent_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -344,6 +363,7 @@ func (x *CreateNetworkRequest) GetName() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 func (x *CreateNetworkRequest) GetParentId() string {
 	if x != nil {
 		return x.ParentId
@@ -386,23 +406,81 @@ func (x *CreateNetworkRequest) GetDescription() string {
 	return ""
 }
 
+func (x *CreateNetworkRequest) GetParentIds() []string {
+	if x != nil {
+		return x.ParentIds
+	}
+	return nil
+}
+
+// NetworkParents is a network's whole parent set; empty makes it a root.
+type NetworkParents struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ids           []string               `protobuf:"bytes,1,rep,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NetworkParents) Reset() {
+	*x = NetworkParents{}
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NetworkParents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkParents) ProtoMessage() {}
+
+func (x *NetworkParents) ProtoReflect() protoreflect.Message {
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkParents.ProtoReflect.Descriptor instead.
+func (*NetworkParents) Descriptor() ([]byte, []int) {
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *NetworkParents) GetIds() []string {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
 // UpdateNetworkRequest patches a network. An unset field is left as it is; an
 // explicitly empty string clears the field where the field can be cleared.
 type UpdateNetworkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	ParentId      *string                `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
-	Scope         *string                `protobuf:"bytes,4,opt,name=scope,proto3,oneof" json:"scope,omitempty"`
-	Owner         *string                `protobuf:"bytes,5,opt,name=owner,proto3,oneof" json:"owner,omitempty"`
-	Description   *string                `protobuf:"bytes,6,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	// parent_id replaces the whole parent set with that one network, dropping any
+	// other parent; empty makes a root. Set parent_ids instead, never both.
+	//
+	// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
+	ParentId    *string `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
+	Scope       *string `protobuf:"bytes,4,opt,name=scope,proto3,oneof" json:"scope,omitempty"`
+	Owner       *string `protobuf:"bytes,5,opt,name=owner,proto3,oneof" json:"owner,omitempty"`
+	Description *string `protobuf:"bytes,6,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	// parent_ids replaces the network's whole parent set when set.
+	ParentIds     *NetworkParents `protobuf:"bytes,7,opt,name=parent_ids,json=parentIds,proto3" json:"parent_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateNetworkRequest) Reset() {
 	*x = UpdateNetworkRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[4]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -414,7 +492,7 @@ func (x *UpdateNetworkRequest) String() string {
 func (*UpdateNetworkRequest) ProtoMessage() {}
 
 func (x *UpdateNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[4]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -427,7 +505,7 @@ func (x *UpdateNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateNetworkRequest.ProtoReflect.Descriptor instead.
 func (*UpdateNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{4}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UpdateNetworkRequest) GetId() string {
@@ -444,6 +522,7 @@ func (x *UpdateNetworkRequest) GetName() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 func (x *UpdateNetworkRequest) GetParentId() string {
 	if x != nil && x.ParentId != nil {
 		return *x.ParentId
@@ -472,6 +551,13 @@ func (x *UpdateNetworkRequest) GetDescription() string {
 	return ""
 }
 
+func (x *UpdateNetworkRequest) GetParentIds() *NetworkParents {
+	if x != nil {
+		return x.ParentIds
+	}
+	return nil
+}
+
 // DeleteNetworkRequest names the network to remove.
 type DeleteNetworkRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -482,7 +568,7 @@ type DeleteNetworkRequest struct {
 
 func (x *DeleteNetworkRequest) Reset() {
 	*x = DeleteNetworkRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[5]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +580,7 @@ func (x *DeleteNetworkRequest) String() string {
 func (*DeleteNetworkRequest) ProtoMessage() {}
 
 func (x *DeleteNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[5]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +593,7 @@ func (x *DeleteNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNetworkRequest.ProtoReflect.Descriptor instead.
 func (*DeleteNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{5}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DeleteNetworkRequest) GetId() string {
@@ -529,7 +615,7 @@ type DeleteNetworkResponse struct {
 
 func (x *DeleteNetworkResponse) Reset() {
 	*x = DeleteNetworkResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[6]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -541,7 +627,7 @@ func (x *DeleteNetworkResponse) String() string {
 func (*DeleteNetworkResponse) ProtoMessage() {}
 
 func (x *DeleteNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[6]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -554,7 +640,7 @@ func (x *DeleteNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNetworkResponse.ProtoReflect.Descriptor instead.
 func (*DeleteNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{6}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeleteNetworkResponse) GetId() string {
@@ -583,7 +669,7 @@ type Member struct {
 
 func (x *Member) Reset() {
 	*x = Member{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[7]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -595,7 +681,7 @@ func (x *Member) String() string {
 func (*Member) ProtoMessage() {}
 
 func (x *Member) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[7]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +694,7 @@ func (x *Member) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Member.ProtoReflect.Descriptor instead.
 func (*Member) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{7}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Member) GetUserId() string {
@@ -645,7 +731,7 @@ type ListNetworkMembersRequest struct {
 
 func (x *ListNetworkMembersRequest) Reset() {
 	*x = ListNetworkMembersRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[8]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -657,7 +743,7 @@ func (x *ListNetworkMembersRequest) String() string {
 func (*ListNetworkMembersRequest) ProtoMessage() {}
 
 func (x *ListNetworkMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[8]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -670,7 +756,7 @@ func (x *ListNetworkMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworkMembersRequest.ProtoReflect.Descriptor instead.
 func (*ListNetworkMembersRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{8}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListNetworkMembersRequest) GetId() string {
@@ -712,7 +798,7 @@ type ListNetworkMembersResponse struct {
 
 func (x *ListNetworkMembersResponse) Reset() {
 	*x = ListNetworkMembersResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[9]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -724,7 +810,7 @@ func (x *ListNetworkMembersResponse) String() string {
 func (*ListNetworkMembersResponse) ProtoMessage() {}
 
 func (x *ListNetworkMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[9]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -737,7 +823,7 @@ func (x *ListNetworkMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworkMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListNetworkMembersResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{9}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListNetworkMembersResponse) GetMembers() []*Member {
@@ -768,7 +854,7 @@ type AddNetworkMemberRequest struct {
 
 func (x *AddNetworkMemberRequest) Reset() {
 	*x = AddNetworkMemberRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[10]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -780,7 +866,7 @@ func (x *AddNetworkMemberRequest) String() string {
 func (*AddNetworkMemberRequest) ProtoMessage() {}
 
 func (x *AddNetworkMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[10]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -793,7 +879,7 @@ func (x *AddNetworkMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddNetworkMemberRequest.ProtoReflect.Descriptor instead.
 func (*AddNetworkMemberRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{10}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AddNetworkMemberRequest) GetId() string {
@@ -831,7 +917,7 @@ type AddNetworkMemberResponse struct {
 
 func (x *AddNetworkMemberResponse) Reset() {
 	*x = AddNetworkMemberResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[11]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -843,7 +929,7 @@ func (x *AddNetworkMemberResponse) String() string {
 func (*AddNetworkMemberResponse) ProtoMessage() {}
 
 func (x *AddNetworkMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[11]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -856,7 +942,7 @@ func (x *AddNetworkMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddNetworkMemberResponse.ProtoReflect.Descriptor instead.
 func (*AddNetworkMemberResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{11}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AddNetworkMemberResponse) GetId() string {
@@ -891,7 +977,7 @@ type RemoveNetworkMemberRequest struct {
 
 func (x *RemoveNetworkMemberRequest) Reset() {
 	*x = RemoveNetworkMemberRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[12]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +989,7 @@ func (x *RemoveNetworkMemberRequest) String() string {
 func (*RemoveNetworkMemberRequest) ProtoMessage() {}
 
 func (x *RemoveNetworkMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[12]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +1002,7 @@ func (x *RemoveNetworkMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNetworkMemberRequest.ProtoReflect.Descriptor instead.
 func (*RemoveNetworkMemberRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{12}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RemoveNetworkMemberRequest) GetId() string {
@@ -944,7 +1030,7 @@ type RemoveNetworkMemberResponse struct {
 
 func (x *RemoveNetworkMemberResponse) Reset() {
 	*x = RemoveNetworkMemberResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[13]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -956,7 +1042,7 @@ func (x *RemoveNetworkMemberResponse) String() string {
 func (*RemoveNetworkMemberResponse) ProtoMessage() {}
 
 func (x *RemoveNetworkMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[13]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -969,7 +1055,7 @@ func (x *RemoveNetworkMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNetworkMemberResponse.ProtoReflect.Descriptor instead.
 func (*RemoveNetworkMemberResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{13}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RemoveNetworkMemberResponse) GetId() string {
@@ -1002,7 +1088,7 @@ type Group struct {
 
 func (x *Group) Reset() {
 	*x = Group{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[14]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1100,7 @@ func (x *Group) String() string {
 func (*Group) ProtoMessage() {}
 
 func (x *Group) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[14]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1113,7 @@ func (x *Group) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Group.ProtoReflect.Descriptor instead.
 func (*Group) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{14}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Group) GetId() string {
@@ -1075,7 +1161,7 @@ type ListGroupsRequest struct {
 
 func (x *ListGroupsRequest) Reset() {
 	*x = ListGroupsRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[15]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1087,7 +1173,7 @@ func (x *ListGroupsRequest) String() string {
 func (*ListGroupsRequest) ProtoMessage() {}
 
 func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[15]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1100,7 +1186,7 @@ func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupsRequest.ProtoReflect.Descriptor instead.
 func (*ListGroupsRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{15}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListGroupsRequest) GetName() string {
@@ -1149,7 +1235,7 @@ type ListGroupsResponse struct {
 
 func (x *ListGroupsResponse) Reset() {
 	*x = ListGroupsResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[16]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1161,7 +1247,7 @@ func (x *ListGroupsResponse) String() string {
 func (*ListGroupsResponse) ProtoMessage() {}
 
 func (x *ListGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[16]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1174,7 +1260,7 @@ func (x *ListGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupsResponse.ProtoReflect.Descriptor instead.
 func (*ListGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{16}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListGroupsResponse) GetGroups() []*Group {
@@ -1201,7 +1287,7 @@ type ListGroupMembersRequest struct {
 
 func (x *ListGroupMembersRequest) Reset() {
 	*x = ListGroupMembersRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[17]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1213,7 +1299,7 @@ func (x *ListGroupMembersRequest) String() string {
 func (*ListGroupMembersRequest) ProtoMessage() {}
 
 func (x *ListGroupMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[17]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1226,7 +1312,7 @@ func (x *ListGroupMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupMembersRequest.ProtoReflect.Descriptor instead.
 func (*ListGroupMembersRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{17}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListGroupMembersRequest) GetId() string {
@@ -1246,7 +1332,7 @@ type ListGroupMembersResponse struct {
 
 func (x *ListGroupMembersResponse) Reset() {
 	*x = ListGroupMembersResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[18]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1344,7 @@ func (x *ListGroupMembersResponse) String() string {
 func (*ListGroupMembersResponse) ProtoMessage() {}
 
 func (x *ListGroupMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[18]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,7 +1357,7 @@ func (x *ListGroupMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListGroupMembersResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{18}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListGroupMembersResponse) GetMembers() []*Member {
@@ -1292,7 +1378,7 @@ type AddNetworkGroupRequest struct {
 
 func (x *AddNetworkGroupRequest) Reset() {
 	*x = AddNetworkGroupRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[19]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1304,7 +1390,7 @@ func (x *AddNetworkGroupRequest) String() string {
 func (*AddNetworkGroupRequest) ProtoMessage() {}
 
 func (x *AddNetworkGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[19]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1317,7 +1403,7 @@ func (x *AddNetworkGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddNetworkGroupRequest.ProtoReflect.Descriptor instead.
 func (*AddNetworkGroupRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{19}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AddNetworkGroupRequest) GetId() string {
@@ -1345,7 +1431,7 @@ type AddNetworkGroupResponse struct {
 
 func (x *AddNetworkGroupResponse) Reset() {
 	*x = AddNetworkGroupResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[20]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1357,7 +1443,7 @@ func (x *AddNetworkGroupResponse) String() string {
 func (*AddNetworkGroupResponse) ProtoMessage() {}
 
 func (x *AddNetworkGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[20]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1370,7 +1456,7 @@ func (x *AddNetworkGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddNetworkGroupResponse.ProtoReflect.Descriptor instead.
 func (*AddNetworkGroupResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{20}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *AddNetworkGroupResponse) GetId() string {
@@ -1398,7 +1484,7 @@ type RemoveNetworkGroupRequest struct {
 
 func (x *RemoveNetworkGroupRequest) Reset() {
 	*x = RemoveNetworkGroupRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[21]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +1496,7 @@ func (x *RemoveNetworkGroupRequest) String() string {
 func (*RemoveNetworkGroupRequest) ProtoMessage() {}
 
 func (x *RemoveNetworkGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[21]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +1509,7 @@ func (x *RemoveNetworkGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNetworkGroupRequest.ProtoReflect.Descriptor instead.
 func (*RemoveNetworkGroupRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{21}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RemoveNetworkGroupRequest) GetId() string {
@@ -1451,7 +1537,7 @@ type RemoveNetworkGroupResponse struct {
 
 func (x *RemoveNetworkGroupResponse) Reset() {
 	*x = RemoveNetworkGroupResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[22]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1463,7 +1549,7 @@ func (x *RemoveNetworkGroupResponse) String() string {
 func (*RemoveNetworkGroupResponse) ProtoMessage() {}
 
 func (x *RemoveNetworkGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[22]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1476,7 +1562,7 @@ func (x *RemoveNetworkGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNetworkGroupResponse.ProtoReflect.Descriptor instead.
 func (*RemoveNetworkGroupResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{22}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RemoveNetworkGroupResponse) GetId() string {
@@ -1510,7 +1596,7 @@ type ExternalUser struct {
 
 func (x *ExternalUser) Reset() {
 	*x = ExternalUser{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[23]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1522,7 +1608,7 @@ func (x *ExternalUser) String() string {
 func (*ExternalUser) ProtoMessage() {}
 
 func (x *ExternalUser) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[23]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1535,7 +1621,7 @@ func (x *ExternalUser) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExternalUser.ProtoReflect.Descriptor instead.
 func (*ExternalUser) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{23}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ExternalUser) GetId() string {
@@ -1593,7 +1679,7 @@ type ListExternalUsersRequest struct {
 
 func (x *ListExternalUsersRequest) Reset() {
 	*x = ListExternalUsersRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[24]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1605,7 +1691,7 @@ func (x *ListExternalUsersRequest) String() string {
 func (*ListExternalUsersRequest) ProtoMessage() {}
 
 func (x *ListExternalUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[24]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1618,7 +1704,7 @@ func (x *ListExternalUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExternalUsersRequest.ProtoReflect.Descriptor instead.
 func (*ListExternalUsersRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{24}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListExternalUsersRequest) GetSearch() string {
@@ -1653,7 +1739,7 @@ type ListExternalUsersResponse struct {
 
 func (x *ListExternalUsersResponse) Reset() {
 	*x = ListExternalUsersResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[25]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1665,7 +1751,7 @@ func (x *ListExternalUsersResponse) String() string {
 func (*ListExternalUsersResponse) ProtoMessage() {}
 
 func (x *ListExternalUsersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[25]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1678,7 +1764,7 @@ func (x *ListExternalUsersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExternalUsersResponse.ProtoReflect.Descriptor instead.
 func (*ListExternalUsersResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{25}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListExternalUsersResponse) GetExternalUsers() []*ExternalUser {
@@ -1705,7 +1791,7 @@ type GetExternalUserRequest struct {
 
 func (x *GetExternalUserRequest) Reset() {
 	*x = GetExternalUserRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[26]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1717,7 +1803,7 @@ func (x *GetExternalUserRequest) String() string {
 func (*GetExternalUserRequest) ProtoMessage() {}
 
 func (x *GetExternalUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[26]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1730,7 +1816,7 @@ func (x *GetExternalUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExternalUserRequest.ProtoReflect.Descriptor instead.
 func (*GetExternalUserRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{26}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetExternalUserRequest) GetExternalId() string {
@@ -1754,7 +1840,7 @@ type CreateExternalUserRequest struct {
 
 func (x *CreateExternalUserRequest) Reset() {
 	*x = CreateExternalUserRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[27]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1766,7 +1852,7 @@ func (x *CreateExternalUserRequest) String() string {
 func (*CreateExternalUserRequest) ProtoMessage() {}
 
 func (x *CreateExternalUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[27]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1779,7 +1865,7 @@ func (x *CreateExternalUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExternalUserRequest.ProtoReflect.Descriptor instead.
 func (*CreateExternalUserRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{27}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateExternalUserRequest) GetExternalId() string {
@@ -1824,7 +1910,7 @@ type UpdateExternalUserRequest struct {
 
 func (x *UpdateExternalUserRequest) Reset() {
 	*x = UpdateExternalUserRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[28]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1836,7 +1922,7 @@ func (x *UpdateExternalUserRequest) String() string {
 func (*UpdateExternalUserRequest) ProtoMessage() {}
 
 func (x *UpdateExternalUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[28]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1849,7 +1935,7 @@ func (x *UpdateExternalUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateExternalUserRequest.ProtoReflect.Descriptor instead.
 func (*UpdateExternalUserRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{28}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *UpdateExternalUserRequest) GetExternalId() string {
@@ -1890,7 +1976,7 @@ type DeleteExternalUserRequest struct {
 
 func (x *DeleteExternalUserRequest) Reset() {
 	*x = DeleteExternalUserRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[29]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1902,7 +1988,7 @@ func (x *DeleteExternalUserRequest) String() string {
 func (*DeleteExternalUserRequest) ProtoMessage() {}
 
 func (x *DeleteExternalUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[29]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1915,7 +2001,7 @@ func (x *DeleteExternalUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExternalUserRequest.ProtoReflect.Descriptor instead.
 func (*DeleteExternalUserRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{29}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DeleteExternalUserRequest) GetExternalId() string {
@@ -1935,7 +2021,7 @@ type DeleteExternalUserResponse struct {
 
 func (x *DeleteExternalUserResponse) Reset() {
 	*x = DeleteExternalUserResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[30]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1947,7 +2033,7 @@ func (x *DeleteExternalUserResponse) String() string {
 func (*DeleteExternalUserResponse) ProtoMessage() {}
 
 func (x *DeleteExternalUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[30]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1960,7 +2046,7 @@ func (x *DeleteExternalUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExternalUserResponse.ProtoReflect.Descriptor instead.
 func (*DeleteExternalUserResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{30}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteExternalUserResponse) GetExternalId() string {
@@ -1987,7 +2073,7 @@ type ExternalUserKey struct {
 
 func (x *ExternalUserKey) Reset() {
 	*x = ExternalUserKey{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[31]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1999,7 +2085,7 @@ func (x *ExternalUserKey) String() string {
 func (*ExternalUserKey) ProtoMessage() {}
 
 func (x *ExternalUserKey) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[31]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2012,7 +2098,7 @@ func (x *ExternalUserKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExternalUserKey.ProtoReflect.Descriptor instead.
 func (*ExternalUserKey) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{31}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ExternalUserKey) GetId() string {
@@ -2067,7 +2153,7 @@ type ListExternalUserKeysRequest struct {
 
 func (x *ListExternalUserKeysRequest) Reset() {
 	*x = ListExternalUserKeysRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[32]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2079,7 +2165,7 @@ func (x *ListExternalUserKeysRequest) String() string {
 func (*ListExternalUserKeysRequest) ProtoMessage() {}
 
 func (x *ListExternalUserKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[32]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2092,7 +2178,7 @@ func (x *ListExternalUserKeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExternalUserKeysRequest.ProtoReflect.Descriptor instead.
 func (*ListExternalUserKeysRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{32}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListExternalUserKeysRequest) GetExternalId() string {
@@ -2112,7 +2198,7 @@ type ListExternalUserKeysResponse struct {
 
 func (x *ListExternalUserKeysResponse) Reset() {
 	*x = ListExternalUserKeysResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[33]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2124,7 +2210,7 @@ func (x *ListExternalUserKeysResponse) String() string {
 func (*ListExternalUserKeysResponse) ProtoMessage() {}
 
 func (x *ListExternalUserKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[33]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2137,7 +2223,7 @@ func (x *ListExternalUserKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExternalUserKeysResponse.ProtoReflect.Descriptor instead.
 func (*ListExternalUserKeysResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{33}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListExternalUserKeysResponse) GetKeys() []*ExternalUserKey {
@@ -2164,7 +2250,7 @@ type CreateExternalUserKeyRequest struct {
 
 func (x *CreateExternalUserKeyRequest) Reset() {
 	*x = CreateExternalUserKeyRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[34]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2176,7 +2262,7 @@ func (x *CreateExternalUserKeyRequest) String() string {
 func (*CreateExternalUserKeyRequest) ProtoMessage() {}
 
 func (x *CreateExternalUserKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[34]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2189,7 +2275,7 @@ func (x *CreateExternalUserKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExternalUserKeyRequest.ProtoReflect.Descriptor instead.
 func (*CreateExternalUserKeyRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{34}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateExternalUserKeyRequest) GetExternalId() string {
@@ -2231,7 +2317,7 @@ type CreateExternalUserKeyResponse struct {
 
 func (x *CreateExternalUserKeyResponse) Reset() {
 	*x = CreateExternalUserKeyResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[35]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2243,7 +2329,7 @@ func (x *CreateExternalUserKeyResponse) String() string {
 func (*CreateExternalUserKeyResponse) ProtoMessage() {}
 
 func (x *CreateExternalUserKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[35]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2256,7 +2342,7 @@ func (x *CreateExternalUserKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExternalUserKeyResponse.ProtoReflect.Descriptor instead.
 func (*CreateExternalUserKeyResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{35}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CreateExternalUserKeyResponse) GetKey() *ExternalUserKey {
@@ -2284,7 +2370,7 @@ type DeleteExternalUserKeyRequest struct {
 
 func (x *DeleteExternalUserKeyRequest) Reset() {
 	*x = DeleteExternalUserKeyRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[36]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2296,7 +2382,7 @@ func (x *DeleteExternalUserKeyRequest) String() string {
 func (*DeleteExternalUserKeyRequest) ProtoMessage() {}
 
 func (x *DeleteExternalUserKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[36]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2309,7 +2395,7 @@ func (x *DeleteExternalUserKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExternalUserKeyRequest.ProtoReflect.Descriptor instead.
 func (*DeleteExternalUserKeyRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{36}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *DeleteExternalUserKeyRequest) GetExternalId() string {
@@ -2337,7 +2423,7 @@ type DeleteExternalUserKeyResponse struct {
 
 func (x *DeleteExternalUserKeyResponse) Reset() {
 	*x = DeleteExternalUserKeyResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[37]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2349,7 +2435,7 @@ func (x *DeleteExternalUserKeyResponse) String() string {
 func (*DeleteExternalUserKeyResponse) ProtoMessage() {}
 
 func (x *DeleteExternalUserKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[37]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2362,7 +2448,7 @@ func (x *DeleteExternalUserKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExternalUserKeyResponse.ProtoReflect.Descriptor instead.
 func (*DeleteExternalUserKeyResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{37}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DeleteExternalUserKeyResponse) GetExternalId() string {
@@ -2391,7 +2477,7 @@ type ImpersonateExternalUserRequest struct {
 
 func (x *ImpersonateExternalUserRequest) Reset() {
 	*x = ImpersonateExternalUserRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[38]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2403,7 +2489,7 @@ func (x *ImpersonateExternalUserRequest) String() string {
 func (*ImpersonateExternalUserRequest) ProtoMessage() {}
 
 func (x *ImpersonateExternalUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[38]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2416,7 +2502,7 @@ func (x *ImpersonateExternalUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImpersonateExternalUserRequest.ProtoReflect.Descriptor instead.
 func (*ImpersonateExternalUserRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{38}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ImpersonateExternalUserRequest) GetExternalId() string {
@@ -2454,7 +2540,7 @@ type ImpersonationKey struct {
 
 func (x *ImpersonationKey) Reset() {
 	*x = ImpersonationKey{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[39]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2466,7 +2552,7 @@ func (x *ImpersonationKey) String() string {
 func (*ImpersonationKey) ProtoMessage() {}
 
 func (x *ImpersonationKey) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[39]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2479,7 +2565,7 @@ func (x *ImpersonationKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImpersonationKey.ProtoReflect.Descriptor instead.
 func (*ImpersonationKey) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{39}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ImpersonationKey) GetValue() string {
@@ -2535,7 +2621,7 @@ type EndImpersonationRequest struct {
 
 func (x *EndImpersonationRequest) Reset() {
 	*x = EndImpersonationRequest{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[40]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2547,7 +2633,7 @@ func (x *EndImpersonationRequest) String() string {
 func (*EndImpersonationRequest) ProtoMessage() {}
 
 func (x *EndImpersonationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[40]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2560,7 +2646,7 @@ func (x *EndImpersonationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndImpersonationRequest.ProtoReflect.Descriptor instead.
 func (*EndImpersonationRequest) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{40}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *EndImpersonationRequest) GetExternalId() string {
@@ -2588,7 +2674,7 @@ type EndImpersonationResponse struct {
 
 func (x *EndImpersonationResponse) Reset() {
 	*x = EndImpersonationResponse{}
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[41]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2600,7 +2686,7 @@ func (x *EndImpersonationResponse) String() string {
 func (*EndImpersonationResponse) ProtoMessage() {}
 
 func (x *EndImpersonationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[41]
+	mi := &file_memcoai_admin_v1_admin_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2613,7 +2699,7 @@ func (x *EndImpersonationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndImpersonationResponse.ProtoReflect.Descriptor instead.
 func (*EndImpersonationResponse) Descriptor() ([]byte, []int) {
-	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{41}
+	return file_memcoai_admin_v1_admin_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *EndImpersonationResponse) GetExternalId() string {
@@ -2634,16 +2720,18 @@ var File_memcoai_admin_v1_admin_proto protoreflect.FileDescriptor
 
 const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x1cmemcoai/admin/v1/admin.proto\x12\x10memcoai.admin.v1\"\xc8\x01\n" +
+	"\x1cmemcoai/admin/v1/admin.proto\x12\x10memcoai.admin.v1\"\xeb\x01\n" +
 	"\aNetwork\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
-	"\tparent_id\x18\x03 \x01(\tR\bparentId\x12\x16\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
+	"\tparent_id\x18\x03 \x01(\tB\x02\x18\x01R\bparentId\x12\x16\n" +
 	"\x06domain\x18\x04 \x01(\tR\x06domain\x12\x16\n" +
 	"\x06region\x18\x05 \x01(\tR\x06region\x12\x14\n" +
 	"\x05scope\x18\x06 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05owner\x18\a \x01(\tR\x05owner\x12 \n" +
-	"\vdescription\x18\b \x01(\tR\vdescription\"\xcd\x01\n" +
+	"\vdescription\x18\b \x01(\tR\vdescription\x12\x1d\n" +
+	"\n" +
+	"parent_ids\x18\t \x03(\tR\tparentIds\"\xcd\x01\n" +
 	"\x13ListNetworksRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x14\n" +
@@ -2656,22 +2744,28 @@ const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\x14ListNetworksResponse\x125\n" +
 	"\bnetworks\x18\x01 \x03(\v2\x19.memcoai.admin.v1.NetworkR\bnetworks\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x03R\n" +
-	"totalCount\"\xc5\x01\n" +
+	"totalCount\"\xe8\x01\n" +
 	"\x14CreateNetworkRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tparent_id\x18\x02 \x01(\tR\bparentId\x12\x16\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\tparent_id\x18\x02 \x01(\tB\x02\x18\x01R\bparentId\x12\x16\n" +
 	"\x06domain\x18\x03 \x01(\tR\x06domain\x12\x16\n" +
 	"\x06region\x18\x04 \x01(\tR\x06region\x12\x14\n" +
 	"\x05scope\x18\x05 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05owner\x18\x06 \x01(\tR\x05owner\x12 \n" +
-	"\vdescription\x18\a \x01(\tR\vdescription\"\xf9\x01\n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\x12\x1d\n" +
+	"\n" +
+	"parent_ids\x18\b \x03(\tR\tparentIds\"\"\n" +
+	"\x0eNetworkParents\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"\xbe\x02\n" +
 	"\x14UpdateNetworkRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12 \n" +
-	"\tparent_id\x18\x03 \x01(\tH\x01R\bparentId\x88\x01\x01\x12\x19\n" +
+	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12$\n" +
+	"\tparent_id\x18\x03 \x01(\tB\x02\x18\x01H\x01R\bparentId\x88\x01\x01\x12\x19\n" +
 	"\x05scope\x18\x04 \x01(\tH\x02R\x05scope\x88\x01\x01\x12\x19\n" +
 	"\x05owner\x18\x05 \x01(\tH\x03R\x05owner\x88\x01\x01\x12%\n" +
-	"\vdescription\x18\x06 \x01(\tH\x04R\vdescription\x88\x01\x01B\a\n" +
+	"\vdescription\x18\x06 \x01(\tH\x04R\vdescription\x88\x01\x01\x12?\n" +
+	"\n" +
+	"parent_ids\x18\a \x01(\v2 .memcoai.admin.v1.NetworkParentsR\tparentIdsB\a\n" +
 	"\x05_nameB\f\n" +
 	"\n" +
 	"_parent_idB\b\n" +
@@ -2874,108 +2968,110 @@ func file_memcoai_admin_v1_admin_proto_rawDescGZIP() []byte {
 	return file_memcoai_admin_v1_admin_proto_rawDescData
 }
 
-var file_memcoai_admin_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_memcoai_admin_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_memcoai_admin_v1_admin_proto_goTypes = []any{
 	(*Network)(nil),                        // 0: memcoai.admin.v1.Network
 	(*ListNetworksRequest)(nil),            // 1: memcoai.admin.v1.ListNetworksRequest
 	(*ListNetworksResponse)(nil),           // 2: memcoai.admin.v1.ListNetworksResponse
 	(*CreateNetworkRequest)(nil),           // 3: memcoai.admin.v1.CreateNetworkRequest
-	(*UpdateNetworkRequest)(nil),           // 4: memcoai.admin.v1.UpdateNetworkRequest
-	(*DeleteNetworkRequest)(nil),           // 5: memcoai.admin.v1.DeleteNetworkRequest
-	(*DeleteNetworkResponse)(nil),          // 6: memcoai.admin.v1.DeleteNetworkResponse
-	(*Member)(nil),                         // 7: memcoai.admin.v1.Member
-	(*ListNetworkMembersRequest)(nil),      // 8: memcoai.admin.v1.ListNetworkMembersRequest
-	(*ListNetworkMembersResponse)(nil),     // 9: memcoai.admin.v1.ListNetworkMembersResponse
-	(*AddNetworkMemberRequest)(nil),        // 10: memcoai.admin.v1.AddNetworkMemberRequest
-	(*AddNetworkMemberResponse)(nil),       // 11: memcoai.admin.v1.AddNetworkMemberResponse
-	(*RemoveNetworkMemberRequest)(nil),     // 12: memcoai.admin.v1.RemoveNetworkMemberRequest
-	(*RemoveNetworkMemberResponse)(nil),    // 13: memcoai.admin.v1.RemoveNetworkMemberResponse
-	(*Group)(nil),                          // 14: memcoai.admin.v1.Group
-	(*ListGroupsRequest)(nil),              // 15: memcoai.admin.v1.ListGroupsRequest
-	(*ListGroupsResponse)(nil),             // 16: memcoai.admin.v1.ListGroupsResponse
-	(*ListGroupMembersRequest)(nil),        // 17: memcoai.admin.v1.ListGroupMembersRequest
-	(*ListGroupMembersResponse)(nil),       // 18: memcoai.admin.v1.ListGroupMembersResponse
-	(*AddNetworkGroupRequest)(nil),         // 19: memcoai.admin.v1.AddNetworkGroupRequest
-	(*AddNetworkGroupResponse)(nil),        // 20: memcoai.admin.v1.AddNetworkGroupResponse
-	(*RemoveNetworkGroupRequest)(nil),      // 21: memcoai.admin.v1.RemoveNetworkGroupRequest
-	(*RemoveNetworkGroupResponse)(nil),     // 22: memcoai.admin.v1.RemoveNetworkGroupResponse
-	(*ExternalUser)(nil),                   // 23: memcoai.admin.v1.ExternalUser
-	(*ListExternalUsersRequest)(nil),       // 24: memcoai.admin.v1.ListExternalUsersRequest
-	(*ListExternalUsersResponse)(nil),      // 25: memcoai.admin.v1.ListExternalUsersResponse
-	(*GetExternalUserRequest)(nil),         // 26: memcoai.admin.v1.GetExternalUserRequest
-	(*CreateExternalUserRequest)(nil),      // 27: memcoai.admin.v1.CreateExternalUserRequest
-	(*UpdateExternalUserRequest)(nil),      // 28: memcoai.admin.v1.UpdateExternalUserRequest
-	(*DeleteExternalUserRequest)(nil),      // 29: memcoai.admin.v1.DeleteExternalUserRequest
-	(*DeleteExternalUserResponse)(nil),     // 30: memcoai.admin.v1.DeleteExternalUserResponse
-	(*ExternalUserKey)(nil),                // 31: memcoai.admin.v1.ExternalUserKey
-	(*ListExternalUserKeysRequest)(nil),    // 32: memcoai.admin.v1.ListExternalUserKeysRequest
-	(*ListExternalUserKeysResponse)(nil),   // 33: memcoai.admin.v1.ListExternalUserKeysResponse
-	(*CreateExternalUserKeyRequest)(nil),   // 34: memcoai.admin.v1.CreateExternalUserKeyRequest
-	(*CreateExternalUserKeyResponse)(nil),  // 35: memcoai.admin.v1.CreateExternalUserKeyResponse
-	(*DeleteExternalUserKeyRequest)(nil),   // 36: memcoai.admin.v1.DeleteExternalUserKeyRequest
-	(*DeleteExternalUserKeyResponse)(nil),  // 37: memcoai.admin.v1.DeleteExternalUserKeyResponse
-	(*ImpersonateExternalUserRequest)(nil), // 38: memcoai.admin.v1.ImpersonateExternalUserRequest
-	(*ImpersonationKey)(nil),               // 39: memcoai.admin.v1.ImpersonationKey
-	(*EndImpersonationRequest)(nil),        // 40: memcoai.admin.v1.EndImpersonationRequest
-	(*EndImpersonationResponse)(nil),       // 41: memcoai.admin.v1.EndImpersonationResponse
-	nil,                                    // 42: memcoai.admin.v1.DeleteNetworkResponse.RemovedEntry
+	(*NetworkParents)(nil),                 // 4: memcoai.admin.v1.NetworkParents
+	(*UpdateNetworkRequest)(nil),           // 5: memcoai.admin.v1.UpdateNetworkRequest
+	(*DeleteNetworkRequest)(nil),           // 6: memcoai.admin.v1.DeleteNetworkRequest
+	(*DeleteNetworkResponse)(nil),          // 7: memcoai.admin.v1.DeleteNetworkResponse
+	(*Member)(nil),                         // 8: memcoai.admin.v1.Member
+	(*ListNetworkMembersRequest)(nil),      // 9: memcoai.admin.v1.ListNetworkMembersRequest
+	(*ListNetworkMembersResponse)(nil),     // 10: memcoai.admin.v1.ListNetworkMembersResponse
+	(*AddNetworkMemberRequest)(nil),        // 11: memcoai.admin.v1.AddNetworkMemberRequest
+	(*AddNetworkMemberResponse)(nil),       // 12: memcoai.admin.v1.AddNetworkMemberResponse
+	(*RemoveNetworkMemberRequest)(nil),     // 13: memcoai.admin.v1.RemoveNetworkMemberRequest
+	(*RemoveNetworkMemberResponse)(nil),    // 14: memcoai.admin.v1.RemoveNetworkMemberResponse
+	(*Group)(nil),                          // 15: memcoai.admin.v1.Group
+	(*ListGroupsRequest)(nil),              // 16: memcoai.admin.v1.ListGroupsRequest
+	(*ListGroupsResponse)(nil),             // 17: memcoai.admin.v1.ListGroupsResponse
+	(*ListGroupMembersRequest)(nil),        // 18: memcoai.admin.v1.ListGroupMembersRequest
+	(*ListGroupMembersResponse)(nil),       // 19: memcoai.admin.v1.ListGroupMembersResponse
+	(*AddNetworkGroupRequest)(nil),         // 20: memcoai.admin.v1.AddNetworkGroupRequest
+	(*AddNetworkGroupResponse)(nil),        // 21: memcoai.admin.v1.AddNetworkGroupResponse
+	(*RemoveNetworkGroupRequest)(nil),      // 22: memcoai.admin.v1.RemoveNetworkGroupRequest
+	(*RemoveNetworkGroupResponse)(nil),     // 23: memcoai.admin.v1.RemoveNetworkGroupResponse
+	(*ExternalUser)(nil),                   // 24: memcoai.admin.v1.ExternalUser
+	(*ListExternalUsersRequest)(nil),       // 25: memcoai.admin.v1.ListExternalUsersRequest
+	(*ListExternalUsersResponse)(nil),      // 26: memcoai.admin.v1.ListExternalUsersResponse
+	(*GetExternalUserRequest)(nil),         // 27: memcoai.admin.v1.GetExternalUserRequest
+	(*CreateExternalUserRequest)(nil),      // 28: memcoai.admin.v1.CreateExternalUserRequest
+	(*UpdateExternalUserRequest)(nil),      // 29: memcoai.admin.v1.UpdateExternalUserRequest
+	(*DeleteExternalUserRequest)(nil),      // 30: memcoai.admin.v1.DeleteExternalUserRequest
+	(*DeleteExternalUserResponse)(nil),     // 31: memcoai.admin.v1.DeleteExternalUserResponse
+	(*ExternalUserKey)(nil),                // 32: memcoai.admin.v1.ExternalUserKey
+	(*ListExternalUserKeysRequest)(nil),    // 33: memcoai.admin.v1.ListExternalUserKeysRequest
+	(*ListExternalUserKeysResponse)(nil),   // 34: memcoai.admin.v1.ListExternalUserKeysResponse
+	(*CreateExternalUserKeyRequest)(nil),   // 35: memcoai.admin.v1.CreateExternalUserKeyRequest
+	(*CreateExternalUserKeyResponse)(nil),  // 36: memcoai.admin.v1.CreateExternalUserKeyResponse
+	(*DeleteExternalUserKeyRequest)(nil),   // 37: memcoai.admin.v1.DeleteExternalUserKeyRequest
+	(*DeleteExternalUserKeyResponse)(nil),  // 38: memcoai.admin.v1.DeleteExternalUserKeyResponse
+	(*ImpersonateExternalUserRequest)(nil), // 39: memcoai.admin.v1.ImpersonateExternalUserRequest
+	(*ImpersonationKey)(nil),               // 40: memcoai.admin.v1.ImpersonationKey
+	(*EndImpersonationRequest)(nil),        // 41: memcoai.admin.v1.EndImpersonationRequest
+	(*EndImpersonationResponse)(nil),       // 42: memcoai.admin.v1.EndImpersonationResponse
+	nil,                                    // 43: memcoai.admin.v1.DeleteNetworkResponse.RemovedEntry
 }
 var file_memcoai_admin_v1_admin_proto_depIdxs = []int32{
 	0,  // 0: memcoai.admin.v1.ListNetworksResponse.networks:type_name -> memcoai.admin.v1.Network
-	42, // 1: memcoai.admin.v1.DeleteNetworkResponse.removed:type_name -> memcoai.admin.v1.DeleteNetworkResponse.RemovedEntry
-	7,  // 2: memcoai.admin.v1.ListNetworkMembersResponse.members:type_name -> memcoai.admin.v1.Member
-	14, // 3: memcoai.admin.v1.ListGroupsResponse.groups:type_name -> memcoai.admin.v1.Group
-	7,  // 4: memcoai.admin.v1.ListGroupMembersResponse.members:type_name -> memcoai.admin.v1.Member
-	23, // 5: memcoai.admin.v1.ListExternalUsersResponse.external_users:type_name -> memcoai.admin.v1.ExternalUser
-	31, // 6: memcoai.admin.v1.ListExternalUserKeysResponse.keys:type_name -> memcoai.admin.v1.ExternalUserKey
-	31, // 7: memcoai.admin.v1.CreateExternalUserKeyResponse.key:type_name -> memcoai.admin.v1.ExternalUserKey
-	1,  // 8: memcoai.admin.v1.AdminService.ListNetworks:input_type -> memcoai.admin.v1.ListNetworksRequest
-	3,  // 9: memcoai.admin.v1.AdminService.CreateNetwork:input_type -> memcoai.admin.v1.CreateNetworkRequest
-	4,  // 10: memcoai.admin.v1.AdminService.UpdateNetwork:input_type -> memcoai.admin.v1.UpdateNetworkRequest
-	5,  // 11: memcoai.admin.v1.AdminService.DeleteNetwork:input_type -> memcoai.admin.v1.DeleteNetworkRequest
-	8,  // 12: memcoai.admin.v1.AdminService.ListNetworkMembers:input_type -> memcoai.admin.v1.ListNetworkMembersRequest
-	10, // 13: memcoai.admin.v1.AdminService.AddNetworkMember:input_type -> memcoai.admin.v1.AddNetworkMemberRequest
-	12, // 14: memcoai.admin.v1.AdminService.RemoveNetworkMember:input_type -> memcoai.admin.v1.RemoveNetworkMemberRequest
-	15, // 15: memcoai.admin.v1.AdminService.ListGroups:input_type -> memcoai.admin.v1.ListGroupsRequest
-	17, // 16: memcoai.admin.v1.AdminService.ListGroupMembers:input_type -> memcoai.admin.v1.ListGroupMembersRequest
-	19, // 17: memcoai.admin.v1.AdminService.AddNetworkGroup:input_type -> memcoai.admin.v1.AddNetworkGroupRequest
-	21, // 18: memcoai.admin.v1.AdminService.RemoveNetworkGroup:input_type -> memcoai.admin.v1.RemoveNetworkGroupRequest
-	24, // 19: memcoai.admin.v1.AdminService.ListExternalUsers:input_type -> memcoai.admin.v1.ListExternalUsersRequest
-	26, // 20: memcoai.admin.v1.AdminService.GetExternalUser:input_type -> memcoai.admin.v1.GetExternalUserRequest
-	27, // 21: memcoai.admin.v1.AdminService.CreateExternalUser:input_type -> memcoai.admin.v1.CreateExternalUserRequest
-	28, // 22: memcoai.admin.v1.AdminService.UpdateExternalUser:input_type -> memcoai.admin.v1.UpdateExternalUserRequest
-	29, // 23: memcoai.admin.v1.AdminService.DeleteExternalUser:input_type -> memcoai.admin.v1.DeleteExternalUserRequest
-	32, // 24: memcoai.admin.v1.AdminService.ListExternalUserKeys:input_type -> memcoai.admin.v1.ListExternalUserKeysRequest
-	34, // 25: memcoai.admin.v1.AdminService.CreateExternalUserKey:input_type -> memcoai.admin.v1.CreateExternalUserKeyRequest
-	36, // 26: memcoai.admin.v1.AdminService.DeleteExternalUserKey:input_type -> memcoai.admin.v1.DeleteExternalUserKeyRequest
-	38, // 27: memcoai.admin.v1.AdminService.ImpersonateExternalUser:input_type -> memcoai.admin.v1.ImpersonateExternalUserRequest
-	40, // 28: memcoai.admin.v1.AdminService.EndImpersonation:input_type -> memcoai.admin.v1.EndImpersonationRequest
-	2,  // 29: memcoai.admin.v1.AdminService.ListNetworks:output_type -> memcoai.admin.v1.ListNetworksResponse
-	0,  // 30: memcoai.admin.v1.AdminService.CreateNetwork:output_type -> memcoai.admin.v1.Network
-	0,  // 31: memcoai.admin.v1.AdminService.UpdateNetwork:output_type -> memcoai.admin.v1.Network
-	6,  // 32: memcoai.admin.v1.AdminService.DeleteNetwork:output_type -> memcoai.admin.v1.DeleteNetworkResponse
-	9,  // 33: memcoai.admin.v1.AdminService.ListNetworkMembers:output_type -> memcoai.admin.v1.ListNetworkMembersResponse
-	11, // 34: memcoai.admin.v1.AdminService.AddNetworkMember:output_type -> memcoai.admin.v1.AddNetworkMemberResponse
-	13, // 35: memcoai.admin.v1.AdminService.RemoveNetworkMember:output_type -> memcoai.admin.v1.RemoveNetworkMemberResponse
-	16, // 36: memcoai.admin.v1.AdminService.ListGroups:output_type -> memcoai.admin.v1.ListGroupsResponse
-	18, // 37: memcoai.admin.v1.AdminService.ListGroupMembers:output_type -> memcoai.admin.v1.ListGroupMembersResponse
-	20, // 38: memcoai.admin.v1.AdminService.AddNetworkGroup:output_type -> memcoai.admin.v1.AddNetworkGroupResponse
-	22, // 39: memcoai.admin.v1.AdminService.RemoveNetworkGroup:output_type -> memcoai.admin.v1.RemoveNetworkGroupResponse
-	25, // 40: memcoai.admin.v1.AdminService.ListExternalUsers:output_type -> memcoai.admin.v1.ListExternalUsersResponse
-	23, // 41: memcoai.admin.v1.AdminService.GetExternalUser:output_type -> memcoai.admin.v1.ExternalUser
-	23, // 42: memcoai.admin.v1.AdminService.CreateExternalUser:output_type -> memcoai.admin.v1.ExternalUser
-	23, // 43: memcoai.admin.v1.AdminService.UpdateExternalUser:output_type -> memcoai.admin.v1.ExternalUser
-	30, // 44: memcoai.admin.v1.AdminService.DeleteExternalUser:output_type -> memcoai.admin.v1.DeleteExternalUserResponse
-	33, // 45: memcoai.admin.v1.AdminService.ListExternalUserKeys:output_type -> memcoai.admin.v1.ListExternalUserKeysResponse
-	35, // 46: memcoai.admin.v1.AdminService.CreateExternalUserKey:output_type -> memcoai.admin.v1.CreateExternalUserKeyResponse
-	37, // 47: memcoai.admin.v1.AdminService.DeleteExternalUserKey:output_type -> memcoai.admin.v1.DeleteExternalUserKeyResponse
-	39, // 48: memcoai.admin.v1.AdminService.ImpersonateExternalUser:output_type -> memcoai.admin.v1.ImpersonationKey
-	41, // 49: memcoai.admin.v1.AdminService.EndImpersonation:output_type -> memcoai.admin.v1.EndImpersonationResponse
-	29, // [29:50] is the sub-list for method output_type
-	8,  // [8:29] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	4,  // 1: memcoai.admin.v1.UpdateNetworkRequest.parent_ids:type_name -> memcoai.admin.v1.NetworkParents
+	43, // 2: memcoai.admin.v1.DeleteNetworkResponse.removed:type_name -> memcoai.admin.v1.DeleteNetworkResponse.RemovedEntry
+	8,  // 3: memcoai.admin.v1.ListNetworkMembersResponse.members:type_name -> memcoai.admin.v1.Member
+	15, // 4: memcoai.admin.v1.ListGroupsResponse.groups:type_name -> memcoai.admin.v1.Group
+	8,  // 5: memcoai.admin.v1.ListGroupMembersResponse.members:type_name -> memcoai.admin.v1.Member
+	24, // 6: memcoai.admin.v1.ListExternalUsersResponse.external_users:type_name -> memcoai.admin.v1.ExternalUser
+	32, // 7: memcoai.admin.v1.ListExternalUserKeysResponse.keys:type_name -> memcoai.admin.v1.ExternalUserKey
+	32, // 8: memcoai.admin.v1.CreateExternalUserKeyResponse.key:type_name -> memcoai.admin.v1.ExternalUserKey
+	1,  // 9: memcoai.admin.v1.AdminService.ListNetworks:input_type -> memcoai.admin.v1.ListNetworksRequest
+	3,  // 10: memcoai.admin.v1.AdminService.CreateNetwork:input_type -> memcoai.admin.v1.CreateNetworkRequest
+	5,  // 11: memcoai.admin.v1.AdminService.UpdateNetwork:input_type -> memcoai.admin.v1.UpdateNetworkRequest
+	6,  // 12: memcoai.admin.v1.AdminService.DeleteNetwork:input_type -> memcoai.admin.v1.DeleteNetworkRequest
+	9,  // 13: memcoai.admin.v1.AdminService.ListNetworkMembers:input_type -> memcoai.admin.v1.ListNetworkMembersRequest
+	11, // 14: memcoai.admin.v1.AdminService.AddNetworkMember:input_type -> memcoai.admin.v1.AddNetworkMemberRequest
+	13, // 15: memcoai.admin.v1.AdminService.RemoveNetworkMember:input_type -> memcoai.admin.v1.RemoveNetworkMemberRequest
+	16, // 16: memcoai.admin.v1.AdminService.ListGroups:input_type -> memcoai.admin.v1.ListGroupsRequest
+	18, // 17: memcoai.admin.v1.AdminService.ListGroupMembers:input_type -> memcoai.admin.v1.ListGroupMembersRequest
+	20, // 18: memcoai.admin.v1.AdminService.AddNetworkGroup:input_type -> memcoai.admin.v1.AddNetworkGroupRequest
+	22, // 19: memcoai.admin.v1.AdminService.RemoveNetworkGroup:input_type -> memcoai.admin.v1.RemoveNetworkGroupRequest
+	25, // 20: memcoai.admin.v1.AdminService.ListExternalUsers:input_type -> memcoai.admin.v1.ListExternalUsersRequest
+	27, // 21: memcoai.admin.v1.AdminService.GetExternalUser:input_type -> memcoai.admin.v1.GetExternalUserRequest
+	28, // 22: memcoai.admin.v1.AdminService.CreateExternalUser:input_type -> memcoai.admin.v1.CreateExternalUserRequest
+	29, // 23: memcoai.admin.v1.AdminService.UpdateExternalUser:input_type -> memcoai.admin.v1.UpdateExternalUserRequest
+	30, // 24: memcoai.admin.v1.AdminService.DeleteExternalUser:input_type -> memcoai.admin.v1.DeleteExternalUserRequest
+	33, // 25: memcoai.admin.v1.AdminService.ListExternalUserKeys:input_type -> memcoai.admin.v1.ListExternalUserKeysRequest
+	35, // 26: memcoai.admin.v1.AdminService.CreateExternalUserKey:input_type -> memcoai.admin.v1.CreateExternalUserKeyRequest
+	37, // 27: memcoai.admin.v1.AdminService.DeleteExternalUserKey:input_type -> memcoai.admin.v1.DeleteExternalUserKeyRequest
+	39, // 28: memcoai.admin.v1.AdminService.ImpersonateExternalUser:input_type -> memcoai.admin.v1.ImpersonateExternalUserRequest
+	41, // 29: memcoai.admin.v1.AdminService.EndImpersonation:input_type -> memcoai.admin.v1.EndImpersonationRequest
+	2,  // 30: memcoai.admin.v1.AdminService.ListNetworks:output_type -> memcoai.admin.v1.ListNetworksResponse
+	0,  // 31: memcoai.admin.v1.AdminService.CreateNetwork:output_type -> memcoai.admin.v1.Network
+	0,  // 32: memcoai.admin.v1.AdminService.UpdateNetwork:output_type -> memcoai.admin.v1.Network
+	7,  // 33: memcoai.admin.v1.AdminService.DeleteNetwork:output_type -> memcoai.admin.v1.DeleteNetworkResponse
+	10, // 34: memcoai.admin.v1.AdminService.ListNetworkMembers:output_type -> memcoai.admin.v1.ListNetworkMembersResponse
+	12, // 35: memcoai.admin.v1.AdminService.AddNetworkMember:output_type -> memcoai.admin.v1.AddNetworkMemberResponse
+	14, // 36: memcoai.admin.v1.AdminService.RemoveNetworkMember:output_type -> memcoai.admin.v1.RemoveNetworkMemberResponse
+	17, // 37: memcoai.admin.v1.AdminService.ListGroups:output_type -> memcoai.admin.v1.ListGroupsResponse
+	19, // 38: memcoai.admin.v1.AdminService.ListGroupMembers:output_type -> memcoai.admin.v1.ListGroupMembersResponse
+	21, // 39: memcoai.admin.v1.AdminService.AddNetworkGroup:output_type -> memcoai.admin.v1.AddNetworkGroupResponse
+	23, // 40: memcoai.admin.v1.AdminService.RemoveNetworkGroup:output_type -> memcoai.admin.v1.RemoveNetworkGroupResponse
+	26, // 41: memcoai.admin.v1.AdminService.ListExternalUsers:output_type -> memcoai.admin.v1.ListExternalUsersResponse
+	24, // 42: memcoai.admin.v1.AdminService.GetExternalUser:output_type -> memcoai.admin.v1.ExternalUser
+	24, // 43: memcoai.admin.v1.AdminService.CreateExternalUser:output_type -> memcoai.admin.v1.ExternalUser
+	24, // 44: memcoai.admin.v1.AdminService.UpdateExternalUser:output_type -> memcoai.admin.v1.ExternalUser
+	31, // 45: memcoai.admin.v1.AdminService.DeleteExternalUser:output_type -> memcoai.admin.v1.DeleteExternalUserResponse
+	34, // 46: memcoai.admin.v1.AdminService.ListExternalUserKeys:output_type -> memcoai.admin.v1.ListExternalUserKeysResponse
+	36, // 47: memcoai.admin.v1.AdminService.CreateExternalUserKey:output_type -> memcoai.admin.v1.CreateExternalUserKeyResponse
+	38, // 48: memcoai.admin.v1.AdminService.DeleteExternalUserKey:output_type -> memcoai.admin.v1.DeleteExternalUserKeyResponse
+	40, // 49: memcoai.admin.v1.AdminService.ImpersonateExternalUser:output_type -> memcoai.admin.v1.ImpersonationKey
+	42, // 50: memcoai.admin.v1.AdminService.EndImpersonation:output_type -> memcoai.admin.v1.EndImpersonationResponse
+	30, // [30:51] is the sub-list for method output_type
+	9,  // [9:30] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_memcoai_admin_v1_admin_proto_init() }
@@ -2983,15 +3079,15 @@ func file_memcoai_admin_v1_admin_proto_init() {
 	if File_memcoai_admin_v1_admin_proto != nil {
 		return
 	}
-	file_memcoai_admin_v1_admin_proto_msgTypes[4].OneofWrappers = []any{}
-	file_memcoai_admin_v1_admin_proto_msgTypes[28].OneofWrappers = []any{}
+	file_memcoai_admin_v1_admin_proto_msgTypes[5].OneofWrappers = []any{}
+	file_memcoai_admin_v1_admin_proto_msgTypes[29].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_memcoai_admin_v1_admin_proto_rawDesc), len(file_memcoai_admin_v1_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -28,7 +28,12 @@ export const protobufPackage = "memcoai.admin.v1";
 export interface Network {
   id: string;
   name: string;
-  /** parent_id is empty for a root network. */
+  /**
+   * parent_id is the first of parent_ids, empty for a root network. Read
+   * parent_ids instead: a network may have several parents.
+   *
+   * @deprecated
+   */
   parentId: string;
   /** domain is the memory domain the network's tree belongs to. */
   domain: string;
@@ -39,6 +44,8 @@ export interface Network {
   /** owner names who the network's knowledge belongs to, where it is used. */
   owner: string;
   description: string;
+  /** parent_ids are the network's parents, empty for a root network. */
+  parentIds: string[];
 }
 
 /** ListNetworksRequest pages through the organization's networks. */
@@ -53,7 +60,10 @@ export interface ListNetworksRequest {
   pageSize: number;
   /** domain keeps networks of that memory domain. */
   domain: string;
-  /** parent_id keeps the children of that network; "root" keeps root networks. */
+  /**
+   * parent_id keeps the children of that network, each of which may have other
+   * parents too; "root" keeps root networks.
+   */
   parentId: string;
   /** ids keeps only those networks, at most 100. */
   ids: string[];
@@ -69,8 +79,10 @@ export interface ListNetworksResponse {
 export interface CreateNetworkRequest {
   name: string;
   /**
-   * parent_id makes this a child of another network, which it takes its domain
-   * from. Empty creates a root.
+   * parent_id makes this a child of one network; it is read as parent_ids
+   * holding that one network. Set parent_ids instead, never both.
+   *
+   * @deprecated
    */
   parentId: string;
   /**
@@ -83,6 +95,16 @@ export interface CreateNetworkRequest {
   scope: string;
   owner: string;
   description: string;
+  /**
+   * parent_ids makes this a child of each of those networks, each named once,
+   * which all share the domain it takes. Empty creates a root.
+   */
+  parentIds: string[];
+}
+
+/** NetworkParents is a network's whole parent set; empty makes it a root. */
+export interface NetworkParents {
+  ids: string[];
 }
 
 /**
@@ -91,11 +113,23 @@ export interface CreateNetworkRequest {
  */
 export interface UpdateNetworkRequest {
   id: string;
-  name?: string | undefined;
+  name?:
+    | string
+    | undefined;
+  /**
+   * parent_id replaces the whole parent set with that one network, dropping any
+   * other parent; empty makes a root. Set parent_ids instead, never both.
+   *
+   * @deprecated
+   */
   parentId?: string | undefined;
   scope?: string | undefined;
   owner?: string | undefined;
-  description?: string | undefined;
+  description?:
+    | string
+    | undefined;
+  /** parent_ids replaces the network's whole parent set when set. */
+  parentIds?: NetworkParents | undefined;
 }
 
 /** DeleteNetworkRequest names the network to remove. */
@@ -396,7 +430,17 @@ export interface EndImpersonationResponse {
 }
 
 function createBaseNetwork(): Network {
-  return { id: "", name: "", parentId: "", domain: "", region: "", scope: "", owner: "", description: "" };
+  return {
+    id: "",
+    name: "",
+    parentId: "",
+    domain: "",
+    region: "",
+    scope: "",
+    owner: "",
+    description: "",
+    parentIds: [],
+  };
 }
 
 export const Network: MessageFns<Network> = {
@@ -424,6 +468,9 @@ export const Network: MessageFns<Network> = {
     }
     if (message.description !== "") {
       writer.uint32(66).string(message.description);
+    }
+    for (const v of message.parentIds) {
+      writer.uint32(74).string(v!);
     }
     return writer;
   },
@@ -499,6 +546,14 @@ export const Network: MessageFns<Network> = {
           message.description = reader.string();
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.parentIds.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -518,6 +573,9 @@ export const Network: MessageFns<Network> = {
       scope: isSet(object.scope) ? globalThis.String(object.scope) : "",
       owner: isSet(object.owner) ? globalThis.String(object.owner) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
+      parentIds: globalThis.Array.isArray(object?.parentIds)
+        ? object.parentIds.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -547,6 +605,9 @@ export const Network: MessageFns<Network> = {
     if (message.description !== "") {
       obj.description = message.description;
     }
+    if (message.parentIds?.length) {
+      obj.parentIds = message.parentIds;
+    }
     return obj;
   },
 
@@ -563,6 +624,7 @@ export const Network: MessageFns<Network> = {
     message.scope = object.scope ?? "";
     message.owner = object.owner ?? "";
     message.description = object.description ?? "";
+    message.parentIds = object.parentIds?.map((e) => e) || [];
     return message;
   },
 };
@@ -816,7 +878,7 @@ export const ListNetworksResponse: MessageFns<ListNetworksResponse> = {
 };
 
 function createBaseCreateNetworkRequest(): CreateNetworkRequest {
-  return { name: "", parentId: "", domain: "", region: "", scope: "", owner: "", description: "" };
+  return { name: "", parentId: "", domain: "", region: "", scope: "", owner: "", description: "", parentIds: [] };
 }
 
 export const CreateNetworkRequest: MessageFns<CreateNetworkRequest> = {
@@ -841,6 +903,9 @@ export const CreateNetworkRequest: MessageFns<CreateNetworkRequest> = {
     }
     if (message.description !== "") {
       writer.uint32(58).string(message.description);
+    }
+    for (const v of message.parentIds) {
+      writer.uint32(66).string(v!);
     }
     return writer;
   },
@@ -908,6 +973,14 @@ export const CreateNetworkRequest: MessageFns<CreateNetworkRequest> = {
           message.description = reader.string();
           continue;
         }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.parentIds.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -926,6 +999,9 @@ export const CreateNetworkRequest: MessageFns<CreateNetworkRequest> = {
       scope: isSet(object.scope) ? globalThis.String(object.scope) : "",
       owner: isSet(object.owner) ? globalThis.String(object.owner) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
+      parentIds: globalThis.Array.isArray(object?.parentIds)
+        ? object.parentIds.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -952,6 +1028,9 @@ export const CreateNetworkRequest: MessageFns<CreateNetworkRequest> = {
     if (message.description !== "") {
       obj.description = message.description;
     }
+    if (message.parentIds?.length) {
+      obj.parentIds = message.parentIds;
+    }
     return obj;
   },
 
@@ -967,12 +1046,79 @@ export const CreateNetworkRequest: MessageFns<CreateNetworkRequest> = {
     message.scope = object.scope ?? "";
     message.owner = object.owner ?? "";
     message.description = object.description ?? "";
+    message.parentIds = object.parentIds?.map((e) => e) || [];
+    return message;
+  },
+};
+
+function createBaseNetworkParents(): NetworkParents {
+  return { ids: [] };
+}
+
+export const NetworkParents: MessageFns<NetworkParents> = {
+  encode(message: NetworkParents, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.ids) {
+      writer.uint32(10).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): NetworkParents {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseNetworkParents();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.ids.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): NetworkParents {
+    return { ids: globalThis.Array.isArray(object?.ids) ? object.ids.map((e: any) => globalThis.String(e)) : [] };
+  },
+
+  toJSON(message: NetworkParents): unknown {
+    const obj: any = {};
+    if (message.ids?.length) {
+      obj.ids = message.ids;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<NetworkParents>, I>>(base?: I): NetworkParents {
+    return NetworkParents.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<NetworkParents>, I>>(object: I): NetworkParents {
+    const message = createBaseNetworkParents();
+    message.ids = object.ids?.map((e) => e) || [];
     return message;
   },
 };
 
 function createBaseUpdateNetworkRequest(): UpdateNetworkRequest {
-  return { id: "", name: undefined, parentId: undefined, scope: undefined, owner: undefined, description: undefined };
+  return {
+    id: "",
+    name: undefined,
+    parentId: undefined,
+    scope: undefined,
+    owner: undefined,
+    description: undefined,
+    parentIds: undefined,
+  };
 }
 
 export const UpdateNetworkRequest: MessageFns<UpdateNetworkRequest> = {
@@ -994,6 +1140,9 @@ export const UpdateNetworkRequest: MessageFns<UpdateNetworkRequest> = {
     }
     if (message.description !== undefined) {
       writer.uint32(50).string(message.description);
+    }
+    if (message.parentIds !== undefined) {
+      NetworkParents.encode(message.parentIds, writer.uint32(58).fork()).join();
     }
     return writer;
   },
@@ -1053,6 +1202,14 @@ export const UpdateNetworkRequest: MessageFns<UpdateNetworkRequest> = {
           message.description = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.parentIds = NetworkParents.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1070,6 +1227,7 @@ export const UpdateNetworkRequest: MessageFns<UpdateNetworkRequest> = {
       scope: isSet(object.scope) ? globalThis.String(object.scope) : undefined,
       owner: isSet(object.owner) ? globalThis.String(object.owner) : undefined,
       description: isSet(object.description) ? globalThis.String(object.description) : undefined,
+      parentIds: isSet(object.parentIds) ? NetworkParents.fromJSON(object.parentIds) : undefined,
     };
   },
 
@@ -1093,6 +1251,9 @@ export const UpdateNetworkRequest: MessageFns<UpdateNetworkRequest> = {
     if (message.description !== undefined) {
       obj.description = message.description;
     }
+    if (message.parentIds !== undefined) {
+      obj.parentIds = NetworkParents.toJSON(message.parentIds);
+    }
     return obj;
   },
 
@@ -1107,6 +1268,9 @@ export const UpdateNetworkRequest: MessageFns<UpdateNetworkRequest> = {
     message.scope = object.scope ?? undefined;
     message.owner = object.owner ?? undefined;
     message.description = object.description ?? undefined;
+    message.parentIds = (object.parentIds !== undefined && object.parentIds !== null)
+      ? NetworkParents.fromPartial(object.parentIds)
+      : undefined;
     return message;
   },
 };

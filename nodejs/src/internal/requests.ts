@@ -102,15 +102,18 @@ function wireTags(tags: Iterable<Tag> | null | undefined, cap = 0): pb.Tag[] {
  * Convert one public rating to its wire message.
  *
  * @param rating The rating supplied by the caller.
- * @returns The wire message, with `comment` left unset when none was given.
+ * @returns The wire message, with `correct` and `comment` left unset when not
+ *   given.
  */
 function toWireRating(rating: FeedbackRating): pb.FeedbackRating {
   const message: pb.FeedbackRating = {
     idx: rating.idx,
-    relevant: rating.relevant,
-    correct: rating.correct
+    relevant: rating.relevant
   }
   // `!= null` for the reason toWireTag gives.
+  if (rating.correct != null) {
+    message.correct = rating.correct
+  }
   if (rating.comment != null) {
     message.comment = rating.comment
   }
@@ -700,6 +703,7 @@ export function listNetworksRequest(
 export interface CreateNetworkOptions {
   name?: string | null
   parentId?: string | null
+  parentIds?: Iterable<string> | null
   domain?: string | null
   region?: string | null
   scope?: string | null
@@ -708,20 +712,23 @@ export interface CreateNetworkOptions {
 }
 
 /**
- * Build a `CreateNetwork` request.
+ * Validate and build a `CreateNetwork` request.
  *
- * Nothing is checked here: every field is one the service defaults or refuses
- * on its own terms.
+ * Nothing else is checked here: every field is one the service defaults or
+ * refuses on its own terms.
  *
  * @param options The network's name, where it goes, and what describes it.
  * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if `parentIds` is a single string.
  */
 export function createNetworkRequest(
   options: CreateNetworkOptions
 ): pb.admin.CreateNetworkRequest {
+  const parentIds = validate.checkStrings(options.parentIds, 'parent_ids')
   return built(() => ({
     name: options.name ?? '',
     parentId: options.parentId ?? '',
+    parentIds,
     domain: options.domain ?? '',
     region: options.region ?? '',
     scope: options.scope ?? '',
@@ -734,6 +741,7 @@ export function createNetworkRequest(
 export interface UpdateNetworkOptions {
   name?: string | null
   parentId?: string | null
+  parentIds?: Iterable<string> | null
   scope?: string | null
   owner?: string | null
   description?: string | null
@@ -745,17 +753,25 @@ export interface UpdateNetworkOptions {
  * @param networkId The network to change.
  * @param options What to change. A field left out is left unset.
  * @returns The request message, with only the fields given set.
- * @throws A `MemcoInvalidRequestError` if the network is blank.
+ * @throws A `MemcoInvalidRequestError` if the network is blank, or
+ *   `parentIds` is a single string.
  */
 export function updateNetworkRequest(
   networkId: string,
   options: UpdateNetworkOptions
 ): pb.admin.UpdateNetworkRequest {
   validate.checkIdx(networkId, 'network_id')
+  // Not given leaves the parents alone; an empty set is sent, and makes the
+  // network a root.
+  const parentIds =
+    options.parentIds == null
+      ? undefined
+      : { ids: validate.checkStrings(options.parentIds, 'parent_ids') }
   return built(() => ({
     id: networkId,
     name: patched(options.name),
     parentId: patched(options.parentId),
+    parentIds,
     scope: patched(options.scope),
     owner: patched(options.owner),
     description: patched(options.description)

@@ -286,9 +286,10 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
 
     feedback = client.memory.share_feedback(
         session_id=session.id,
-        feedback=[FeedbackRating(idx=insight.idx, relevant=True, correct=True)],
+        feedback=[FeedbackRating(idx=insight.idx, relevant=True)],
     )
-    assert insight.idx in [entry.idx for entry in feedback.entries]
+    # Left out, correct is recorded as unjudged rather than false.
+    assert [entry.correct for entry in feedback.entries if entry.idx == insight.idx] == [None]
 
     fetched = client.memory.get_memory(memory.idx)
     assert fetched.idx == memory.idx

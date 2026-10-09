@@ -141,9 +141,9 @@ func TestWritesFeedbackAndRevertsAreRead(t *testing.T) {
 	}
 	feedback := toFeedbackResult(&memoryv1.ShareFeedbackResponse{
 		SessionId: "s", Instructions: wireInstructions,
-		Entries: []*memoryv1.FeedbackEntry{{Idx: "i", Relevant: true, Correct: false, Advice: "look again"}, {Idx: "j"}},
+		Entries: []*memoryv1.FeedbackEntry{{Idx: "i", Relevant: true, Correct: proto.Bool(false), Advice: "look again"}, {Idx: "j"}},
 	})
-	if !reflect.DeepEqual(feedback.Entries, []FeedbackEntry{{"i", true, false, "look again"}, {Idx: "j"}}) || feedback.SessionID != "s" {
+	if !reflect.DeepEqual(feedback.Entries, []FeedbackEntry{{"i", true, proto.Bool(false), "look again"}, {Idx: "j"}}) || feedback.SessionID != "s" {
 		t.Fatalf("feedback %+v", feedback)
 	}
 	revert := toRevertResult(&memoryv1.RevertMemoryResponse{OperationId: "create-a", Outcome: memoryv1.RevertOutcome_REVERT_OUTCOME_EXPIRED})
@@ -189,8 +189,8 @@ func TestOptionalWireFieldsAreSentOnlyWhenSet(t *testing.T) {
 		t.Fatal("no tags became an empty slice")
 	}
 	comment := "why"
-	ratings := wireRatings([]FeedbackRating{{Idx: "i", Relevant: true}, {Idx: "j", Correct: true, Comment: "why"}})
-	if ratings[0].Comment != nil || !proto.Equal(ratings[1], &memoryv1.FeedbackRating{Idx: "j", Correct: true, Comment: &comment}) {
+	ratings := wireRatings([]FeedbackRating{{Idx: "i", Relevant: true}, {Idx: "j", Correct: proto.Bool(false), Comment: "why"}})
+	if ratings[0].Comment != nil || ratings[0].Correct != nil || !proto.Equal(ratings[1], &memoryv1.FeedbackRating{Idx: "j", Correct: proto.Bool(false), Comment: &comment}) {
 		t.Fatalf("ratings %v", ratings)
 	}
 }

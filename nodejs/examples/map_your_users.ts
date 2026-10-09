@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   try {
     const company = await client.networks.create({
       name: `${run} ${COMPANY}`,
-      parentId: root.id,
+      parentIds: [root.id],
       scope: 'customer',
       description: 'Practice that applies to every client project'
     })
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     for (const [key, title] of Object.entries(PROJECTS)) {
       networks[key as keyof typeof PROJECTS] = await client.networks.create({
         name: `${run} ${COMPANY} / ${title}`,
-        parentId: company.id,
+        parentIds: [company.id],
         scope: 'customer'
       })
     }

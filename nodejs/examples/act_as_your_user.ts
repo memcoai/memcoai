@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   }
   const network = await client.networks.create({
     name: `${run} Acme Corp`,
-    parentId: root.id,
+    parentIds: [root.id],
     scope: 'customer'
   })
   let user: ExternalUser | undefined

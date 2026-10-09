@@ -276,6 +276,27 @@ def test_feedback_rating_round_trips_through_the_wire():
     )
 
 
+def test_feedback_rating_sends_correct_only_when_given():
+    assert not types.FeedbackRating(idx="i", relevant=False).to_proto().HasField("correct")
+    message = types.FeedbackRating(idx="i", relevant=True, correct=False).to_proto()
+    assert message.HasField("correct")
+    assert message.correct is False
+
+
+def test_feedback_entry_reads_correct_by_presence():
+    feedback = to_feedback_result(
+        pb.ShareFeedbackResponse(
+            session_id="s",
+            entries=[
+                pb.FeedbackEntry(idx="unjudged", relevant=False),
+                pb.FeedbackEntry(idx="wrong", relevant=True, correct=False),
+                pb.FeedbackEntry(idx="right", relevant=True, correct=True),
+            ],
+        )
+    )
+    assert [entry.correct for entry in feedback.entries] == [None, False, True]
+
+
 # --- the hand-written enums must not drift from the contract -------------
 
 

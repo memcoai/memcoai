@@ -7,7 +7,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class Network(_message.Message):
-    __slots__ = ("id", "name", "parent_id", "domain", "region", "scope", "owner", "description")
+    __slots__ = ("id", "name", "parent_id", "domain", "region", "scope", "owner", "description", "parent_ids")
     ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     PARENT_ID_FIELD_NUMBER: _ClassVar[int]
@@ -16,6 +16,7 @@ class Network(_message.Message):
     SCOPE_FIELD_NUMBER: _ClassVar[int]
     OWNER_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    PARENT_IDS_FIELD_NUMBER: _ClassVar[int]
     id: str
     name: str
     parent_id: str
@@ -24,7 +25,8 @@ class Network(_message.Message):
     scope: str
     owner: str
     description: str
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., parent_id: _Optional[str] = ..., domain: _Optional[str] = ..., region: _Optional[str] = ..., scope: _Optional[str] = ..., owner: _Optional[str] = ..., description: _Optional[str] = ...) -> None: ...
+    parent_ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., parent_id: _Optional[str] = ..., domain: _Optional[str] = ..., region: _Optional[str] = ..., scope: _Optional[str] = ..., owner: _Optional[str] = ..., description: _Optional[str] = ..., parent_ids: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ListNetworksRequest(_message.Message):
     __slots__ = ("name", "scope", "owner", "page", "page_size", "domain", "parent_id", "ids")
@@ -55,7 +57,7 @@ class ListNetworksResponse(_message.Message):
     def __init__(self, networks: _Optional[_Iterable[_Union[Network, _Mapping]]] = ..., total_count: _Optional[int] = ...) -> None: ...
 
 class CreateNetworkRequest(_message.Message):
-    __slots__ = ("name", "parent_id", "domain", "region", "scope", "owner", "description")
+    __slots__ = ("name", "parent_id", "domain", "region", "scope", "owner", "description", "parent_ids")
     NAME_FIELD_NUMBER: _ClassVar[int]
     PARENT_ID_FIELD_NUMBER: _ClassVar[int]
     DOMAIN_FIELD_NUMBER: _ClassVar[int]
@@ -63,6 +65,7 @@ class CreateNetworkRequest(_message.Message):
     SCOPE_FIELD_NUMBER: _ClassVar[int]
     OWNER_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    PARENT_IDS_FIELD_NUMBER: _ClassVar[int]
     name: str
     parent_id: str
     domain: str
@@ -70,23 +73,32 @@ class CreateNetworkRequest(_message.Message):
     scope: str
     owner: str
     description: str
-    def __init__(self, name: _Optional[str] = ..., parent_id: _Optional[str] = ..., domain: _Optional[str] = ..., region: _Optional[str] = ..., scope: _Optional[str] = ..., owner: _Optional[str] = ..., description: _Optional[str] = ...) -> None: ...
+    parent_ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, name: _Optional[str] = ..., parent_id: _Optional[str] = ..., domain: _Optional[str] = ..., region: _Optional[str] = ..., scope: _Optional[str] = ..., owner: _Optional[str] = ..., description: _Optional[str] = ..., parent_ids: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class NetworkParents(_message.Message):
+    __slots__ = ("ids",)
+    IDS_FIELD_NUMBER: _ClassVar[int]
+    ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, ids: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class UpdateNetworkRequest(_message.Message):
-    __slots__ = ("id", "name", "parent_id", "scope", "owner", "description")
+    __slots__ = ("id", "name", "parent_id", "scope", "owner", "description", "parent_ids")
     ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     PARENT_ID_FIELD_NUMBER: _ClassVar[int]
     SCOPE_FIELD_NUMBER: _ClassVar[int]
     OWNER_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    PARENT_IDS_FIELD_NUMBER: _ClassVar[int]
     id: str
     name: str
     parent_id: str
     scope: str
     owner: str
     description: str
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., parent_id: _Optional[str] = ..., scope: _Optional[str] = ..., owner: _Optional[str] = ..., description: _Optional[str] = ...) -> None: ...
+    parent_ids: NetworkParents
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., parent_id: _Optional[str] = ..., scope: _Optional[str] = ..., owner: _Optional[str] = ..., description: _Optional[str] = ..., parent_ids: _Optional[_Union[NetworkParents, _Mapping]] = ...) -> None: ...
 
 class DeleteNetworkRequest(_message.Message):
     __slots__ = ("id",)

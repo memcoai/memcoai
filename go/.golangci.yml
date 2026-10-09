@@ -40,6 +40,13 @@ linters:
     generated: disable
     paths:
       - internal/client/
+    rules:
+      # parent_id is deprecated in the contract in favour of parent_ids, but
+      # still served and still accepted: the SDK reads it into Network.ParentID
+      # and sends it from the deprecated ParentID params until the contract
+      # drops it. Remove this rule then, with the field.
+      - linters: [staticcheck]
+        text: 'SA1019: .*\b(Get)?Parent(Id|ID) is deprecated'
 
 formatters:
   enable:

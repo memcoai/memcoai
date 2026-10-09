@@ -645,20 +645,23 @@ def create_network_request(
     *,
     name: str,
     parent_id: str | None,
+    parent_ids: Iterable[str] | None,
     domain: str | None,
     region: str | None,
     scope: str | None,
     owner: str | None,
     description: str | None,
 ) -> _admin_pb.CreateNetworkRequest:
-    """Build a ``CreateNetwork`` request.
+    """Validate and build a ``CreateNetwork`` request.
 
-    Nothing is checked here: every field is one the service defaults or
+    Nothing else is checked here: every field is one the service defaults or
     refuses on its own terms.
 
     Args:
         name: The network's name.
         parent_id: The network to create this one under.
+        parent_ids: The networks to create this one under. Consumed exactly
+            once.
         domain: The memory domain of a root network.
         region: The network's data residency.
         scope: The network's scope.
@@ -669,12 +672,15 @@ def create_network_request(
         The request message.
 
     Raises:
-        MemcoInvalidRequestError: If a value cannot be sent.
+        MemcoInvalidRequestError: If ``parent_ids`` is a single string, or a
+            value cannot be sent.
     """
+    parents = _validate.check_strings(parent_ids, "parent_ids")
     return _built(
         lambda: _admin_pb.CreateNetworkRequest(
             name=name,
             parent_id=parent_id,
+            parent_ids=parents,
             domain=domain,
             region=region,
             scope=scope,
@@ -689,6 +695,7 @@ def update_network_request(
     *,
     name: str | None,
     parent_id: str | None,
+    parent_ids: Iterable[str] | None,
     scope: str | None,
     owner: str | None,
     description: str | None,
@@ -699,6 +706,8 @@ def update_network_request(
         network_id: The network to change.
         name: The new name, or ``None`` to leave it.
         parent_id: The new parent, or ``None`` to leave it.
+        parent_ids: The whole new parent set, or ``None`` to leave it; empty
+            makes a root. Consumed exactly once.
         scope: The new scope, or ``None`` to leave it.
         owner: The new owner, or ``None`` to leave it.
         description: The new description, or ``None`` to leave it.
@@ -707,15 +716,19 @@ def update_network_request(
         The request message, with only the fields given set.
 
     Raises:
-        MemcoInvalidRequestError: If the network is blank, or a value cannot
-            be sent.
+        MemcoInvalidRequestError: If the network is blank, ``parent_ids`` is
+            a single string, or a value cannot be sent.
     """
     _validate.check_idx(network_id, "network_id")
+    # Not given leaves the parents alone; an empty set is sent, and makes the
+    # network a root.
+    parents = None if parent_ids is None else _validate.check_strings(parent_ids, "parent_ids")
     return _built(
         lambda: _admin_pb.UpdateNetworkRequest(
             id=network_id,
             name=name,
             parent_id=parent_id,
+            parent_ids=None if parents is None else _admin_pb.NetworkParents(ids=parents),
             scope=scope,
             owner=owner,
             description=description,

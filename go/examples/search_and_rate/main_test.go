@@ -23,8 +23,8 @@ func TestItRatesEveryInsightItWasShown(t *testing.T) {
 		}}},
 	})
 	r.Server.Memory.Respond("ShareFeedback", &memoryv1.ShareFeedbackResponse{Entries: []*memoryv1.FeedbackEntry{
-		{Idx: "memory-a-1-insight-1", Relevant: true, Correct: true, Advice: "thanks"},
-		{Idx: "memory-a-1-insight-2", Relevant: true, Correct: true},
+		{Idx: "memory-a-1-insight-1", Relevant: true, Correct: proto.Bool(true), Advice: "thanks"},
+		{Idx: "memory-a-1-insight-2", Relevant: true, Correct: proto.Bool(true)},
 	}})
 	if err := run(context.Background(), r.Options, r.Out); err != nil {
 		t.Fatal(err)
@@ -40,8 +40,8 @@ func TestItRatesEveryInsightItWasShown(t *testing.T) {
 	)
 	comment := "answered the question directly"
 	want := &memoryv1.ShareFeedbackRequest{SessionId: "session-a", Feedback: []*memoryv1.FeedbackRating{
-		{Idx: "memory-a-1-insight-1", Relevant: true, Correct: true, Comment: &comment},
-		{Idx: "memory-a-1-insight-2", Relevant: true, Correct: true, Comment: &comment},
+		{Idx: "memory-a-1-insight-1", Relevant: true, Correct: proto.Bool(true), Comment: &comment},
+		{Idx: "memory-a-1-insight-2", Relevant: true, Correct: proto.Bool(true), Comment: &comment},
 	}}
 	if sent := r.Server.Memory.Request("ShareFeedback"); !proto.Equal(sent, want) {
 		t.Fatalf("sent %v", sent)

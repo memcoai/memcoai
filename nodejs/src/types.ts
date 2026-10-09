@@ -527,9 +527,10 @@ export interface WriteResult {
  * hand. Which one you copy decides the reach: an {@link Insight.idx} rates that
  * insight, whereas a {@link Memory.idx} rates every insight under it.
  *
- * `relevant` and `correct` are separate questions, and both are required. A
- * result can answer the query and still be wrong, or be true and unhelpful, and
- * collapsing the two is what makes a rating useless.
+ * `relevant` and `correct` are separate questions. A result can answer the
+ * query and still be wrong, or be true and unhelpful, and collapsing the two is
+ * what makes a rating useless. Leave `correct` out when its accuracy cannot be
+ * judged.
  *
  * The batch is gathered by walking memories and then their insights, so a
  * search whose memories are all references yields no ratings at all. An empty
@@ -554,8 +555,8 @@ export interface FeedbackRating {
   idx: string
   /** Whether it was a good match for the query. */
   relevant: boolean
-  /** Whether its content was accurate. */
-  correct: boolean
+  /** Whether its content was accurate; left out when that cannot be judged. */
+  correct?: boolean
   /** An optional note on why. */
   comment?: string
 }
@@ -588,8 +589,8 @@ export interface FeedbackEntry {
   readonly idx: string
   /** The relevance that was recorded. */
   readonly relevant: boolean
-  /** The correctness that was recorded. */
-  readonly correct: boolean
+  /** The correctness that was recorded, or `null` when the rating left it out. */
+  readonly correct: boolean | null
   /** Anything the service wants to say back about this rating. */
   readonly advice: string | null
 }
@@ -805,7 +806,8 @@ export interface Provenance {
  * One memory network: the unit of knowledge scoping an organization places its
  * people in.
  *
- * Networks form trees, one per memory domain. What a member can find is scoped
+ * Networks form a hierarchy, one per memory domain, in which a network may
+ * have several parents. What a member can find is scoped
  * by the network they are placed in: a member of a network sees its knowledge
  * and that of the networks above it, and never a sibling's.
  */
@@ -814,9 +816,15 @@ export interface Network {
   readonly id: string
   /** The network's name. */
   readonly name: string
-  /** The network this one is a child of, or `null` for a root. */
+  /**
+   * The first of {@link Network.parentIds}, or `null` for a root.
+   *
+   * @deprecated Read `parentIds`: a network may have several parents.
+   */
   readonly parentId: string | null
-  /** The memory domain the network's tree belongs to. */
+  /** The networks this one is a child of, empty for a root. */
+  readonly parentIds: readonly string[]
+  /** The memory domain the network belongs to. */
   readonly domain: string
   /** The network's data residency. `global` replicates everywhere. */
   readonly region: string

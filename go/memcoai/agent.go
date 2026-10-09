@@ -176,9 +176,12 @@ func ratingsOf(value any) []FeedbackRating {
 	for _, object := range objects(value) {
 		idx, _ := object["idx"].(string)
 		relevant, _ := object["relevant"].(bool)
-		correct, _ := object["correct"].(bool)
 		comment, _ := object["comment"].(string)
-		ratings = append(ratings, FeedbackRating{Idx: idx, Relevant: relevant, Correct: correct, Comment: comment})
+		rating := FeedbackRating{Idx: idx, Relevant: relevant, Comment: comment}
+		if correct, ok := object["correct"].(bool); ok {
+			rating.Correct = &correct
+		}
+		ratings = append(ratings, rating)
 	}
 	return ratings
 }
@@ -361,7 +364,10 @@ func (r WriteResult) render() string {
 func (r FeedbackResult) render() string {
 	lines := make([]string, 0, len(r.Entries))
 	for _, entry := range r.Entries {
-		line := fmt.Sprintf("%s  relevant=%t correct=%t", entry.Idx, entry.Relevant, entry.Correct)
+		line := fmt.Sprintf("%s  relevant=%t", entry.Idx, entry.Relevant)
+		if entry.Correct != nil {
+			line += fmt.Sprintf(" correct=%t", *entry.Correct)
+		}
 		if entry.Advice != "" {
 			line += "  " + entry.Advice
 		}

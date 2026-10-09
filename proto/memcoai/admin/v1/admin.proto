@@ -102,8 +102,9 @@ service AdminService {
 message Network {
   string id = 1;
   string name = 2;
-  // parent_id is empty for a root network.
-  string parent_id = 3;
+  // parent_id is the first of parent_ids, empty for a root network. Read
+  // parent_ids instead: a network may have several parents.
+  string parent_id = 3 [deprecated = true];
   // domain is the memory domain the network's tree belongs to.
   string domain = 4;
   // region is the network's data residency; "global" replicates everywhere.
@@ -113,6 +114,8 @@ message Network {
   // owner names who the network's knowledge belongs to, where it is used.
   string owner = 7;
   string description = 8;
+  // parent_ids are the network's parents, empty for a root network.
+  repeated string parent_ids = 9;
 }
 
 // ListNetworksRequest pages through the organization's networks.
@@ -127,7 +130,8 @@ message ListNetworksRequest {
   int32 page_size = 5;
   // domain keeps networks of that memory domain.
   string domain = 6;
-  // parent_id keeps the children of that network; "root" keeps root networks.
+  // parent_id keeps the children of that network, each of which may have other
+  // parents too; "root" keeps root networks.
   string parent_id = 7;
   // ids keeps only those networks, at most 100.
   repeated string ids = 8;
@@ -142,9 +146,9 @@ message ListNetworksResponse {
 // CreateNetworkRequest adds a network.
 message CreateNetworkRequest {
   string name = 1;
-  // parent_id makes this a child of another network, which it takes its domain
-  // from. Empty creates a root.
-  string parent_id = 2;
+  // parent_id makes this a child of one network; it is read as parent_ids
+  // holding that one network. Set parent_ids instead, never both.
+  string parent_id = 2 [deprecated = true];
   // domain places a root network; empty takes the organization's default. A child
   // must not name one.
   string domain = 3;
@@ -153,6 +157,14 @@ message CreateNetworkRequest {
   string scope = 5;
   string owner = 6;
   string description = 7;
+  // parent_ids makes this a child of each of those networks, each named once,
+  // which all share the domain it takes. Empty creates a root.
+  repeated string parent_ids = 8;
+}
+
+// NetworkParents is a network's whole parent set; empty makes it a root.
+message NetworkParents {
+  repeated string ids = 1;
 }
 
 // UpdateNetworkRequest patches a network. An unset field is left as it is; an
@@ -160,10 +172,14 @@ message CreateNetworkRequest {
 message UpdateNetworkRequest {
   string id = 1;
   optional string name = 2;
-  optional string parent_id = 3;
+  // parent_id replaces the whole parent set with that one network, dropping any
+  // other parent; empty makes a root. Set parent_ids instead, never both.
+  optional string parent_id = 3 [deprecated = true];
   optional string scope = 4;
   optional string owner = 5;
   optional string description = 6;
+  // parent_ids replaces the network's whole parent set when set.
+  NetworkParents parent_ids = 7;
 }
 
 // DeleteNetworkRequest names the network to remove.

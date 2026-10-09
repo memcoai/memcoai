@@ -127,7 +127,7 @@ CASES = [
             "create",
             kwargs={
                 "name": "Acme",
-                "parent_id": "network-root",
+                "parent_ids": ["network-root", "network-shared"],
                 "domain": "coding",
                 "region": "eu",
                 "scope": "customer",
@@ -137,7 +137,7 @@ CASES = [
         ),
         admin_pb.CreateNetworkRequest(
             name="Acme",
-            parent_id="network-root",
+            parent_ids=["network-root", "network-shared"],
             domain="coding",
             region="eu",
             scope="customer",
@@ -325,6 +325,23 @@ def test_unset_filters_and_pages_send_nothing(credentialed: Memco, harness: Harn
     ]
 
 
+def test_update_replaces_the_whole_parent_set_only_when_given(
+    credentialed: Memco, harness: Harness
+):
+    credentialed.networks.update("network-a", parent_ids=iter(["network-b", "network-c"]))
+    credentialed.networks.update("network-a", parent_ids=[])
+    credentialed.networks.update("network-a", name="Acme")
+    assert harness.admin.received == [
+        admin_pb.UpdateNetworkRequest(
+            id="network-a", parent_ids=admin_pb.NetworkParents(ids=["network-b", "network-c"])
+        ),
+        admin_pb.UpdateNetworkRequest(id="network-a", parent_ids=admin_pb.NetworkParents()),
+        admin_pb.UpdateNetworkRequest(id="network-a", name="Acme"),
+    ]
+    assert harness.admin.received[1].HasField("parent_ids")
+    assert not harness.admin.received[2].HasField("parent_ids")
+
+
 def test_ids_may_be_any_iterable(credentialed: Memco, harness: Harness):
     credentialed.networks.list(ids=iter(["network-a", "network-b"]))
     assert list(harness.admin.received[0].ids) == ["network-a", "network-b"]
@@ -392,6 +409,7 @@ def test_a_network_reads_its_absent_fields_as_none(credentialed: Memco, harness:
                 id="network-root",
                 name="Root",
                 parent_id=None,
+                parent_ids=(),
                 domain="coding",
                 region="global",
                 scope=None,
@@ -408,6 +426,7 @@ def test_a_network_reads_every_field_it_carries(credentialed: Memco, harness: Ha
         id="network-a",
         name="Acme",
         parent_id="network-root",
+        parent_ids=["network-root", "network-shared"],
         domain="coding",
         region="eu",
         scope="customer",
@@ -419,6 +438,7 @@ def test_a_network_reads_every_field_it_carries(credentialed: Memco, harness: Ha
         id="network-a",
         name="Acme",
         parent_id="network-root",
+        parent_ids=("network-root", "network-shared"),
         domain="coding",
         region="eu",
         scope="customer",

@@ -201,7 +201,7 @@ func customerNetwork(t *testing.T, admin *memcoai.Client, root memcoai.Network) 
 		}
 	})
 	network, err := admin.Networks.Create(t.Context(), memcoai.CreateNetworkParams{
-		Name: name, ParentID: root.ID, Scope: "customer",
+		Name: name, ParentIDs: []string{root.ID}, Scope: "customer",
 		Description: "A network the Go SDK system test creates and deletes again.",
 	})
 	if err != nil {

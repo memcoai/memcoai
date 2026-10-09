@@ -363,7 +363,7 @@ const FEEDBACK_FIELDS: readonly Field[] = [
   {
     name: 'correct',
     type: 'boolean',
-    required: true,
+    required: false,
     description: ENTRY_COPY.FeedbackRating.correct
   },
   {
@@ -1070,7 +1070,8 @@ function renderedFeedback(result: FeedbackResult): string {
     result.entries
       .map(
         entry =>
-          `${entry.idx}  relevant=${entry.relevant} correct=${entry.correct}` +
+          `${entry.idx}  relevant=${entry.relevant}` +
+          (entry.correct === null ? '' : ` correct=${entry.correct}`) +
           (entry.advice ? `  ${entry.advice}` : '')
       )
       .join('\n'),
