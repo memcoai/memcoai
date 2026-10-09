@@ -429,12 +429,13 @@ def _to_feedback_entry(message: _pb.FeedbackEntry) -> FeedbackEntry:
         message: The generated message.
 
     Returns:
-        The immutable equivalent, with empty advice mapped to ``None``.
+        The immutable equivalent, with empty advice and an absent ``correct``
+        mapped to ``None``.
     """
     return FeedbackEntry(
         idx=message.idx,
         relevant=message.relevant,
-        correct=message.correct,
+        correct=message.correct if message.HasField("correct") else None,
         advice=_optional(message.advice),
     )
 
@@ -538,6 +539,7 @@ def to_network(message: _admin_pb.Network) -> Network:
         id=message.id,
         name=message.name,
         parent_id=_optional(message.parent_id),
+        parent_ids=tuple(message.parent_ids),
         domain=message.domain,
         region=message.region,
         scope=_optional(message.scope),

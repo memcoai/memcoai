@@ -51,7 +51,7 @@ class NetworkOperations:
     Example:
         >>> with Memco(client_id="...", client_secret="...") as client:
         ...     root = client.networks.list(parent_id="root", domain="coding").networks[0]
-        ...     acme = client.networks.create(name="Acme", parent_id=root.id, scope="customer")
+        ...     acme = client.networks.create(name="Acme", parent_ids=[root.id], scope="customer")
     """
 
     def __init__(self, stub: Any, call: Callable[..., Any]) -> None:
@@ -128,6 +128,7 @@ class NetworkOperations:
         *,
         name: str,
         parent_id: str | None = None,
+        parent_ids: Iterable[str] | None = None,
         domain: str | None = None,
         region: str | None = None,
         scope: str | None = None,
@@ -138,12 +139,17 @@ class NetworkOperations:
         """Create a memory network.
 
         A network is either a root, placed in a memory domain, or the child of
-        another network, whose domain it takes.
+        other networks, whose domain it takes.
 
         Args:
             name: The network's name.
-            parent_id: The network to create this one under. Omitted, the new
-                network is a root.
+            parent_id: Deprecated: use ``parent_ids``, never both. The network to
+                create this one under, read as ``parent_ids`` holding that one
+                network.
+            parent_ids: The networks to create this one under, each named once
+                and all in one domain, which the new network takes. Consumed
+                exactly once.
+                Omitted or empty, the new network is a root.
             domain: The memory domain of a root network. Omitted, your
                 organization's default. A child must not name one.
             region: The network's data residency. Omitted, your organization's
@@ -164,13 +170,14 @@ class NetworkOperations:
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> acme = client.networks.create(name="Acme", parent_id="network-root")
+            >>> acme = client.networks.create(name="Acme", parent_ids=["network-root"])
             >>> acme.domain  # taken from its parent
             'coding'
         """
         request = _requests.create_network_request(
             name=name,
             parent_id=parent_id,
+            parent_ids=parent_ids,
             domain=domain,
             region=region,
             scope=scope,
@@ -185,6 +192,7 @@ class NetworkOperations:
         *,
         name: str | None = None,
         parent_id: str | None = None,
+        parent_ids: Iterable[str] | None = None,
         scope: str | None = None,
         owner: str | None = None,
         description: str | None = None,
@@ -199,7 +207,11 @@ class NetworkOperations:
         Args:
             network_id: The network to change.
             name: The new name.
-            parent_id: The network to move this one under.
+            parent_id: Deprecated: use ``parent_ids``, never both. The network
+                to move this one under, replacing every other parent; ``""``
+                makes it a root.
+            parent_ids: The network's whole new parent set, replacing the
+                current one. Consumed exactly once. Empty makes it a root.
             scope: The new scope, ``"internal"`` or ``"customer"``.
             owner: The new owner.
             description: The new description.
@@ -220,6 +232,7 @@ class NetworkOperations:
             network_id,
             name=name,
             parent_id=parent_id,
+            parent_ids=parent_ids,
             scope=scope,
             owner=owner,
             description=description,
@@ -474,7 +487,7 @@ class AsyncNetworkOperations:
 
     Example:
         >>> async with AsyncMemco(client_id="...", client_secret="...") as client:
-        ...     acme = await client.networks.create(name="Acme", parent_id="network-root")
+        ...     acme = await client.networks.create(name="Acme", parent_ids=["network-root"])
     """
 
     def __init__(self, stub: Any, call: Callable[..., Any]) -> None:
@@ -551,6 +564,7 @@ class AsyncNetworkOperations:
         *,
         name: str,
         parent_id: str | None = None,
+        parent_ids: Iterable[str] | None = None,
         domain: str | None = None,
         region: str | None = None,
         scope: str | None = None,
@@ -561,12 +575,17 @@ class AsyncNetworkOperations:
         """Create a memory network.
 
         A network is either a root, placed in a memory domain, or the child of
-        another network, whose domain it takes.
+        other networks, whose domain it takes.
 
         Args:
             name: The network's name.
-            parent_id: The network to create this one under. Omitted, the new
-                network is a root.
+            parent_id: Deprecated: use ``parent_ids``, never both. The network to
+                create this one under, read as ``parent_ids`` holding that one
+                network.
+            parent_ids: The networks to create this one under, each named once
+                and all in one domain, which the new network takes. Consumed
+                exactly once.
+                Omitted or empty, the new network is a root.
             domain: The memory domain of a root network. Omitted, your
                 organization's default. A child must not name one.
             region: The network's data residency. Omitted, your organization's
@@ -587,13 +606,14 @@ class AsyncNetworkOperations:
             MemcoAPIError: If the service returns an error status.
 
         Example:
-            >>> acme = await client.networks.create(name="Acme", parent_id="network-root")
+            >>> acme = await client.networks.create(name="Acme", parent_ids=["network-root"])
             >>> acme.domain  # taken from its parent
             'coding'
         """
         request = _requests.create_network_request(
             name=name,
             parent_id=parent_id,
+            parent_ids=parent_ids,
             domain=domain,
             region=region,
             scope=scope,
@@ -608,6 +628,7 @@ class AsyncNetworkOperations:
         *,
         name: str | None = None,
         parent_id: str | None = None,
+        parent_ids: Iterable[str] | None = None,
         scope: str | None = None,
         owner: str | None = None,
         description: str | None = None,
@@ -622,7 +643,11 @@ class AsyncNetworkOperations:
         Args:
             network_id: The network to change.
             name: The new name.
-            parent_id: The network to move this one under.
+            parent_id: Deprecated: use ``parent_ids``, never both. The network
+                to move this one under, replacing every other parent; ``""``
+                makes it a root.
+            parent_ids: The network's whole new parent set, replacing the
+                current one. Consumed exactly once. Empty makes it a root.
             scope: The new scope, ``"internal"`` or ``"customer"``.
             owner: The new owner.
             description: The new description.
@@ -643,6 +668,7 @@ class AsyncNetworkOperations:
             network_id,
             name=name,
             parent_id=parent_id,
+            parent_ids=parent_ids,
             scope=scope,
             owner=owner,
             description=description,

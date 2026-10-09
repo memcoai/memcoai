@@ -514,7 +514,7 @@ test("a memory's feedback() calls the submitter with its own idx", async () => {
       return {
         idx,
         relevant: rating.relevant,
-        correct: rating.correct,
+        correct: rating.correct ?? null,
         advice: null
       }
     }

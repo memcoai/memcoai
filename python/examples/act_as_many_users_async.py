@@ -44,7 +44,7 @@ async def main() -> None:
         # Removed again at the end.
         root = (await client.networks.list(parent_id="root", domain=DOMAIN)).networks[0]
         network = await client.networks.create(
-            name=f"Acme Corp ({run})", parent_id=root.id, scope="customer"
+            name=f"Acme Corp ({run})", parent_ids=[root.id], scope="customer"
         )
         users: list[ExternalUser] = []
         try:

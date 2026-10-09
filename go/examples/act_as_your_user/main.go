@@ -70,7 +70,7 @@ func run(ctx context.Context, opts memcoai.Options, out *log.Logger) (err error)
 		return fmt.Errorf("the organisation has no root network in %s", domain)
 	}
 	network, err := client.Networks.Create(ctx, memcoai.CreateNetworkParams{
-		Name: tag + " Acme Corp", ParentID: roots.Networks[0].ID, Scope: "customer",
+		Name: tag + " Acme Corp", ParentIDs: []string{roots.Networks[0].ID}, Scope: "customer",
 	})
 	if err != nil {
 		return err

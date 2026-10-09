@@ -117,6 +117,13 @@ def test_a_bare_string_is_not_a_sequence_of_queries():
         v.check_import_memories([imported(queries="how does X work")])
 
 
+@pytest.mark.parametrize("item", [1, None, b"network-b"])
+def test_a_collection_of_strings_refuses_an_item_that_is_not_one(item: object):
+    # Otherwise it reaches protobuf and escapes as a bare TypeError.
+    with pytest.raises(MemcoInvalidRequestError, match=r"parent_ids\[1\] must be a string$"):
+        v.check_strings(["network-a", item], "parent_ids")  # type: ignore[list-item]
+
+
 def test_a_blank_field_names_the_entry_it_is_in():
     # A batch gives the caller no other way to find the offending entry.
     with pytest.raises(MemcoInvalidRequestError, match=r"memories\[1\] queries\[0\]"):

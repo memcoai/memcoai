@@ -307,6 +307,21 @@ test('a single string is not a sequence of source handles', () => {
   )
 })
 
+for (const item of [1, null, undefined]) {
+  test(`a collection of strings refuses an item that is not one: ${item}`, () => {
+    // Otherwise it reaches the encoder, which sends it as something else.
+    assert.throws(
+      () => {
+        validate.checkStrings(
+          ['network-a', item] as unknown as string[],
+          'parent_ids'
+        )
+      },
+      { detail: 'parent_ids[1] must be a string' }
+    )
+  })
+}
+
 test('a blank source handle is refused', () => {
   assert.throws(
     () => {

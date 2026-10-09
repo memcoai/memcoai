@@ -778,7 +778,8 @@ def _feedback_result(result: FeedbackResult) -> str:
         The ratings, and any advice they earned.
     """
     recorded = "\n".join(
-        f"{entry.idx}  relevant={entry.relevant} correct={entry.correct}"
+        f"{entry.idx}  relevant={entry.relevant}"
+        + (f" correct={entry.correct}" if entry.correct is not None else "")
         + (f"  {entry.advice}" if entry.advice else "")
         for entry in result.entries
     )

@@ -241,6 +241,23 @@ def test_a_rating_arrives_as_an_object_and_reaches_the_wire(client: Memco, harne
     assert [(one.idx, one.relevant, one.correct) for one in sent] == [("memory-a-1", True, False)]
 
 
+def test_a_rating_without_correct_is_accepted_and_sent_without_it(client: Memco, harness: Harness):
+    tools = built(client)
+    schema = tools["memco_share_feedback"].parameters["properties"]["feedback"]
+    assert schema["items"]["required"] == ["idx", "relevant"]
+    harness.memory.responses["ShareFeedback"] = pb.ShareFeedbackResponse(
+        session_id="session-a",
+        entries=[pb.FeedbackEntry(idx="memory-a-1", relevant=False)],
+    )
+
+    rendered = tools["memco_share_feedback"].call(
+        feedback=[{"idx": "memory-a-1", "relevant": False}]
+    )
+
+    assert not harness.memory.requests["ShareFeedback"].feedback[0].HasField("correct")
+    assert rendered.splitlines()[0] == "memory-a-1  relevant=False"
+
+
 @pytest.mark.parametrize(
     ("arguments", "expected"),
     [

@@ -393,7 +393,7 @@ func (s *Tokens) IssueToken(ctx context.Context, r *authv1.IssueTokenRequest) (*
 // The canned administration values a default answer carries.
 var (
 	CannedNetwork = &adminv1.Network{
-		Id: "network-a", Name: "Acme", ParentId: "network-root", Domain: "coding",
+		Id: "network-a", Name: "Acme", ParentId: "network-root", ParentIds: []string{"network-root"}, Domain: "coding",
 		Region: "global", Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
 	}
 	CannedMember = &adminv1.Member{UserId: "user-a", Email: "ada@example.com", Name: "Ada"}
@@ -500,7 +500,7 @@ func (s *Admin) CreateNetwork(ctx context.Context, r *adminv1.CreateNetworkReque
 		defer s.mu.Unlock()
 		s.networks++
 		network := &adminv1.Network{
-			Id: fmt.Sprintf("network-%d", s.networks), Name: r.GetName(), ParentId: r.GetParentId(),
+			Id: fmt.Sprintf("network-%d", s.networks), Name: r.GetName(), ParentId: r.GetParentId(), ParentIds: r.GetParentIds(),
 			Domain: r.GetDomain(), Region: r.GetRegion(), Scope: r.GetScope(), Owner: r.GetOwner(),
 			Description: r.GetDescription(),
 		}

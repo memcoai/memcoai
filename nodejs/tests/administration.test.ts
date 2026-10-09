@@ -58,6 +58,7 @@ const NETWORK = {
   id: 'network-a',
   name: 'Acme',
   parentId: 'network-root',
+  parentIds: ['network-root'],
   domain: 'coding',
   region: 'global',
   scope: 'customer',
@@ -128,7 +129,7 @@ const CASES: readonly Case[] = [
     call: memco =>
       memco.networks.create({
         name: 'Acme',
-        parentId: 'network-root',
+        parentIds: ['network-root', 'network-shared'],
         domain: 'coding',
         region: 'global',
         scope: 'customer',
@@ -138,14 +139,19 @@ const CASES: readonly Case[] = [
     rpc: 'createNetwork',
     sent: a.CreateNetworkRequest.fromPartial({
       name: 'Acme',
-      parentId: 'network-root',
+      parentIds: ['network-root', 'network-shared'],
       domain: 'coding',
       region: 'global',
       scope: 'customer',
       owner: 'acme',
       description: "Acme's support knowledge"
     }),
-    returned: { ...NETWORK, id: 'network-new' }
+    returned: {
+      ...NETWORK,
+      id: 'network-new',
+      parentId: null,
+      parentIds: ['network-root', 'network-shared']
+    }
   },
   {
     name: 'networks.update',
@@ -451,6 +457,29 @@ for (const field of NETWORK_PATCHABLE) {
   })
 }
 
+test('a network patch replaces the whole parent set only when given', async () => {
+  await withClient(async (memco, harness) => {
+    await memco.networks.update('network-a', {
+      parentIds: ['network-b', 'network-c']
+    })
+    await memco.networks.update('network-a', { parentIds: [] })
+    await memco.networks.update('network-a', {
+      parentIds: null as unknown as string[]
+    })
+    assert.deepEqual(harness.admin.received, [
+      a.UpdateNetworkRequest.fromPartial({
+        id: 'network-a',
+        parentIds: { ids: ['network-b', 'network-c'] }
+      }),
+      a.UpdateNetworkRequest.fromPartial({
+        id: 'network-a',
+        parentIds: { ids: [] }
+      }),
+      a.UpdateNetworkRequest.fromPartial({ id: 'network-a' })
+    ])
+  })
+})
+
 test('a network patch given nothing sends no field, and a null means unset', async () => {
   await withClient(async (memco, harness) => {
     await memco.networks.update('network-a')
@@ -539,8 +568,14 @@ test('a network reads its absent fields as null', async () => {
     )
     const network = await memco.networks.create({ name: 'Root' })
     assert.deepEqual(
-      [network.parentId, network.scope, network.owner, network.description],
-      [null, null, null, '']
+      [
+        network.parentId,
+        network.parentIds,
+        network.scope,
+        network.owner,
+        network.description
+      ],
+      [null, [], null, null, '']
     )
   })
 })

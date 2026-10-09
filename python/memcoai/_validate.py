@@ -286,13 +286,19 @@ def check_strings(values: Iterable[str] | None, field: str) -> list[str]:
         The strings as a list, empty when none were given.
 
     Raises:
-        MemcoInvalidRequestError: If a bare string was passed.
+        MemcoInvalidRequestError: If a bare string was passed, or an item is
+            not a string.
     """
     if isinstance(values, str):
         # A str satisfies Iterable[str], so neither the annotation nor the type
         # checker catches this; iterating it would send one entry per character.
         raise reject(f"{field} must be a collection of strings, not a single string")
-    return list(values or ())
+    materialised = list(values or ())
+    for i, value in enumerate(materialised):
+        # Left to protobuf, a wrong item escapes as a bare TypeError.
+        if not isinstance(value, str):
+            raise reject(f"{field}[{i}] must be a string")
+    return materialised
 
 
 def check_roles(roles: Iterable[str]) -> list[str]:

@@ -163,7 +163,7 @@ def customer_networks(admin: Memco, root_network: Network) -> Iterator[Callable[
         names.append(name)
         return admin.networks.create(
             name=name,
-            parent_id=root_network.id,
+            parent_ids=[root_network.id],
             scope="customer",
             description="A network the Python SDK system test creates and deletes again.",
         )

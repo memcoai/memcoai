@@ -67,6 +67,16 @@ def test_feedback_forwards_a_comment(client: Memco, harness: Harness):
     assert harness.memory.requests["ShareFeedback"].feedback[0].comment == "answered directly"
 
 
+def test_feedback_leaves_correct_unsent_when_not_given(client: Memco, harness: Harness):
+    harness.memory.responses["Search"] = _search_response()
+    harness.memory.responses["ShareFeedback"] = _feedback_response()
+    memory = client.memory.search("q", domain="coding").memories[0]
+
+    memory.feedback(relevant=False)
+
+    assert not harness.memory.requests["ShareFeedback"].feedback[0].HasField("correct")
+
+
 def test_feedback_from_get_memory_is_refused_locally(client: Memco, harness: Harness):
     memory = client.memory.get_memory("memory-a-1")
     harness.memory.calls.clear()

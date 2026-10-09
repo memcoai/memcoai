@@ -131,14 +131,27 @@ func TestARatingArrivesAsAnObjectAndReachesTheWire(t *testing.T) {
 	f := connected(t)
 	tools := toolset(t, f)
 	f.server.Memory.Respond("ShareFeedback", &memoryv1.ShareFeedbackResponse{Entries: []*memoryv1.FeedbackEntry{
-		{Idx: "memory-a-1", Relevant: true, Correct: false, Advice: "say why"},
+		{Idx: "memory-a-1", Relevant: true, Correct: proto.Bool(false), Advice: "say why"},
 	}})
 	got := called(t, tools, "memco_share_feedback", `{"feedback": [{"idx": "memory-a-1", "relevant": true, "correct": false, "comment": "stale"}]}`)
 	if got != "memory-a-1  relevant=true correct=false  say why" {
 		t.Fatalf("got %q", got)
 	}
 	comment := "stale"
-	want := &memoryv1.ShareFeedbackRequest{SessionId: "session-a", Feedback: []*memoryv1.FeedbackRating{{Idx: "memory-a-1", Relevant: true, Comment: &comment}}}
+	want := &memoryv1.ShareFeedbackRequest{SessionId: "session-a", Feedback: []*memoryv1.FeedbackRating{{Idx: "memory-a-1", Relevant: true, Correct: proto.Bool(false), Comment: &comment}}}
+	if sent := sentAs[*memoryv1.ShareFeedbackRequest](t, f, "ShareFeedback"); !proto.Equal(sent, want) {
+		t.Fatalf("sent %v", sent)
+	}
+}
+
+func TestARatingWithoutCorrectReachesTheWireWithoutIt(t *testing.T) {
+	f := connected(t)
+	tools := toolset(t, f)
+	f.server.Memory.Respond("ShareFeedback", &memoryv1.ShareFeedbackResponse{Entries: []*memoryv1.FeedbackEntry{{Idx: "memory-a-1"}}})
+	if got := called(t, tools, "memco_share_feedback", `{"feedback": [{"idx": "memory-a-1", "relevant": false}]}`); got != "memory-a-1  relevant=false" {
+		t.Fatalf("got %q", got)
+	}
+	want := &memoryv1.ShareFeedbackRequest{SessionId: "session-a", Feedback: []*memoryv1.FeedbackRating{{Idx: "memory-a-1"}}}
 	if sent := sentAs[*memoryv1.ShareFeedbackRequest](t, f, "ShareFeedback"); !proto.Equal(sent, want) {
 		t.Fatalf("sent %v", sent)
 	}
@@ -389,10 +402,11 @@ func TestEveryPartOfTheGuidanceReachesTheModel(t *testing.T) {
 
 func TestRatingsAndRevertsRenderInWords(t *testing.T) {
 	got := Render(FeedbackResult{Entries: []FeedbackEntry{
-		{Idx: "memory-a-1", Relevant: true, Correct: false, Advice: "say why"},
-		{Idx: "memory-a-2", Relevant: false, Correct: true},
+		{Idx: "memory-a-1", Relevant: true, Correct: proto.Bool(false), Advice: "say why"},
+		{Idx: "memory-a-2", Relevant: false, Correct: proto.Bool(true)},
+		{Idx: "memory-a-3", Relevant: false},
 	}})
-	if got != "memory-a-1  relevant=true correct=false  say why\nmemory-a-2  relevant=false correct=true" {
+	if got != "memory-a-1  relevant=true correct=false  say why\nmemory-a-2  relevant=false correct=true\nmemory-a-3  relevant=false" {
 		t.Fatalf("feedback %q", got)
 	}
 	if got := Render(RevertResult{OperationID: "create-a", Outcome: RevertOutcomeMemoryRemoved}); got != "create-a: memory removed" {

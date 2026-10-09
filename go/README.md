@@ -85,10 +85,12 @@ result, err := session.Search(ctx, "how does gRPC health checking work", memcoai
 if err != nil {
 	return err
 }
+// Correct is a pointer: leave it nil when accuracy cannot be judged.
+correct := true
 var ratings []memcoai.FeedbackRating
 for _, memory := range result.Memories {
 	for _, insight := range memory.Insights {
-		ratings = append(ratings, memcoai.FeedbackRating{Idx: insight.Idx, Relevant: true, Correct: true})
+		ratings = append(ratings, memcoai.FeedbackRating{Idx: insight.Idx, Relevant: true, Correct: &correct})
 	}
 }
 if len(ratings) > 0 {
@@ -99,7 +101,7 @@ if len(ratings) > 0 {
 ```
 
 Rating a single memory is shorter directly on the result:
-`result.Memories[0].Feedback(ctx, memcoai.MemoryFeedback{Relevant: true, Correct: true})`
+`result.Memories[0].Feedback(ctx, memcoai.MemoryFeedback{Relevant: true, Correct: &correct})`
 submits one rating for that memory's own idx, bound to the session it was
 found in.
 
@@ -363,7 +365,7 @@ if err != nil {
 	return err
 }
 acme, err := client.Networks.Create(ctx, memcoai.CreateNetworkParams{
-	Name: "Acme", ParentID: roots.Networks[0].ID, Scope: "customer",
+	Name: "Acme", ParentIDs: []string{roots.Networks[0].ID}, Scope: "customer",
 })
 if err != nil {
 	return err

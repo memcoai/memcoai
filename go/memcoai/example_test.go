@@ -172,9 +172,13 @@ func ExampleMemoryOperations_EnrichMemory() {
 }
 
 func ExampleMemoryOperations_ShareFeedback() {
+	// Correct is a pointer, so a rating can leave it out when accuracy cannot
+	// be judged.
+	correct, wrong := true, false
 	result, err := client.Memory.ShareFeedback(ctx, "session-hpc08", []memcoai.FeedbackRating{
-		{Idx: "memory-hpc08-1", Relevant: true, Correct: true},
-		{Idx: "memory-hpc08-2-insight-1", Relevant: true, Correct: false, Comment: "out of date"},
+		{Idx: "memory-hpc08-1", Relevant: true, Correct: &correct},
+		{Idx: "memory-hpc08-2-insight-1", Relevant: true, Correct: &wrong, Comment: "out of date"},
+		{Idx: "memory-hpc08-3", Relevant: false},
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -220,7 +224,8 @@ func ExampleSession_GetMemory() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := memory.Feedback(ctx, memcoai.MemoryFeedback{Relevant: true, Correct: true}); err != nil {
+	correct := true
+	if _, err := memory.Feedback(ctx, memcoai.MemoryFeedback{Relevant: true, Correct: &correct}); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -257,9 +262,10 @@ func ExampleSession_ShareFeedback() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	correct := true
 	var ratings []memcoai.FeedbackRating
 	for _, memory := range result.Memories {
-		ratings = append(ratings, memcoai.FeedbackRating{Idx: memory.Idx, Relevant: true, Correct: true})
+		ratings = append(ratings, memcoai.FeedbackRating{Idx: memory.Idx, Relevant: true, Correct: &correct})
 	}
 	if len(ratings) > 0 {
 		if _, err := session.ShareFeedback(ctx, ratings); err != nil {
@@ -336,8 +342,9 @@ func ExampleMemory_Feedback() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	correct := true
 	for _, memory := range result.Memories {
-		entry, err := memory.Feedback(ctx, memcoai.MemoryFeedback{Relevant: true, Correct: true})
+		entry, err := memory.Feedback(ctx, memcoai.MemoryFeedback{Relevant: true, Correct: &correct})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -409,7 +416,7 @@ func ExampleNetworkOperations_List() {
 
 func ExampleNetworkOperations_Create() {
 	acme, err := client.Networks.Create(ctx, memcoai.CreateNetworkParams{
-		Name: "Acme", ParentID: "network-root", Scope: "customer",
+		Name: "Acme", ParentIDs: []string{"network-root"}, Scope: "customer",
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -169,8 +169,9 @@ type Memory struct {
 type MemoryFeedback struct {
 	// Relevant reports whether the memory was a good match for the query.
 	Relevant bool
-	// Correct reports whether its content was accurate.
-	Correct bool
+	// Correct reports whether its content was accurate; nil leaves it out,
+	// for when that cannot be judged.
+	Correct *bool
 	// Comment is an optional note about the memory.
 	Comment string
 }
@@ -237,8 +238,9 @@ type FeedbackRating struct {
 	Idx string
 	// Relevant reports whether the result was a good match for the query.
 	Relevant bool
-	// Correct reports whether its content was accurate.
-	Correct bool
+	// Correct reports whether its content was accurate; nil leaves it out,
+	// for when that cannot be judged.
+	Correct *bool
 	// Comment is an optional note about the result.
 	Comment string
 }
@@ -249,8 +251,8 @@ type FeedbackEntry struct {
 	Idx string
 	// Relevant is the relevance recorded.
 	Relevant bool
-	// Correct is the correctness recorded.
-	Correct bool
+	// Correct is the correctness recorded, or nil when the rating left it out.
+	Correct *bool
 	// Advice is the suggestion this rating earned, or empty.
 	Advice string
 }
@@ -329,14 +331,19 @@ type Provenance struct {
 
 // Network is a memory network: where an organization places its people, and
 // so what knowledge each of them can find. A root network sits in a memory
-// domain; every other network hangs under a parent and takes its domain.
+// domain; every other network hangs under one or more parents and takes their
+// domain.
 type Network struct {
 	// ID is the network's handle.
 	ID string
 	// Name is the network's name.
 	Name string
-	// ParentID is the network this one hangs under, or empty for a root.
+	// ParentID is the first of ParentIDs, or empty for a root.
+	//
+	// Deprecated: Read ParentIDs; a network may have several parents.
 	ParentID string
+	// ParentIDs are the networks this one hangs under, empty for a root.
+	ParentIDs []string
 	// Domain is the memory domain the network belongs to.
 	Domain string
 	// Region is where the network's data resides.

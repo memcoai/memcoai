@@ -97,7 +97,7 @@ func TestEveryCallThroughTheSessionCarriesTheKey(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = memory.Feedback(ctx, MemoryFeedback{Relevant: true, Correct: true})
+			_, err = memory.Feedback(ctx, MemoryFeedback{Relevant: true, Correct: proto.Bool(true)})
 			return err
 		},
 		func() error {

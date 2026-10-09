@@ -154,7 +154,7 @@
       "parameters": {
         "feedback": "(Required) A list of ratings, one per result you want to rate. Up to 10 ratings can be included in each call.",
         "feedback[].comment": "An optional comment on the result, at most 5000 characters.",
-        "feedback[].correct": "(Required) Set to true if the result's content was accurate, false if not. An unset value is read as false.",
+        "feedback[].correct": "Set to true if the result's content was accurate, false if not. Leave it out when you cannot judge it.",
         "feedback[].idx": "(Required) The idx of the result to rate, copied exactly as it appears in the search response; it cannot be constructed by hand. Use an insight's idx for a specific insight, or a memory's own idx to apply the rating to every insight under it.",
         "feedback[].relevant": "Set to true if the result was a good match for the query.",
         "session_id": "(Required) The session you are providing feedback for. The ID was included in the response from ${tool:search}."

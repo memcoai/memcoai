@@ -81,8 +81,19 @@ export interface ListNetworksOptions extends TimeoutOptions {
 export interface CreateNetworkOptions extends TimeoutOptions {
   /** The network's name. */
   name: string
-  /** The network to create this one under. Omitted, the new network is a root. */
+  /**
+   * The network to create this one under, read as `parentIds` holding this one
+   * network.
+   *
+   * @deprecated Use `parentIds`, and never both.
+   */
   parentId?: string
+  /**
+   * The networks to create this one under, each named once and all in one
+   * domain, which the new network takes. Omitted or empty, the new network is
+   * a root.
+   */
+  parentIds?: Iterable<string>
   /**
    * The memory domain of a root network. Omitted, your organization's default.
    * A child must not name one.
@@ -113,8 +124,18 @@ export interface CreateNetworkOptions extends TimeoutOptions {
 export interface UpdateNetworkOptions extends TimeoutOptions {
   /** The new name. */
   name?: string
-  /** The network to move this one under. */
+  /**
+   * The network to move this one under, replacing every other parent; `''`
+   * makes it a root.
+   *
+   * @deprecated Use `parentIds`, and never both.
+   */
   parentId?: string
+  /**
+   * The network's whole new parent set, replacing the current one. Empty makes
+   * it a root.
+   */
+  parentIds?: Iterable<string>
   /** The new scope, `internal` or `customer`. */
   scope?: string
   /** The new owner. */
@@ -255,7 +276,7 @@ export interface DeleteKeyOptions extends TimeoutOptions {
  *   .networks[0]
  * const acme = await client.networks.create({
  *   name: 'Acme',
- *   parentId: root.id,
+ *   parentIds: [root.id],
  *   scope: 'customer'
  * })
  * ```
@@ -310,7 +331,7 @@ export class NetworkOperations {
    * ```ts
    * const acme = await client.networks.create({
    *   name: 'Acme',
-   *   parentId: root.id,
+   *   parentIds: [root.id],
    *   scope: 'customer'
    * })
    * ```

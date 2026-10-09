@@ -345,8 +345,9 @@ message FeedbackRating {
   string idx = 1;
   // relevant reports whether the result was a good match for the query.
   bool relevant = 2;
-  // correct reports whether its content was accurate.
-  bool correct = 3;
+  // correct reports whether its content was accurate. Leave it out when its
+  // accuracy cannot be judged.
+  optional bool correct = 3;
   // comment is an optional note about this result.
   optional string comment = 4;
 }
@@ -361,7 +362,8 @@ message ShareFeedbackResponse {
 message FeedbackEntry {
   string idx = 1;
   bool relevant = 2;
-  bool correct = 3;
+  // correct is absent when the rating left it out.
+  optional bool correct = 3;
   // advice is the suggestion this particular verdict earned, empty when the
   // verdict suggests nothing. It addresses one result, so it belongs to the
   // entry rather than to the batch.

@@ -162,13 +162,15 @@ func lifecycle(t *testing.T, domain string) {
 	t.Logf("found as %s, insight %s", memory.Idx, insight.Idx)
 
 	feedback, err := client.Memory.ShareFeedback(ctx, session.ID, []memcoai.FeedbackRating{
-		{Idx: insight.Idx, Relevant: true, Correct: true},
+		{Idx: insight.Idx, Relevant: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.ContainsFunc(feedback.Entries, func(e memcoai.FeedbackEntry) bool { return e.Idx == insight.Idx }) {
-		t.Fatalf("no feedback entry for %s in %+v", insight.Idx, feedback.Entries)
+	// Left out, correct is recorded as unjudged rather than false.
+	if slices.ContainsFunc(feedback.Entries, func(e memcoai.FeedbackEntry) bool { return e.Idx == insight.Idx && e.Correct != nil }) ||
+		!slices.ContainsFunc(feedback.Entries, func(e memcoai.FeedbackEntry) bool { return e.Idx == insight.Idx }) {
+		t.Fatalf("no unjudged feedback entry for %s in %+v", insight.Idx, feedback.Entries)
 	}
 
 	fetched, err := client.Memory.GetMemory(ctx, memory.Idx)

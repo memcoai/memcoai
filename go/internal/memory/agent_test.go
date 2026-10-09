@@ -139,7 +139,7 @@ func TestTagsAndRatingsAreObjectsWithAClosedShape(t *testing.T) {
 
 	properties, _ = Schema(operation(t, "share_feedback"))
 	rating := properties["feedback"].(map[string]any)["items"].(map[string]any)
-	if !reflect.DeepEqual(rating["required"], []string{"idx", "relevant", "correct"}) {
+	if !reflect.DeepEqual(rating["required"], []string{"idx", "relevant"}) {
 		t.Fatalf("rating: %v", rating)
 	}
 	relevant := rating["properties"].(map[string]any)["relevant"].(map[string]any)
@@ -278,7 +278,6 @@ func TestArgumentsAreCheckedLikeAModelWillSendThem(t *testing.T) {
 		{"search", `{"query": "q", "tags": [{"type": 1, "value": "go"}]}`, "tags.type must be a string, not number"},
 		{"enrich_memory", `{"memory_idx": "new", "title": "t", "content": "c", "sources": ["a", 2]}`, "sources[1] must be a string, not number"},
 		{"share_feedback", `{"feedback": [{"idx": "i", "relevant": "yes", "correct": true}]}`, "feedback.relevant must be true or false, not string"},
-		{"share_feedback", `{"feedback": [{"idx": "i", "relevant": true}]}`, "feedback is missing correct"},
 		{"revert_memory", `{"operationId": "x"}`, `unknown argument(s): "operationId"`},
 	}
 	for _, c := range cases {

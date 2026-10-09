@@ -1667,8 +1667,9 @@ type FeedbackRating struct {
 	Idx string `protobuf:"bytes,1,opt,name=idx,proto3" json:"idx,omitempty"`
 	// relevant reports whether the result was a good match for the query.
 	Relevant bool `protobuf:"varint,2,opt,name=relevant,proto3" json:"relevant,omitempty"`
-	// correct reports whether its content was accurate.
-	Correct bool `protobuf:"varint,3,opt,name=correct,proto3" json:"correct,omitempty"`
+	// correct reports whether its content was accurate. Leave it out when its
+	// accuracy cannot be judged.
+	Correct *bool `protobuf:"varint,3,opt,name=correct,proto3,oneof" json:"correct,omitempty"`
 	// comment is an optional note about this result.
 	Comment       *string `protobuf:"bytes,4,opt,name=comment,proto3,oneof" json:"comment,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1720,8 +1721,8 @@ func (x *FeedbackRating) GetRelevant() bool {
 }
 
 func (x *FeedbackRating) GetCorrect() bool {
-	if x != nil {
-		return x.Correct
+	if x != nil && x.Correct != nil {
+		return *x.Correct
 	}
 	return false
 }
@@ -1798,7 +1799,8 @@ type FeedbackEntry struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Idx      string                 `protobuf:"bytes,1,opt,name=idx,proto3" json:"idx,omitempty"`
 	Relevant bool                   `protobuf:"varint,2,opt,name=relevant,proto3" json:"relevant,omitempty"`
-	Correct  bool                   `protobuf:"varint,3,opt,name=correct,proto3" json:"correct,omitempty"`
+	// correct is absent when the rating left it out.
+	Correct *bool `protobuf:"varint,3,opt,name=correct,proto3,oneof" json:"correct,omitempty"`
 	// advice is the suggestion this particular verdict earned, empty when the
 	// verdict suggests nothing. It addresses one result, so it belongs to the
 	// entry rather than to the batch.
@@ -1852,8 +1854,8 @@ func (x *FeedbackEntry) GetRelevant() bool {
 }
 
 func (x *FeedbackEntry) GetCorrect() bool {
-	if x != nil {
-		return x.Correct
+	if x != nil && x.Correct != nil {
+		return *x.Correct
 	}
 	return false
 }
@@ -2540,24 +2542,28 @@ const file_memcoai_memory_v1_memory_proto_rawDesc = "" +
 	"\x14ShareFeedbackRequest\x12=\n" +
 	"\bfeedback\x18\x01 \x03(\v2!.memcoai.memory.v1.FeedbackRatingR\bfeedback\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\"\x83\x01\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\x94\x01\n" +
 	"\x0eFeedbackRating\x12\x10\n" +
 	"\x03idx\x18\x01 \x01(\tR\x03idx\x12\x1a\n" +
-	"\brelevant\x18\x02 \x01(\bR\brelevant\x12\x18\n" +
-	"\acorrect\x18\x03 \x01(\bR\acorrect\x12\x1d\n" +
-	"\acomment\x18\x04 \x01(\tH\x00R\acomment\x88\x01\x01B\n" +
+	"\brelevant\x18\x02 \x01(\bR\brelevant\x12\x1d\n" +
+	"\acorrect\x18\x03 \x01(\bH\x00R\acorrect\x88\x01\x01\x12\x1d\n" +
+	"\acomment\x18\x04 \x01(\tH\x01R\acomment\x88\x01\x01B\n" +
+	"\n" +
+	"\b_correctB\n" +
 	"\n" +
 	"\b_comment\"\xb7\x01\n" +
 	"\x15ShareFeedbackResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12:\n" +
 	"\aentries\x18\x02 \x03(\v2 .memcoai.memory.v1.FeedbackEntryR\aentries\x12C\n" +
-	"\finstructions\x18\x03 \x01(\v2\x1f.memcoai.memory.v1.InstructionsR\finstructions\"o\n" +
+	"\finstructions\x18\x03 \x01(\v2\x1f.memcoai.memory.v1.InstructionsR\finstructions\"\x80\x01\n" +
 	"\rFeedbackEntry\x12\x10\n" +
 	"\x03idx\x18\x01 \x01(\tR\x03idx\x12\x1a\n" +
-	"\brelevant\x18\x02 \x01(\bR\brelevant\x12\x18\n" +
-	"\acorrect\x18\x03 \x01(\bR\acorrect\x12\x16\n" +
-	"\x06advice\x18\x04 \x01(\tR\x06advice\"*\n" +
+	"\brelevant\x18\x02 \x01(\bR\brelevant\x12\x1d\n" +
+	"\acorrect\x18\x03 \x01(\bH\x00R\acorrect\x88\x01\x01\x12\x16\n" +
+	"\x06advice\x18\x04 \x01(\tR\x06adviceB\n" +
+	"\n" +
+	"\b_correct\"*\n" +
 	"\x13RevertMemoryRequest\x12\x13\n" +
 	"\x05op_id\x18\x01 \x01(\tR\x04opId\"\xba\x01\n" +
 	"\x14RevertMemoryResponse\x12!\n" +
@@ -2735,6 +2741,7 @@ func file_memcoai_memory_v1_memory_proto_init() {
 	}
 	file_memcoai_memory_v1_memory_proto_msgTypes[1].OneofWrappers = []any{}
 	file_memcoai_memory_v1_memory_proto_msgTypes[19].OneofWrappers = []any{}
+	file_memcoai_memory_v1_memory_proto_msgTypes[21].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

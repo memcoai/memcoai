@@ -248,22 +248,41 @@ func TestAnImportCancelledDuringAGroupSendsNoMore(t *testing.T) {
 	}
 }
 
+func TestMemoryFeedbackLeavesCorrectUnsentWhenNotGiven(t *testing.T) {
+	f := connected(t)
+	f.server.Memory.Respond("Search", &memoryv1.SearchResponse{
+		SessionId: "session-s", Memories: []*memoryv1.MemoryResult{{Idx: "memory-a-1"}},
+	})
+	f.server.Memory.Respond("ShareFeedback", &memoryv1.ShareFeedbackResponse{Entries: []*memoryv1.FeedbackEntry{{Idx: "memory-a-1"}}})
+	result, err := f.client.Memory.Search(ctx, "q", SearchParams{Domain: "coding"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := result.Memories[0].Feedback(ctx, MemoryFeedback{Relevant: false})
+	if err != nil || entry.Correct != nil {
+		t.Fatalf("got %+v, %v", entry, err)
+	}
+	if got := sentAs[*memoryv1.ShareFeedbackRequest](t, f, "ShareFeedback"); got.GetFeedback()[0].Correct != nil {
+		t.Fatalf("sent %v", got)
+	}
+}
+
 func TestMemoryFeedbackIsSentUnderTheSessionThatReturnedIt(t *testing.T) {
 	f := connected(t)
 	f.server.Memory.Respond("Search", &memoryv1.SearchResponse{
 		SessionId: "session-s", Memories: []*memoryv1.MemoryResult{{Idx: "memory-a-1"}},
 	})
-	f.server.Memory.Respond("ShareFeedback", &memoryv1.ShareFeedbackResponse{Entries: []*memoryv1.FeedbackEntry{{Idx: "memory-a-1", Correct: true}}})
+	f.server.Memory.Respond("ShareFeedback", &memoryv1.ShareFeedbackResponse{Entries: []*memoryv1.FeedbackEntry{{Idx: "memory-a-1", Correct: proto.Bool(true)}}})
 	result, err := f.client.Memory.Search(ctx, "q", SearchParams{Domain: "coding"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry, err := result.Memories[0].Feedback(ctx, MemoryFeedback{Relevant: true, Correct: true, Comment: "why"})
-	if err != nil || !entry.Correct {
+	entry, err := result.Memories[0].Feedback(ctx, MemoryFeedback{Relevant: true, Correct: proto.Bool(true), Comment: "why"})
+	if err != nil || entry.Correct == nil || !*entry.Correct {
 		t.Fatalf("got %+v, %v", entry, err)
 	}
 	comment := "why"
-	want := &memoryv1.ShareFeedbackRequest{SessionId: "session-s", Feedback: []*memoryv1.FeedbackRating{{Idx: "memory-a-1", Relevant: true, Correct: true, Comment: &comment}}}
+	want := &memoryv1.ShareFeedbackRequest{SessionId: "session-s", Feedback: []*memoryv1.FeedbackRating{{Idx: "memory-a-1", Relevant: true, Correct: proto.Bool(true), Comment: &comment}}}
 	if got := sentAs[*memoryv1.ShareFeedbackRequest](t, f, "ShareFeedback"); !proto.Equal(got, want) {
 		t.Fatalf("sent %v", got)
 	}

@@ -328,8 +328,8 @@ export function checkSources(
  *   once, so a generator is safe here.
  * @param field Field name, used verbatim in the error message.
  * @returns The strings as an array, empty when none were given.
- * @throws A {@link MemcoInvalidRequestError} if a bare string was passed, or
- *   anything that cannot be iterated.
+ * @throws A {@link MemcoInvalidRequestError} if a bare string was passed,
+ *   anything that cannot be iterated, or an item that is not a string.
  */
 export function checkStrings(
   values: Iterable<string> | null | undefined,
@@ -342,7 +342,17 @@ export function checkStrings(
       `${field} must be a collection of strings, not a single string`
     )
   }
-  return iterated(values, `${field} must be a collection of strings`)
+  const materialised = iterated(
+    values,
+    `${field} must be a collection of strings`
+  )
+  materialised.forEach((value, i) => {
+    // Left to the encoder, a wrong item is sent as something else.
+    if (typeof value !== 'string') {
+      throw reject(`${field}[${i}] must be a string`)
+    }
+  })
+  return materialised
 }
 
 /**

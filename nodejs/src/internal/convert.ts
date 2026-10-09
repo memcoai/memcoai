@@ -394,13 +394,14 @@ export function toWriteResult(
  * Convert a `FeedbackEntry` message.
  *
  * @param message The generated message.
- * @returns The public equivalent, with empty advice mapped to `null`.
+ * @returns The public equivalent, with empty advice and an absent `correct`
+ *   mapped to `null`.
  */
 function toFeedbackEntry(message: pb.FeedbackEntry): FeedbackEntry {
   return {
     idx: message.idx,
     relevant: message.relevant,
-    correct: message.correct,
+    correct: message.correct ?? null,
     advice: optional(message.advice)
   }
 }
@@ -510,6 +511,7 @@ export function toNetwork(message: pb.admin.Network): Network {
     id: message.id,
     name: message.name,
     parentId: optional(message.parentId),
+    parentIds: [...message.parentIds],
     domain: message.domain,
     region: message.region,
     scope: optional(message.scope),

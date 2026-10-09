@@ -55,14 +55,14 @@ def main() -> None:
         try:
             networks["company"] = client.networks.create(
                 name=f"{COMPANY} ({run})",
-                parent_id=root.id,
+                parent_ids=[root.id],
                 scope="customer",
                 description="Practice that applies to every client project",
             )
             for key, title in PROJECTS.items():
                 networks[key] = client.networks.create(
                     name=f"{COMPANY} / {title} ({run})",
-                    parent_id=networks["company"].id,
+                    parent_ids=[networks["company"].id],
                     scope="customer",
                 )
 

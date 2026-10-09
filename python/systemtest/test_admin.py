@@ -51,11 +51,14 @@ def test_a_customer_network_is_created_changed_found_and_deleted(
 
     network = customer_networks()
     print(f"\ncreated network {network.id} under {root_network.id} in {network.domain}")
-    assert (network.parent_id, network.domain, network.scope) == (
+    assert (network.parent_id, network.parent_ids, network.domain, network.scope) == (
         root_network.id,
+        (root_network.id,),
         root_network.domain,
         "customer",
     )
+    reparented = admin.networks.update(network.id, parent_ids=[root_network.id])
+    assert reparented.parent_ids == (root_network.id,)
 
     description = "A network the Python SDK system test has changed."
     changed = admin.networks.update(network.id, description=description)
