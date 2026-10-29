@@ -53,6 +53,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "prettier --check .",
     "format": "prettier --write .",
+    "update": "npm update && npm audit fix",
     "build:esm": "tsc -p tsconfig.esm.json && cp src/internal/moduleDir.esm.js dist/esm/src/internal/moduleDir.js && cp src/internal/moduleDir.d.ts dist/esm/src/internal/moduleDir.d.ts",
     "build:cjs": "tsc -p tsconfig.cjs.json && cp src/internal/moduleDir.cjs.js dist/cjs/src/internal/moduleDir.js && cp src/internal/moduleDir.d.ts dist/cjs/src/internal/moduleDir.d.ts && printf '{\"type\":\"commonjs\"}\\n' > dist/cjs/package.json",
     "build": "rm -rf dist && npm run build:esm && npm run build:cjs",
