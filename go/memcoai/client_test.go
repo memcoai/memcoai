@@ -375,3 +375,38 @@ func TestCloseWithNothingInFlightSucceedsWhateverItsContext(t *testing.T) {
 		}
 	}
 }
+
+func TestTheClientNamesTheKindOfCredentialItResolved(t *testing.T) {
+	cases := []struct {
+		name string
+		opts Options
+		env  map[string]string
+		want CredentialKind
+	}{
+		{"token option", Options{Token: "t"}, nil, CredentialToken},
+		{"client options", Options{ClientID: "client-a", ClientSecret: "secret-a"}, nil, CredentialAPIClient},
+		{"token in the environment", Options{}, map[string]string{"MEMCO_API_TOKEN": "t"}, CredentialToken},
+		{"client pair wins in the environment", Options{}, map[string]string{
+			"MEMCO_CLIENT_ID": "client-env", "MEMCO_CLIENT_SECRET": "secret-env", "MEMCO_API_TOKEN": "t",
+		}, CredentialAPIClient},
+		{"token option wins over the environment", Options{Token: "t"}, map[string]string{
+			"MEMCO_CLIENT_ID": "client-env", "MEMCO_CLIENT_SECRET": "secret-env",
+		}, CredentialToken},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, name := range []string{"MEMCO_API_TOKEN", "MEMCO_API_KEY", "MEMCO_CLIENT_ID", "MEMCO_CLIENT_SECRET"} {
+				t.Setenv(name, c.env[name])
+			}
+			c.opts.Host = "localhost:1"
+			client, err := NewClient(c.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = client.Close(ctx) }()
+			if got := client.CredentialKind(); got != c.want {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}

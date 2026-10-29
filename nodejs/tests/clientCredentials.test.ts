@@ -555,6 +555,43 @@ test('an issued token never reaches a rendering of the client', async () => {
 
 // --- which credential the environment gives ------------------------------
 
+test('the client names the kind of credential it resolved', async () => {
+  const cases: [MemcoOptions, Memco['credentialKind']][] = [
+    [{ token: 'token-arg', env: {} }, 'token'],
+    [{ clientId: 'client-a', clientSecret: 'secret-a', env: {} }, 'apiClient'],
+    [{ env: { MEMCO_API_TOKEN: 'token-env' } }, 'token'],
+    [
+      {
+        env: {
+          MEMCO_CLIENT_ID: 'client-env',
+          MEMCO_CLIENT_SECRET: 'secret-env',
+          MEMCO_API_TOKEN: 'token-env'
+        }
+      },
+      'apiClient'
+    ],
+    [
+      {
+        token: 'token-arg',
+        env: {
+          MEMCO_CLIENT_ID: 'client-env',
+          MEMCO_CLIENT_SECRET: 'secret-env'
+        }
+      },
+      'token'
+    ]
+  ]
+  for (const [options, kind] of cases) {
+    // Constructing dials nothing, so no server is needed.
+    const memco = new Memco({ host: 'localhost:1', ...options })
+    try {
+      assert.equal(memco.credentialKind, kind)
+    } finally {
+      await memco.close()
+    }
+  }
+})
+
 test('client credentials in the environment win over a token there', async () => {
   await withHarness(async harness => {
     const memco = new Memco({

@@ -55,6 +55,13 @@ func ExampleClient_Connect() {
 	}
 }
 
+func ExampleClient_CredentialKind() {
+	// Administration and sessions acting as your users need an API client.
+	if client.CredentialKind() != memcoai.CredentialAPIClient {
+		log.Fatal("set MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET to manage users")
+	}
+}
+
 func ExampleClient_Close() {
 	// Give calls in flight ten seconds to finish.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

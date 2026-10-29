@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 import re
 import traceback
+from typing import Any
 
 import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
 import memcoai
-from memcoai import Memco, errors, types
+from memcoai import AsyncMemco, Memco, errors, types
 from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
@@ -389,3 +390,52 @@ def test_the_user_agent_is_sent_on_every_method(client: Memco, harness: Harness)
     assert len(harness.memory.metadata) == 4
     for sent in harness.memory.metadata:
         assert "memco-python/" in sent["user-agent"]
+
+
+CREDENTIAL_KINDS = [
+    pytest.param({"token": TOKEN, "env": {}}, "token", id="token argument"),
+    pytest.param(
+        {"client_id": "client-a", "client_secret": "secret-a", "env": {}},
+        "api_client",
+        id="client arguments",
+    ),
+    pytest.param({"env": {"MEMCO_API_TOKEN": TOKEN}}, "token", id="token in the environment"),
+    pytest.param(
+        {
+            "env": {
+                "MEMCO_CLIENT_ID": "client-env",
+                "MEMCO_CLIENT_SECRET": "secret-env",
+                "MEMCO_API_TOKEN": TOKEN,
+            }
+        },
+        "api_client",
+        id="client pair wins in the environment",
+    ),
+    pytest.param(
+        {
+            "token": TOKEN,
+            "env": {"MEMCO_CLIENT_ID": "client-env", "MEMCO_CLIENT_SECRET": "secret-env"},
+        },
+        "token",
+        id="token argument wins over the environment",
+    ),
+]
+
+
+@pytest.mark.parametrize(("options", "kind"), CREDENTIAL_KINDS)
+def test_the_client_names_the_kind_of_credential_it_resolved(
+    harness: Harness, options: dict[str, Any], kind: str
+):
+    with Memco(host=harness.address, tls=False, **options) as client:
+        assert client.credential_kind == kind
+
+
+@pytest.mark.parametrize(("options", "kind"), CREDENTIAL_KINDS)
+async def test_the_async_client_names_the_kind_of_credential_it_resolved(
+    harness: Harness, options: dict[str, Any], kind: str
+):
+    client = AsyncMemco(host=harness.address, tls=False, **options)
+    try:
+        assert client.credential_kind == kind
+    finally:
+        await client.close()

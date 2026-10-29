@@ -165,6 +165,28 @@ type Client struct {
 	shutdown sync.Once
 }
 
+// CredentialKind names which credential a [Client] resolved from its
+// [Options] and the environment.
+type CredentialKind string
+
+const (
+	// CredentialToken is an API token.
+	CredentialToken CredentialKind = "token"
+	// CredentialAPIClient is an API client's [Options.ClientID] and
+	// [Options.ClientSecret]. Only an API client can administer networks and
+	// users, or open a session acting as one of your users.
+	CredentialAPIClient CredentialKind = "api_client"
+)
+
+// CredentialKind returns which credential the client resolved from its
+// options and the environment.
+func (c *Client) CredentialKind() CredentialKind {
+	if c.config.ClientID == "" {
+		return CredentialToken
+	}
+	return CredentialAPIClient
+}
+
 // NewClient resolves the options and prepares a connection, without sending
 // anything; [Client.Connect] proves the connection works.
 //

@@ -157,6 +157,14 @@ export class Memco {
    */
   readonly users: UserOperations
 
+  /**
+   * Which credential the client resolved from its options and the
+   * environment: `token` for an API token, `apiClient` for an API client's
+   * `clientId` and `clientSecret`. Only an API client can administer networks
+   * and users, or open a session acting as one of your users.
+   */
+  readonly credentialKind: 'token' | 'apiClient'
+
   private readonly config: ClientConfig
   private readonly transport: Transport
   private closed = false
@@ -220,8 +228,10 @@ export class Memco {
     if (this.config.clientId === null) {
       const token = new Minted(this.config.token, Number.POSITIVE_INFINITY)
       this.credential = new Renewing(async () => token)
+      this.credentialKind = 'token'
     } else {
       this.credential = new Renewing(() => this.issue())
+      this.credentialKind = 'apiClient'
     }
     this.memory = new MemoryOperations(
       this.transport.memory,
