@@ -809,14 +809,20 @@ test('the close sweep counts NOT_FOUND as ended and goes on', async () => {
 test('the close sweep stops at the first failure, with one warning naming what is left', async () => {
   await withHarness(async harness => {
     const memco = credentialed(harness)
+    // Held until the close: a session collected before it has its key ended
+    // by the next mint, leaving the sweep less to end.
+    const sessions = []
     for (const user of ['u1', 'u2', 'u3']) {
-      await memco.memory.startSession('coding', { externalId: user })
+      sessions.push(
+        await memco.memory.startSession('coding', { externalId: user })
+      )
     }
     harness.admin.transientErrors.set('endImpersonation', [
       { code: status.UNAVAILABLE, details: 'admin service down' }
     ])
     setLevel(DEFAULT_LEVEL)
     const written = await stderrOf(() => memco.close())
+    assert.equal(sessions.length, 3)
     const warnings = written
       .split('\n')
       .filter(line => line.includes('WARNING'))
