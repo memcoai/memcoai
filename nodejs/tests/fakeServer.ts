@@ -82,7 +82,7 @@ export interface Arrival {
  */
 export type Answer = (request: never, metadata: Metadata) => unknown
 
-/** The ten methods the memory service publishes, in their grpc-js spelling. */
+/** The methods the memory service publishes, in their grpc-js spelling. */
 export type MemoryMethod =
   | 'listDomains'
   | 'startSession'
@@ -112,6 +112,7 @@ export type AdminMethod = keyof typeof pb.admin.AdminServiceService
 const ALL_TOOLS = [
   'list_domains',
   'start_session',
+  'get_session',
   'search',
   'get_memory',
   'create_memory',
@@ -421,7 +422,6 @@ export const NETWORK = pb.admin.Network.fromPartial({
   parentId: 'network-root',
   parentIds: ['network-root'],
   domain: 'coding',
-  region: 'global',
   scope: 'customer',
   owner: 'acme',
   description: "Acme's support knowledge"
@@ -439,7 +439,9 @@ export const GROUP = pb.admin.Group.fromPartial({
   id: 'group-a',
   name: 'Support',
   memoryNetworkId: 'network-a',
-  memberCount: 2
+  memberCount: 2,
+  memoryNetworkIds: ['network-a', 'network-b'],
+  limitAssignableRoles: ['content_moderator']
 })
 
 /** The external user every user method answers with. */
@@ -522,7 +524,6 @@ export class FakeAdminService extends Recorder<AdminMethod> {
             parentId: request.parentId,
             parentIds: request.parentIds,
             domain: request.domain || 'coding',
-            region: request.region || 'global',
             scope: request.scope,
             owner: request.owner,
             description: request.description

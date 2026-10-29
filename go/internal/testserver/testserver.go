@@ -28,8 +28,15 @@ import (
 
 // Methods are the memory service's RPC names, in contract order.
 var Methods = []string{
-	"ListDomains", "StartSession", "Search", "GetMemory", "CreateMemory",
+	"ListDomains", "StartSession", "GetSession", "Search", "GetMemory", "CreateMemory",
 	"EnrichMemory", "ShareFeedback", "RevertMemory", "ImportMemories", "ListTools",
+}
+
+// Tools is the default ListTools catalog: every method the contract declares,
+// by its snake_case name, all available.
+var Tools = []string{
+	"list_domains", "start_session", "get_session", "search", "get_memory", "create_memory",
+	"enrich_memory", "share_feedback", "revert_memory", "import_memories", "list_tools",
 }
 
 // Failure is a status to answer with. Reason and Domain, when set, attach a
@@ -290,6 +297,12 @@ func (m *Memory) StartSession(ctx context.Context, r *memoryv1.StartSessionReque
 	})
 }
 
+func (m *Memory) GetSession(ctx context.Context, r *memoryv1.GetSessionRequest) (*memoryv1.GetSessionResponse, error) {
+	return answer(ctx, &m.recorder, "GetSession", r, func(r *memoryv1.GetSessionRequest) (*memoryv1.GetSessionResponse, error) {
+		return &memoryv1.GetSessionResponse{SessionId: r.GetSessionId(), Domain: "coding"}, nil
+	})
+}
+
 func (m *Memory) Search(ctx context.Context, r *memoryv1.SearchRequest) (*memoryv1.SearchResponse, error) {
 	return answer(ctx, &m.recorder, "Search", r, func(*memoryv1.SearchRequest) (*memoryv1.SearchResponse, error) {
 		return &memoryv1.SearchResponse{SessionId: "session-a"}, nil
@@ -345,10 +358,7 @@ func (m *Memory) ImportMemories(ctx context.Context, r *memoryv1.ImportMemoriesR
 func (m *Memory) ListTools(ctx context.Context, r *memoryv1.ListToolsRequest) (*memoryv1.ListToolsResponse, error) {
 	return answer(ctx, &m.recorder, "ListTools", r, func(*memoryv1.ListToolsRequest) (*memoryv1.ListToolsResponse, error) {
 		response := &memoryv1.ListToolsResponse{}
-		for _, name := range []string{
-			"list_domains", "start_session", "search", "get_memory", "create_memory",
-			"enrich_memory", "share_feedback", "revert_memory", "import_memories", "list_tools",
-		} {
+		for _, name := range Tools {
 			response.Tools = append(response.Tools, &memoryv1.ToolDescriptor{
 				Name:        name,
 				Description: name + " tool",
@@ -394,11 +404,14 @@ func (s *Tokens) IssueToken(ctx context.Context, r *authv1.IssueTokenRequest) (*
 var (
 	CannedNetwork = &adminv1.Network{
 		Id: "network-a", Name: "Acme", ParentId: "network-root", ParentIds: []string{"network-root"}, Domain: "coding",
-		Region: "global", Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
+		Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
 	}
 	CannedMember = &adminv1.Member{UserId: "user-a", Email: "ada@example.com", Name: "Ada"}
-	CannedGroup  = &adminv1.Group{Id: "group-a", Name: "Support", MemoryNetworkId: "network-a", MemberCount: 2}
-	CannedUser   = &adminv1.ExternalUser{
+	CannedGroup  = &adminv1.Group{
+		Id: "group-a", Name: "Support", MemoryNetworkId: "network-a", MemberCount: 2,
+		MemoryNetworkIds: []string{"network-a", "network-b"}, LimitAssignableRoles: []string{"content_moderator"},
+	}
+	CannedUser = &adminv1.ExternalUser{
 		Id: "xuser-a", ExternalId: "customer-42", Name: "Ada", Email: "ada@example.com",
 		Roles: []string{"reader"}, Active: true,
 	}
@@ -501,14 +514,11 @@ func (s *Admin) CreateNetwork(ctx context.Context, r *adminv1.CreateNetworkReque
 		s.networks++
 		network := &adminv1.Network{
 			Id: fmt.Sprintf("network-%d", s.networks), Name: r.GetName(), ParentId: r.GetParentId(), ParentIds: r.GetParentIds(),
-			Domain: r.GetDomain(), Region: r.GetRegion(), Scope: r.GetScope(), Owner: r.GetOwner(),
+			Domain: r.GetDomain(), Scope: r.GetScope(), Owner: r.GetOwner(),
 			Description: r.GetDescription(),
 		}
 		if network.Domain == "" {
 			network.Domain = "coding"
-		}
-		if network.Region == "" {
-			network.Region = "global"
 		}
 		s.names[network.Id] = network.Name
 		return network, nil

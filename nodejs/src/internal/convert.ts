@@ -534,7 +534,6 @@ export function toNetwork(message: pb.admin.Network): Network {
     parentId: optional(message.parentId),
     parentIds: [...message.parentIds],
     domain: message.domain,
-    region: message.region,
     scope: optional(message.scope),
     owner: optional(message.owner),
     description: message.description
@@ -628,7 +627,9 @@ export function toGroupList(message: pb.admin.ListGroupsResponse): GroupList {
       id: group.id,
       name: group.name,
       memoryNetworkId: optional(group.memoryNetworkId),
-      memberCount: group.memberCount
+      memberCount: group.memberCount,
+      memoryNetworkIds: [...group.memoryNetworkIds],
+      limitAssignableRoles: [...group.limitAssignableRoles]
     })),
     totalCount: message.totalCount
   }

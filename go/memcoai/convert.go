@@ -218,7 +218,7 @@ func copied(values []string) []string {
 func toNetwork(m *adminv1.Network) Network {
 	return Network{
 		ID: m.GetId(), Name: m.GetName(), ParentID: m.GetParentId(), ParentIDs: slices.Clone(m.GetParentIds()),
-		Domain: m.GetDomain(), Region: m.GetRegion(), Scope: m.GetScope(), Owner: m.GetOwner(), Description: m.GetDescription(),
+		Domain: m.GetDomain(), Scope: m.GetScope(), Owner: m.GetOwner(), Description: m.GetDescription(),
 	}
 }
 
@@ -243,6 +243,7 @@ func toGroupList(m *adminv1.ListGroupsResponse) *GroupList {
 	for _, group := range m.GetGroups() {
 		list.Groups = append(list.Groups, Group{
 			ID: group.GetId(), Name: group.GetName(), MemoryNetworkID: group.GetMemoryNetworkId(), MemberCount: group.GetMemberCount(),
+			MemoryNetworkIDs: slices.Clone(group.GetMemoryNetworkIds()), LimitAssignableRoles: slices.Clone(group.GetLimitAssignableRoles()),
 		})
 	}
 	return list

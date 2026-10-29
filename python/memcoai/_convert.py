@@ -541,7 +541,6 @@ def to_network(message: _admin_pb.Network) -> Network:
         parent_id=_optional(message.parent_id),
         parent_ids=tuple(message.parent_ids),
         domain=message.domain,
-        region=message.region,
         scope=_optional(message.scope),
         owner=_optional(message.owner),
         description=message.description,
@@ -638,6 +637,8 @@ def to_group_list(message: _admin_pb.ListGroupsResponse) -> GroupList:
                 name=group.name,
                 memory_network_id=_optional(group.memory_network_id),
                 member_count=group.member_count,
+                memory_network_ids=tuple(group.memory_network_ids),
+                limit_assignable_roles=tuple(group.limit_assignable_roles),
             )
             for group in message.groups
         ),

@@ -51,6 +51,7 @@ export {
 export {
   NetworkOperations,
   UserOperations,
+  type AddGroupOptions,
   type AddMemberOptions,
   type CreateKeyOptions,
   type CreateNetworkOptions,

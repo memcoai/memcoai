@@ -232,18 +232,6 @@ export function startSessionRequest(domain: string): pb.StartSessionRequest {
   return built(() => ({ domain }))
 }
 
-/**
- * Validate and build a `GetSession` request.
- *
- * @param sessionId The session to look up.
- * @returns The request message.
- * @throws A `MemcoInvalidRequestError` if the session id is blank.
- */
-export function getSessionRequest(sessionId: string): pb.GetSessionRequest {
-  validate.checkSessionId(sessionId)
-  return built(() => ({ sessionId }))
-}
-
 /** Everything a search takes beyond the query itself. */
 export interface SearchOptions {
   /** The memory domain, if the search is not scoped by a session. */
@@ -652,16 +640,14 @@ export function issueTokenRequest(
  *
  * @param externalId The user the key acts as, already checked for blankness by
  *   the session opening it.
- * @param ttlMinutes The key's lifetime. `0` asks for none, which takes the
+ * @returns The request message. It asks for no lifetime, which takes the
  *   service's default: the session renews its key before it expires, so a
  *   longer one would only leave a leaked key usable for longer.
- * @returns The request message.
  */
 export function impersonateRequest(
-  externalId: string,
-  ttlMinutes: number
+  externalId: string
 ): pb.admin.ImpersonateExternalUserRequest {
-  return built(() => ({ externalId, ttlMinutes }))
+  return built(() => ({ externalId, ttlMinutes: 0 }))
 }
 
 /**
@@ -719,7 +705,6 @@ export interface CreateNetworkOptions {
   parentId?: string | null
   parentIds?: Iterable<string> | null
   domain?: string | null
-  region?: string | null
   scope?: string | null
   owner?: string | null
   description?: string | null
@@ -744,7 +729,9 @@ export function createNetworkRequest(
     parentId: options.parentId ?? '',
     parentIds,
     domain: options.domain ?? '',
-    region: options.region ?? '',
+    // Deprecated and ignored: Memco runs in one region. Sent empty because the
+    // generated message still declares it.
+    region: '',
     scope: options.scope ?? '',
     owner: options.owner ?? '',
     description: options.description ?? ''
@@ -919,17 +906,24 @@ export function listGroupMembersRequest(
  *
  * @param networkId The network to assign the group to.
  * @param groupId The group to assign.
+ * @param limitAssignableRoles The roles the group is limited to. Omitted or
+ *   empty, the group keeps the limit it has. Consumed once.
  * @returns The request message.
- * @throws A `MemcoInvalidRequestError` if the network or the group is blank.
+ * @throws A `MemcoInvalidRequestError` if the network or the group is blank,
+ *   or the roles are a single string.
  */
 export function addNetworkGroupRequest(
   networkId: string,
-  groupId: string
+  groupId: string,
+  limitAssignableRoles?: Iterable<string> | null
 ): pb.admin.AddNetworkGroupRequest {
   validate.checkIdx(networkId, 'network_id')
   validate.checkIdx(groupId, 'group_id')
-  // No role limit: an empty list keeps whatever limit the group already has.
-  return built(() => ({ id: networkId, groupId, limitAssignableRoles: [] }))
+  const roles = validate.checkStrings(
+    limitAssignableRoles,
+    'limit_assignable_roles'
+  )
+  return built(() => ({ id: networkId, groupId, limitAssignableRoles: roles }))
 }
 
 /**

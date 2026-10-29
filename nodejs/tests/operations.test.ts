@@ -135,6 +135,27 @@ test('listTools converts the catalog the service reports', async () => {
   })
 })
 
+test('the default catalog is every method the contract declares', async () => {
+  // The real ListTools reports every method the contract declares; a fake that
+  // missed one would hide it from every test relying on the default.
+  const declared = Object.values(pb.MemoryServiceService).map(method =>
+    method.path
+      .slice(method.path.lastIndexOf('/') + 1)
+      .replace(/(?<!^)(?=[A-Z])/g, '_')
+      .toLowerCase()
+  )
+  await withHarness(async harness => {
+    const memco = client(harness)
+    try {
+      await memco.connect()
+      const catalog = await memco.memory.listTools()
+      assert.deepEqual(catalog.map(tool => tool.name).sort(), declared.sort())
+    } finally {
+      await memco.close()
+    }
+  })
+})
+
 test('opening a session fetches the tool catalog', async () => {
   await withHarness(async harness => {
     const memco = client(harness)

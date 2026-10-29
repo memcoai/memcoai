@@ -23,7 +23,7 @@ func text(s string) *string { return &s }
 
 var canned = Network{
 	ID: "network-a", Name: "Acme", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding",
-	Region: "global", Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
+	Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
 }
 
 var cannedMember = Member{UserID: "user-a", Email: "ada@example.com", Name: "Ada"}
@@ -58,18 +58,18 @@ func roundTrips() []roundTrip {
 		}, &NetworkList{Networks: []Network{canned}, TotalCount: 1}},
 		{"CreateNetwork", func(c *Client) (any, error) {
 			return c.Networks.Create(ctx, CreateNetworkParams{
-				Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
+				Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Scope: "customer", Owner: "acme", Description: "d",
 			})
 		}, &adminv1.CreateNetworkRequest{
-			Name: "Acme", ParentIds: []string{"network-root", "network-shared"}, Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
+			Name: "Acme", ParentIds: []string{"network-root", "network-shared"}, Scope: "customer", Owner: "acme", Description: "d",
 		}, &Network{
-			ID: "network-1", Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Domain: "coding", Region: "eu",
+			ID: "network-1", Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Domain: "coding",
 			Scope: "customer", Owner: "acme", Description: "d",
 		}},
 		{"UpdateNetwork", func(c *Client) (any, error) {
 			return c.Networks.Update(ctx, "network-a", UpdateNetworkParams{Name: text("Acme Corp"), Description: text("")})
 		}, &adminv1.UpdateNetworkRequest{Id: "network-a", Name: text("Acme Corp"), Description: text("")}, &Network{
-			ID: "network-a", Name: "Acme Corp", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding", Region: "global",
+			ID: "network-a", Name: "Acme Corp", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding",
 			Scope: "customer", Owner: "acme",
 		}},
 		{"DeleteNetwork", func(c *Client) (any, error) {
@@ -93,13 +93,18 @@ func roundTrips() []roundTrip {
 				Name: "Support", NetworkID: "network-a", IDs: []string{"group-a"}, Page: 1, PageSize: 5,
 			})
 		}, &adminv1.ListGroupsRequest{Name: "Support", NetworkId: "network-a", Ids: []string{"group-a"}, Page: 1, PageSize: 5},
-			&GroupList{Groups: []Group{{ID: "group-a", Name: "Support", MemoryNetworkID: "network-a", MemberCount: 2}}, TotalCount: 1}},
+			&GroupList{Groups: []Group{{
+				ID: "group-a", Name: "Support", MemoryNetworkID: "network-a", MemberCount: 2,
+				MemoryNetworkIDs: []string{"network-a", "network-b"}, LimitAssignableRoles: []string{"content_moderator"},
+			}}, TotalCount: 1}},
 		{"ListGroupMembers", func(c *Client) (any, error) {
 			return c.Networks.ListGroupMembers(ctx, "group-a")
 		}, &adminv1.ListGroupMembersRequest{Id: "group-a"}, []Member{cannedMember}},
 		{"AddNetworkGroup", func(c *Client) (any, error) {
-			return none(c.Networks.AddGroup(ctx, "network-a", "group-a"))
-		}, &adminv1.AddNetworkGroupRequest{Id: "network-a", GroupId: "group-a"}, nil},
+			return none(c.Networks.AddGroup(ctx, "network-a", "group-a", AddGroupParams{
+				LimitAssignableRoles: []string{"content_moderator"},
+			}))
+		}, &adminv1.AddNetworkGroupRequest{Id: "network-a", GroupId: "group-a", LimitAssignableRoles: []string{"content_moderator"}}, nil},
 		{"RemoveNetworkGroup", func(c *Client) (any, error) {
 			return none(c.Networks.RemoveGroup(ctx, "network-a", "group-a"))
 		}, &adminv1.RemoveNetworkGroupRequest{Id: "network-a", GroupId: "group-a"}, nil},
@@ -330,7 +335,7 @@ func TestABadArgumentIsRefusedBeforeAnythingIsSent(t *testing.T) {
 			_, err := f.client.Networks.AddMember(ctx, "network-a", "", AddMemberParams{})
 			return err
 		},
-		"group_id must not be empty":    func() error { return f.client.Networks.AddGroup(ctx, "network-a", "\t") },
+		"group_id must not be empty":    func() error { return f.client.Networks.AddGroup(ctx, "network-a", "\t", AddGroupParams{}) },
 		"key_id must not be empty":      func() error { return f.client.Users.DeleteKey(ctx, "customer-7", "") },
 		"external_id must not be empty": func() error { _, err := f.client.Users.Get(ctx, "  "); return err },
 		"roles must name at least one role": func() error {

@@ -499,7 +499,13 @@ func ExampleNetworkOperations_ListGroupMembers() {
 }
 
 func ExampleNetworkOperations_AddGroup() {
-	if err := client.Networks.AddGroup(ctx, "network-support", "group-support"); err != nil {
+	if err := client.Networks.AddGroup(ctx, "network-support", "group-support", memcoai.AddGroupParams{}); err != nil {
+		log.Fatal(err)
+	}
+	// A group limited to moderation joins this network beside its others.
+	if err := client.Networks.AddGroup(ctx, "network-review", "group-moderators", memcoai.AddGroupParams{
+		LimitAssignableRoles: []string{"content_moderator"},
+	}); err != nil {
 		log.Fatal(err)
 	}
 }

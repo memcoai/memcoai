@@ -64,9 +64,6 @@ type CreateNetworkParams struct {
 	// Domain is a root network's memory domain; empty is your organization's
 	// default. A child names none.
 	Domain string
-	// Region is where the network's data resides; empty is your
-	// organization's default, and "global" replicates everywhere.
-	Region string
 	// Scope is "internal" or "customer", where your organization uses scopes.
 	// An external user can be placed only in a customer network.
 	Scope string
@@ -114,6 +111,16 @@ type AddMemberParams struct {
 	// memory domain. Off, such a user is refused, so a move is never the
 	// accidental outcome.
 	Force bool
+}
+
+// AddGroupParams qualify [NetworkOperations.AddGroup].
+type AddGroupParams struct {
+	// LimitAssignableRoles are the roles the group may give its members on
+	// every network it is bound to: ["content_moderator"] gives moderation
+	// only, and adds this network beside the group's others. Empty, the
+	// group's limit stays as it is. The limit changes only while the group is
+	// bound to this network alone.
+	LimitAssignableRoles []string
 }
 
 // ListGroupsParams narrow [NetworkOperations.ListGroups]. Every field is
@@ -173,7 +180,7 @@ func (n *NetworkOperations) List(ctx context.Context, p ListNetworksParams) (*Ne
 func (n *NetworkOperations) Create(ctx context.Context, p CreateNetworkParams) (*Network, error) {
 	response, err := administer(ctx, n.client, "CreateNetwork", &adminv1.CreateNetworkRequest{
 		Name: p.Name, ParentId: p.ParentID, ParentIds: slices.Clone(p.ParentIDs), Domain: p.Domain,
-		Region: p.Region, Scope: p.Scope, Owner: p.Owner, Description: p.Description,
+		Scope: p.Scope, Owner: p.Owner, Description: p.Description,
 	}, n.rpc.CreateNetwork)
 	if err != nil {
 		return nil, err
@@ -352,20 +359,23 @@ func (n *NetworkOperations) ListGroupMembers(ctx context.Context, groupID string
 
 // AddGroup assigns an identity-provider group to a network, placing its
 // members there. A group holds one network per memory domain, so this
-// replaces the group's network in this network's domain.
+// replaces the group's network in this network's domain. A group limited to
+// moderation instead keeps its others, and may be bound to several networks
+// in one domain.
 //
 // Parameters:
 //   - ctx: bounds the call. Without a deadline, [Options.Timeout] applies; if
 //     ctx has already ended, nothing is sent.
 //   - networkID: the network to assign the group to.
 //   - groupID: the group to assign.
+//   - p: the roles the group is limited to; the zero value keeps its limit.
 //
 // Errors: [*InvalidRequestError] when networkID or groupID is blank (nothing
 // is sent); [*PermissionError] outside an enterprise organization;
 // [*NotFoundError]; [*ConfigError] when the client is closed.
-func (n *NetworkOperations) AddGroup(ctx context.Context, networkID, groupID string) error {
+func (n *NetworkOperations) AddGroup(ctx context.Context, networkID, groupID string, p AddGroupParams) error {
 	_, err := administer(ctx, n.client, "AddNetworkGroup", &adminv1.AddNetworkGroupRequest{
-		Id: networkID, GroupId: groupID,
+		Id: networkID, GroupId: groupID, LimitAssignableRoles: slices.Clone(p.LimitAssignableRoles),
 	}, n.rpc.AddNetworkGroup)
 	return err
 }

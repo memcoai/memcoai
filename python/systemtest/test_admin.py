@@ -92,13 +92,22 @@ def test_groups_are_refused_outside_an_enterprise_and_assigned_within_one(
         with pytest.raises(MemcoPermissionError):
             admin.networks.add_group(network.id, "group-that-is-never-reached")
         return
-    # Assigning replaces a group's network in the network's domain, and a
-    # group reports one network id however many domains it is placed in, so a
+    # Assigning can replace a group's network in the network's domain, so a
     # real group's placement could not be put back for certain. Only a group
-    # placed nowhere is used: taking it out again restores exactly that.
-    unplaced = [group for group in groups if group.memory_network_id is None]
+    # placed nowhere and limited to no roles is used: taking it out again
+    # restores exactly that.
+    unplaced = [
+        group
+        for group in groups
+        if group.memory_network_id is None
+        and not group.memory_network_ids
+        and not group.limit_assignable_roles
+    ]
     if not unplaced:
-        pytest.skip("the organisation has no identity-provider group placed in no network")
+        pytest.skip(
+            "the organisation has no identity-provider group placed in no network"
+            " and limited to no roles"
+        )
     group = unplaced[0]
     members = admin.networks.list_group_members(group.id)
     print(f"\nassigning group {group.id}, of {len(members)} members, to {network.id}")
@@ -113,6 +122,8 @@ def test_groups_are_refused_outside_an_enterprise_and_assigned_within_one(
     assert group.id not in {each.id for each in remaining}
     (restored,) = admin.networks.list_groups(ids=[group.id]).groups
     assert restored.memory_network_id is None
+    assert restored.memory_network_ids == ()
+    assert restored.limit_assignable_roles == ()
 
 
 def test_an_external_user_is_created_found_changed_and_deleted(

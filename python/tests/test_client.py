@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import traceback
 
 import grpc
@@ -224,6 +225,16 @@ def test_list_tools(client: Memco, harness: Harness):
     assert result == (
         types.ToolDescriptor(name="search", description="Find things.", available=True),
     )
+
+
+def test_the_default_catalog_is_every_method_the_contract_declares(client: Memco):
+    # The real ListTools reports every method the contract declares; a fake that
+    # missed one would hide it from every test relying on the default.
+    declared = {
+        re.sub(r"(?<!^)(?=[A-Z])", "_", method.name).lower()
+        for method in pb.DESCRIPTOR.services_by_name["MemoryService"].methods
+    }
+    assert {tool.name for tool in client.memory.list_tools()} == declared
 
 
 def test_opening_a_session_fetches_the_tool_catalog(client: Memco, harness: Harness):

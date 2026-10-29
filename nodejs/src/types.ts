@@ -853,8 +853,6 @@ export interface Network {
   readonly parentIds: readonly string[]
   /** The memory domain the network belongs to. */
   readonly domain: string
-  /** The network's data residency. `global` replicates everywhere. */
-  readonly region: string
   /**
    * `internal` or `customer`, or `null` where the organization does not use
    * scopes. An external user can be placed only in a customer network.
@@ -936,12 +934,23 @@ export interface Group {
   /** The group's name, as the identity provider has it. */
   readonly name: string
   /**
-   * The network the group's members are placed in, or `null` when the group
-   * is assigned to none.
+   * One of the networks the group's members are placed in, or `null` when
+   * the group is assigned to none. Read {@link Group.memoryNetworkIds} for
+   * every one of them.
    */
   readonly memoryNetworkId: string | null
   /** How many users the group holds. */
   readonly memberCount: number
+  /**
+   * Every network the group is bound to. A group limited to moderation may
+   * be bound to several in one memory domain.
+   */
+  readonly memoryNetworkIds: readonly string[]
+  /**
+   * The roles the group may give its members, or empty when it gives every
+   * role they hold. `['content_moderator']` gives moderation only.
+   */
+  readonly limitAssignableRoles: readonly string[]
 }
 
 /** One page of an organization's identity-provider groups. */

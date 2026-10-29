@@ -100,11 +100,6 @@ export interface CreateNetworkOptions extends TimeoutOptions {
    */
   domain?: string
   /**
-   * The network's data residency. Omitted, your organization's default.
-   * `global` replicates everywhere.
-   */
-  region?: string
-  /**
    * `internal` or `customer`, where your organization uses scopes. An external
    * user can be placed only in a customer network.
    */
@@ -200,6 +195,18 @@ export interface ListGroupsOptions extends TimeoutOptions {
 export interface NetworkGroupOptions extends TimeoutOptions {
   /** The identity-provider group. */
   groupId: string
+}
+
+/** Which group {@link NetworkOperations.addGroup} assigns, and how. */
+export interface AddGroupOptions extends NetworkGroupOptions {
+  /**
+   * The roles the group may give its members on every network it is bound
+   * to: `['content_moderator']` gives moderation only, and adds this network
+   * beside the group's others. Omitted or empty, the group's limit stays as
+   * it is. The limit changes only while the group is bound to this network
+   * alone.
+   */
+  limitAssignableRoles?: Iterable<string>
 }
 
 /** What {@link UserOperations.list} narrows the listing by. */
@@ -560,25 +567,32 @@ export class NetworkOperations {
    * Assign an identity-provider group to a network, placing its members there.
    *
    * A group holds one network per memory domain, so this replaces the group's
-   * network in this network's domain. Available to enterprise organizations
-   * only.
+   * network in this network's domain. A group limited to moderation instead
+   * keeps its others, and may be bound to several networks in one domain.
+   * Available to enterprise organizations only.
    *
    * @param networkId The network to assign the group to.
-   * @param options The group, and a deadline.
-   * @throws MemcoInvalidRequestError If `networkId` or `groupId` is blank.
+   * @param options The group, the roles it is limited to, and a deadline.
+   * @throws MemcoInvalidRequestError If `networkId` or `groupId` is blank, or
+   *   `limitAssignableRoles` is a single string.
    *
    * @example
    * ```ts
    * await client.networks.addGroup('network-support', { groupId: 'group-a' })
+   * await client.networks.addGroup('network-review', {
+   *   groupId: 'group-moderators',
+   *   limitAssignableRoles: ['content_moderator']
+   * })
    * ```
    */
-  async addGroup(
-    networkId: string,
-    options: NetworkGroupOptions
-  ): Promise<void> {
+  async addGroup(networkId: string, options: AddGroupOptions): Promise<void> {
     await this.call(
       this.stub.addNetworkGroup.bind(this.stub),
-      requests.addNetworkGroupRequest(networkId, options.groupId),
+      requests.addNetworkGroupRequest(
+        networkId,
+        options.groupId,
+        options.limitAssignableRoles
+      ),
       options.timeout,
       'AddNetworkGroup'
     )

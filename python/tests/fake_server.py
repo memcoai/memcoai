@@ -26,6 +26,7 @@ from memcoai.memory.v1 import memory_pb2_grpc as pbg
 _ALL_TOOLS = (
     "list_domains",
     "start_session",
+    "get_session",
     "search",
     "get_memory",
     "create_memory",
@@ -189,6 +190,14 @@ class FakeMemoryService(_Recorder, pbg.MemoryServiceServicer):
             "StartSession", context, pb.StartSessionResponse(session_id="session-a"), request
         )
 
+    def GetSession(self, request, context):  # noqa: N802
+        return self._handle(
+            "GetSession",
+            context,
+            pb.GetSessionResponse(session_id=request.session_id, domain="coding"),
+            request,
+        )
+
     def Search(self, request, context):  # noqa: N802
         return self._handle("Search", context, pb.SearchResponse(session_id="session-a"), request)
 
@@ -275,13 +284,19 @@ _NETWORK = admin_pb.Network(
     name="Acme",
     parent_id="network-root",
     domain="coding",
-    region="global",
     scope="customer",
     owner="acme",
     description="Acme's support knowledge",
 )
 _MEMBER = admin_pb.Member(user_id="user-a", email="ada@example.com", name="Ada")
-_GROUP = admin_pb.Group(id="group-a", name="Support", memory_network_id="network-a", member_count=2)
+_GROUP = admin_pb.Group(
+    id="group-a",
+    name="Support",
+    memory_network_id="network-a",
+    member_count=2,
+    memory_network_ids=["network-a", "network-b"],
+    limit_assignable_roles=["content_moderator"],
+)
 _EXTERNAL_USER = admin_pb.ExternalUser(
     id="xuser-a",
     external_id="customer-42",
@@ -363,7 +378,6 @@ class FakeAdminService(_Recorder, admin_pbg.AdminServiceServicer):
             name=request.name,
             parent_id=request.parent_id,
             domain=request.domain or "coding",
-            region=request.region or "global",
             scope=request.scope,
             owner=request.owner,
             description=request.description,
