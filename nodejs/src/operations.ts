@@ -26,7 +26,7 @@ import type {
   ServiceError
 } from '@grpc/grpc-js'
 
-import { toolset, type Toolset } from './agent.js'
+import { toolset, type Toolset, type ToolsOptions } from './agent.js'
 import { MemcoAPIError, MemcoTimeoutError } from './errors.js'
 import type { Renewing } from './internal/auth.js'
 import * as pb from './internal/gen.js'
@@ -1071,16 +1071,22 @@ export class Session {
    * opened. This only shapes what is offered here — it does not gate calling a
    * {@link Session} method directly.
    *
+   * @param options The prefix every tool name starts with, when a host
+   *   calls the tools by other names than `memco_<op>`.
    * @returns One tool per operation your role permits, as a {@link Toolset}.
+   * @throws MemcoConfigError If no tool name can carry the prefix.
    *
    * @example
    * ```ts
    * await using session = await client.memory.withSession('coding')
    * createAgent({ model, tools: await session.tools().toLangChain() })
+   * session.tools({ prefix: 'memco__' }).tools[0].name // 'memco__search'
    * ```
    */
-  tools(): Toolset {
-    return toolset(this)
+  tools(options: ToolsOptions = {}): Toolset {
+    // `?? undefined`: a JavaScript caller's null means unset, as everywhere
+    // else in this SDK, and only undefined takes the default.
+    return toolset(this, options?.prefix ?? undefined)
   }
 }
 

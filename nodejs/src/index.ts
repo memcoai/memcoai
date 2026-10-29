@@ -167,5 +167,6 @@ export {
   type OpenAITool,
   type Rendered,
   type Tool,
-  type ToolParameters
+  type ToolParameters,
+  type ToolsOptions
 } from './agent.js'
