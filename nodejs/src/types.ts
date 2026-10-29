@@ -306,6 +306,33 @@ export interface DomainList {
 }
 
 /**
+ * What {@link MemoryOperations.getSession} reports about a session.
+ *
+ * The counts are kept asynchronously by the service, so they can trail a call
+ * made just before.
+ */
+export interface SessionInfo {
+  /** The session id. */
+  readonly id: string
+  /** The memory domain the session runs in. */
+  readonly domain: string
+  /** When the session started, or `null` when the service did not say. */
+  readonly createdAt: Date | null
+  /** The client surface that opened it, such as `mcp` or `cli`. */
+  readonly source: string
+  /** Searches made under it. */
+  readonly searches: number
+  /** Ratings given on those searches. */
+  readonly feedbacks: number
+  /** Searches rated both relevant and correct at least once. */
+  readonly assists: number
+  /** Memories created under it, rejected ones included and reverted ones not. */
+  readonly memoriesCreated: number
+  /** Enrichments made under it, on the same terms as `memoriesCreated`. */
+  readonly enrichments: number
+}
+
+/**
  * One method the contract declares, and whether the caller's role permits it.
  *
  * `name` is the same canonical snake_case operation name

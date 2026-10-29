@@ -145,7 +145,9 @@ const NOT_AN_OPERATION = new Set([
   'constructor',
   'tools',
   'importMemories',
-  'close'
+  'close',
+  // For the caller resuming a session, not for a model.
+  'getSession'
 ])
 
 test('the offered operations are exactly what the scope carries', async () => {
@@ -1341,7 +1343,7 @@ test('a prefix names every tool', async () => {
   )
 })
 
-for (const prefix of ['bad prefix', 'notes.', 'a'.repeat(60)]) {
+for (const prefix of ['bad prefix', 'notes.', 'a'.repeat(51)]) {
   test(`a prefix no tool name can carry is refused: ${JSON.stringify(prefix.slice(0, 12))}`, async () => {
     // Model providers accept ^[A-Za-z0-9_-]{1,64}$. Refused here, a bad prefix
     // is a typed error at the call that made it, not a provider's 400 later.
@@ -1355,6 +1357,41 @@ for (const prefix of ['bad prefix', 'notes.', 'a'.repeat(60)]) {
         await memco.connect()
         const session = await memco.memory.withSession('coding')
         assert.throws(() => session.tools({ prefix }), MemcoConfigError)
+      } finally {
+        await memco.close()
+      }
+    })
+  })
+}
+
+test('the longest prefix a tool name can carry is accepted', async () => {
+  await withToolset(
+    async toolset => {
+      const longest = Math.max(...toolset.tools.map(one => one.name.length))
+      assert.equal(longest, 64)
+    },
+    () => {},
+    { prefix: 'a'.repeat(50) }
+  )
+})
+
+for (const prefix of [5, ['notes__']]) {
+  test(`a prefix that is not a string is refused: ${JSON.stringify(prefix)}`, async () => {
+    // A JavaScript caller has no compiler to stop it, and the pattern test
+    // alone would coerce the value and let it through.
+    await withHarness(async harness => {
+      const memco = new Memco({
+        token: 'test-token',
+        host: harness.address,
+        tls: false
+      })
+      try {
+        await memco.connect()
+        const session = await memco.memory.withSession('coding')
+        assert.throws(
+          () => session.tools({ prefix: prefix as unknown as string }),
+          MemcoConfigError
+        )
       } finally {
         await memco.close()
       }
@@ -1477,6 +1514,29 @@ test('without a prefix the briefing quotes the service as written', () => {
   )
 })
 
+test('a null prefix quotes the service as written, as leaving it out does', () => {
+  // A JavaScript caller's null means unset, as everywhere else in this SDK.
+  const rendered = briefing(
+    domain({ whenToSave: 'Use create_memory after you learn something.' }),
+    guidance('share_feedback after every search'),
+    null as unknown as string
+  )
+  assert.match(rendered, /Use create_memory after you learn/)
+  assert.match(rendered, /share_feedback after every search/)
+  assert.doesNotMatch(rendered, /null/)
+  const notice = render(
+    {
+      sessionId: 'session-a',
+      memories: [],
+      notice: 'call share_feedback next',
+      instructions: guidance('')
+    },
+    null as unknown as string
+  )
+  assert.match(notice, /call share_feedback next/)
+  assert.doesNotMatch(notice, /null/)
+})
+
 test('a tool result names the tools by the default prefix when none is given', async () => {
   // The service writes the bare MCP names; the tools a toolset offers are
   // never bare, so what a tool returns names them as offered.
@@ -1553,13 +1613,15 @@ test('a search notice and a rating advice are renamed', () => {
   assert.match(rated, /consider using notes__create_memory to share/)
 })
 
-test('an error a model can act on names the tools by the prefix', async () => {
+test('an error a model can act on is reported as the service wrote it', async () => {
+  // Never renamed: the text may quote what the model itself sent, and that
+  // must come back as sent.
   await withToolset(
     async toolset => {
       const reported = await toolset.call('notes__get_memory', {
         idx: 'memory-x-1'
       })
-      assert.match(reported, /run notes__search first, then notes__get_memory/)
+      assert.match(reported, /run memco_search first, then get_memory/)
     },
     harness =>
       (harness.memory.error = {

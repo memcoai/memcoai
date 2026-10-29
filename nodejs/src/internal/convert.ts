@@ -47,6 +47,7 @@ import {
   type MemoryFeedback,
   type RevertResult,
   type SearchResult,
+  type SessionInfo,
   type ToolDescriptor,
   type WriteResult
 } from '../types.js'
@@ -328,6 +329,26 @@ export function toToolList(
 export interface SessionFields {
   readonly id: string
   readonly instructions: Instructions
+}
+
+/**
+ * Convert a `GetSessionResponse`.
+ *
+ * @param message The generated response.
+ * @returns The public equivalent, with the start as a `Date`.
+ */
+export function toSessionInfo(message: pb.GetSessionResponse): SessionInfo {
+  return {
+    id: message.sessionId,
+    domain: message.domain,
+    createdAt: toInstant(message.createdAt),
+    source: message.source,
+    searches: message.searches,
+    feedbacks: message.feedbacks,
+    assists: message.assists,
+    memoriesCreated: message.memoriesCreated,
+    enrichments: message.enrichments
+  }
 }
 
 /**

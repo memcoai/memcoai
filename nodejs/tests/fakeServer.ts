@@ -86,6 +86,7 @@ export type Answer = (request: never, metadata: Metadata) => unknown
 export type MemoryMethod =
   | 'listDomains'
   | 'startSession'
+  | 'getSession'
   | 'search'
   | 'getMemory'
   | 'createMemory'
@@ -336,6 +337,12 @@ export class FakeMemoryService extends Recorder<MemoryMethod> {
       startSession: this.on('startSession', () =>
         pb.StartSessionResponse.fromPartial({ sessionId: 'session-a' })
       ),
+      getSession: this.on('getSession', (request: pb.GetSessionRequest) =>
+        pb.GetSessionResponse.fromPartial({
+          sessionId: request.sessionId,
+          domain: 'coding'
+        })
+      ),
       search: this.on('search', () =>
         pb.SearchResponse.fromPartial({ sessionId: 'session-a' })
       ),
@@ -571,7 +578,10 @@ export class FakeAdminService extends Recorder<AdminMethod> {
       addNetworkGroup: this.on(
         'addNetworkGroup',
         (request: pb.admin.AddNetworkGroupRequest) =>
-          a.AddNetworkGroupResponse.fromPartial(request)
+          a.AddNetworkGroupResponse.fromPartial({
+            id: request.id,
+            groupId: request.groupId
+          })
       ),
       removeNetworkGroup: this.on(
         'removeNetworkGroup',

@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	MemoryService_ListDomains_FullMethodName    = "/memcoai.memory.v1.MemoryService/ListDomains"
 	MemoryService_StartSession_FullMethodName   = "/memcoai.memory.v1.MemoryService/StartSession"
+	MemoryService_GetSession_FullMethodName     = "/memcoai.memory.v1.MemoryService/GetSession"
 	MemoryService_Search_FullMethodName         = "/memcoai.memory.v1.MemoryService/Search"
 	MemoryService_GetMemory_FullMethodName      = "/memcoai.memory.v1.MemoryService/GetMemory"
 	MemoryService_CreateMemory_FullMethodName   = "/memcoai.memory.v1.MemoryService/CreateMemory"
@@ -50,6 +51,12 @@ type MemoryServiceClient interface {
 	// StartSession opens a session. Every search made under it is recorded as
 	// one series, which is what relates the searches an agent runs for a task.
 	StartSession(ctx context.Context, in *StartSessionRequest, opts ...grpc.CallOption) (*StartSessionResponse, error)
+	// GetSession returns a session the caller can still continue: what it was
+	// started with and what has happened under it, so a client resuming one can
+	// pick up where it left off. A session that is unknown or not the caller's is
+	// NotFound. Writes and ratings are stored asynchronously, so the counts can
+	// trail a call made just before.
+	GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error)
 	// Search retrieves memories for a task-based query, recording the search
 	// against a session so it can be rated afterwards.
 	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
@@ -114,6 +121,16 @@ func (c *memoryServiceClient) StartSession(ctx context.Context, in *StartSession
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartSessionResponse)
 	err := c.cc.Invoke(ctx, MemoryService_StartSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoryServiceClient) GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSessionResponse)
+	err := c.cc.Invoke(ctx, MemoryService_GetSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +236,12 @@ type MemoryServiceServer interface {
 	// StartSession opens a session. Every search made under it is recorded as
 	// one series, which is what relates the searches an agent runs for a task.
 	StartSession(context.Context, *StartSessionRequest) (*StartSessionResponse, error)
+	// GetSession returns a session the caller can still continue: what it was
+	// started with and what has happened under it, so a client resuming one can
+	// pick up where it left off. A session that is unknown or not the caller's is
+	// NotFound. Writes and ratings are stored asynchronously, so the counts can
+	// trail a call made just before.
+	GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error)
 	// Search retrieves memories for a task-based query, recording the search
 	// against a session so it can be rated afterwards.
 	Search(context.Context, *SearchRequest) (*SearchResponse, error)
@@ -274,6 +297,9 @@ func (UnimplementedMemoryServiceServer) ListDomains(context.Context, *ListDomain
 }
 func (UnimplementedMemoryServiceServer) StartSession(context.Context, *StartSessionRequest) (*StartSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartSession not implemented")
+}
+func (UnimplementedMemoryServiceServer) GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSession not implemented")
 }
 func (UnimplementedMemoryServiceServer) Search(context.Context, *SearchRequest) (*SearchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Search not implemented")
@@ -352,6 +378,24 @@ func _MemoryService_StartSession_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MemoryServiceServer).StartSession(ctx, req.(*StartSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoryService_GetSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoryServiceServer).GetSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoryService_GetSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoryServiceServer).GetSession(ctx, req.(*GetSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -514,6 +558,10 @@ var MemoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartSession",
 			Handler:    _MemoryService_StartSession_Handler,
+		},
+		{
+			MethodName: "GetSession",
+			Handler:    _MemoryService_GetSession_Handler,
 		},
 		{
 			MethodName: "Search",

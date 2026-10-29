@@ -51,6 +51,11 @@ class MemoryServiceStub(object):
                 request_serializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.StartSessionRequest.SerializeToString,
                 response_deserializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.StartSessionResponse.FromString,
                 _registered_method=True)
+        self.GetSession = channel.unary_unary(
+                '/memcoai.memory.v1.MemoryService/GetSession',
+                request_serializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.GetSessionRequest.SerializeToString,
+                response_deserializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.GetSessionResponse.FromString,
+                _registered_method=True)
         self.Search = channel.unary_unary(
                 '/memcoai.memory.v1.MemoryService/Search',
                 request_serializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.SearchRequest.SerializeToString,
@@ -115,6 +120,17 @@ class MemoryServiceServicer(object):
     def StartSession(self, request, context):
         """StartSession opens a session. Every search made under it is recorded as
         one series, which is what relates the searches an agent runs for a task.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetSession(self, request, context):
+        """GetSession returns a session the caller can still continue: what it was
+        started with and what has happened under it, so a client resuming one can
+        pick up where it left off. A session that is unknown or not the caller's is
+        NotFound. Writes and ratings are stored asynchronously, so the counts can
+        trail a call made just before.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -212,6 +228,11 @@ def add_MemoryServiceServicer_to_server(servicer, server):
                     servicer.StartSession,
                     request_deserializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.StartSessionRequest.FromString,
                     response_serializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.StartSessionResponse.SerializeToString,
+            ),
+            'GetSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSession,
+                    request_deserializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.GetSessionRequest.FromString,
+                    response_serializer=memcoai_dot_memory_dot_v1_dot_memory__pb2.GetSessionResponse.SerializeToString,
             ),
             'Search': grpc.unary_unary_rpc_method_handler(
                     servicer.Search,
@@ -315,6 +336,33 @@ class MemoryService(object):
             '/memcoai.memory.v1.MemoryService/StartSession',
             memcoai_dot_memory_dot_v1_dot_memory__pb2.StartSessionRequest.SerializeToString,
             memcoai_dot_memory_dot_v1_dot_memory__pb2.StartSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memcoai.memory.v1.MemoryService/GetSession',
+            memcoai_dot_memory_dot_v1_dot_memory__pb2.GetSessionRequest.SerializeToString,
+            memcoai_dot_memory_dot_v1_dot_memory__pb2.GetSessionResponse.FromString,
             options,
             channel_credentials,
             insecure,

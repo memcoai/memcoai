@@ -421,6 +421,31 @@ export function checkWithin(value: string, field: string, cap: number): void {
   }
 }
 
+/** The largest key lifetime the wire's `int32` field can carry, in minutes. */
+const MAX_WIRE_MINUTES = 2 ** 31 - 1
+
+/**
+ * Validate an impersonation key's lifetime.
+ *
+ * Structural only: it must be a whole number of minutes the wire can carry.
+ * The service owns the real maximum, and refuses a longer lifetime itself.
+ *
+ * @param minutes The lifetime the caller asked for.
+ * @throws A {@link MemcoInvalidRequestError} if it is not a whole number of
+ *   minutes from 1 up.
+ */
+export function checkKeyTtl(minutes: number): void {
+  if (
+    !Number.isInteger(minutes) ||
+    minutes <= 0 ||
+    minutes > MAX_WIRE_MINUTES
+  ) {
+    throw reject(
+      `key_ttl_minutes must be a whole number of minutes from 1 to ${MAX_WIRE_MINUTES}, got ${minutes}`
+    )
+  }
+}
+
 /**
  * Reject a batch larger than a cap the service reported.
  *

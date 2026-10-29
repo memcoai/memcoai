@@ -149,6 +149,7 @@ export type {
   Provenance,
   RevertResult,
   SearchResult,
+  SessionInfo,
   Tag,
   ToolDescriptor,
   WriteResult

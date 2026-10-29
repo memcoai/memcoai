@@ -306,7 +306,8 @@ export interface ToolsOptions {
    * Give the prefix a host calls the tools by, when it renames them. Every
    * description and rendered result then names the tools that way, so a model
    * is never pointed at a name it was not offered; pass the same prefix to
-   * {@link briefing}.
+   * {@link briefing}. A tool's error is the exception: it is reported as the
+   * service wrote it, since it may quote what the model sent.
    *
    * Model providers accept tool names of letters, digits, `_` and `-`, at most
    * 64 characters, so a prefix that cannot form one is refused with a
@@ -532,10 +533,13 @@ const TOOL_NAME = new RegExp(
  * Name every tool `text` mentions the way it is offered: `<prefix><op>`.
  *
  * Without a prefix the text is left as written, for a caller rendering beside
- * a host that offers the bare names, such as Memco's MCP server.
+ * a host that offers the bare names, such as Memco's MCP server. `null` is
+ * the same as none: a JavaScript caller's null means unset.
  */
 function named(text: string, prefix: string | undefined): string {
-  if (prefix === undefined) return text
+  // `== null` rather than `=== undefined`, so a JavaScript caller's null is
+  // never written in front of a tool name.
+  if (prefix == null) return text
   return text.replace(
     TOOL_NAME,
     (_match, prefixed: string | undefined, bare: string | undefined) =>
@@ -555,6 +559,9 @@ const LONGEST_OPERATION = Math.max(...OFFERED.map(name => name.length))
  */
 function checkPrefix(prefix: string): void {
   if (
+    // `typeof` first: a JavaScript caller has no compiler, and the pattern
+    // test would coerce a number or an array and let it through.
+    typeof prefix !== 'string' ||
     !/^[A-Za-z0-9_-]*$/.test(prefix) ||
     prefix.length + LONGEST_OPERATION > 64
   ) {
@@ -1072,7 +1079,7 @@ export function toolset(
               prefix
             )
           } catch (error) {
-            if (recoverable(error)) return named(reported(error), prefix)
+            if (recoverable(error)) return reported(error)
             throw error
           }
         }
@@ -1261,7 +1268,8 @@ export function render(value: Rendered, prefix?: string): string {
  * the sentence naming the two operations a bound session has already answered. Supply it up front rather than leaving a model to ask:
  * guidance behind a tool only steers the models that reach for it.
  *
- * @param domain The domain the session was opened in, from `listDomains`.
+ * @param domain The domain the session runs in: the session's own
+ *   {@link Session.domain}, or an entry from `listDomains`.
  * @param instructions What the service said when the session was opened, as
  *   carried by the scope's `instructions`.
  * @param prefix What the tools a model was offered start with, as given to
@@ -1271,10 +1279,11 @@ export function render(value: Rendered, prefix?: string): string {
  *
  * @example
  * ```ts
- * const { domains } = await client.memory.listDomains()
- * const entry = domains.find(one => one.slug === 'coding')!
  * await using session = await client.memory.withSession('coding')
- * console.log(briefing(entry, session.instructions))
+ * // null when the credential's listing does not describe the domain.
+ * if (session.domain !== null) {
+ *   console.log(briefing(session.domain, session.instructions))
+ * }
  * ```
  */
 export function briefing(

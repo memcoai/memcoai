@@ -38,6 +38,7 @@ import * as requests from './internal/requests.js'
 import * as validate from './internal/validate.js'
 import {
   DataSource,
+  type DomainEntry,
   type DomainList,
   type FeedbackRating,
   type FeedbackResult,
@@ -47,12 +48,16 @@ import {
   type Memory,
   type RevertResult,
   type SearchResult,
+  type SessionInfo,
   type Tag,
   type ToolDescriptor,
   type WriteResult
 } from './types.js'
 
 const log = getLogger(`${ROOT}.operations`)
+
+/** The domain to start a session in, or the session to resume. */
+type Opening = { readonly domain: string } | { readonly sessionId: string }
 
 /**
  * One unary method on the generated client, in the form the SDK calls it.
@@ -103,9 +108,9 @@ export type Caller = <Request, Response>(
  * call first has to wait for a credential — the client's first token, or a new
  * key once the current one has expired — the wait counts against it, and the
  * RPC has what is left; with a valid credential in hand the RPC has all of it.
- * {@link MemoryOperations.startSession} and
- * {@link MemoryOperations.importMemories}, which make several RPCs, apply it
- * to each of them.
+ * {@link MemoryOperations.startSession}, {@link MemoryOperations.resumeSession}
+ * and {@link MemoryOperations.importMemories}, which make several RPCs, apply
+ * it to each of them.
  *
  * When the deadline elapses the call fails with a {@link MemcoTimeoutError},
  * and nothing is retried in its place: the deadline is the caller's own, so
@@ -123,7 +128,8 @@ export interface TimeoutOptions {
 
 /**
  * What {@link MemoryOperations.startSession} and
- * {@link MemoryOperations.withSession} take beyond the domain.
+ * {@link MemoryOperations.withSession} take beyond the domain, and
+ * {@link MemoryOperations.resumeSession} beyond the session id.
  */
 export interface SessionOptions extends TimeoutOptions {
   /**
@@ -140,6 +146,17 @@ export interface SessionOptions extends TimeoutOptions {
    * credential.
    */
   externalId?: string
+
+  /**
+   * How many minutes each key acting as the `externalId` user lives.
+   *
+   * Leave it out for the service's default. The session renews its key before
+   * it expires, so a short lifetime costs nothing while the session is in
+   * use, and limits how long a key nobody closed stays usable. The service
+   * owns the maximum and refuses a longer one. Without an `externalId` no key
+   * is minted and it is unused, but an invalid value is refused all the same.
+   */
+  keyTtlMinutes?: number
 }
 
 /**
@@ -386,7 +403,8 @@ export class MemoryOperations {
    * @param call How to reach the wire, supplied by the client that owns the
    *   connection and the credential.
    * @param impersonate The owning client's source of impersonation keys: given
-   *   an external id, the credential a session acting as that user leases.
+   *   an external id and a key lifetime, the credential a session acting as
+   *   that user leases.
    * @param known What the service has reported about its own limits, shared
    *   with the namespace this one is scoped from. Empty until
    *   {@link MemoryOperations.listDomains} has answered once, which is why the
@@ -399,7 +417,10 @@ export class MemoryOperations {
   constructor(
     private readonly stub: pb.MemoryServiceClient,
     private readonly call: Caller,
-    private readonly impersonate: (externalId: string) => Renewing,
+    private readonly impersonate: (
+      externalId: string,
+      ttlMinutes: number
+    ) => Renewing,
     private readonly known: Known = new Known()
   ) {}
 
@@ -474,7 +495,8 @@ export class MemoryOperations {
   /**
    * Open a session, so the searches made under it are recorded as one series.
    *
-   * Also fetches the tools your token's role currently permits, which is what
+   * Also lists the domains, which is where {@link Session.domain} comes from,
+   * and fetches the tools your token's role currently permits, which is what
    * {@link Session.tools} filters against for the life of the session. That
    * fetch is best-effort: if it fails after the retries `RETRYABLE_METHODS`
    * already gives it, a warning is logged and every tool is treated as
@@ -489,8 +511,9 @@ export class MemoryOperations {
    * @param options The user to act as, if any, and a per-call deadline.
    * @returns The open session, with every session-bound operation already
    *   applied — {@link withSession} returns the same kind of object.
-   * @throws MemcoInvalidRequestError If the domain or the `externalId` is blank.
-   *   Either is refused before a key is minted.
+   * @throws MemcoInvalidRequestError If the domain or the `externalId` is
+   *   blank, or `keyTtlMinutes` is not a whole number of minutes from 1 up.
+   *   Each is refused before a key is minted.
    * @throws MemcoAPIError If the service refuses. With an `externalId`, a
    *   failure after the key was minted ends it before this is thrown.
    * @throws MemcoTimeoutError If the deadline passes first. With an
@@ -513,16 +536,83 @@ export class MemoryOperations {
     domain: string,
     options: SessionOptions = {}
   ): Promise<Session> {
-    const { externalId, timeout } = options
+    return this.open({ domain }, options)
+  }
+
+  /**
+   * Take up a session opened earlier, by its id, instead of starting another.
+   *
+   * Every call already takes a session id, and an id stays usable for as long
+   * as it is named, so a session can outlive the process that opened it: keep
+   * its id, and resume it where the work continues. Nothing calls
+   * StartSession, so the searches made here join the series the id began.
+   * Opening is otherwise the same as {@link startSession}: the domains are
+   * listed and the tool catalog fetched, and with an `externalId` a new key is
+   * minted first, for both. A resumed session carries no opening instructions;
+   * they were given when it started.
+   *
+   * The session is looked up with {@link getSession}, under the session's own
+   * credential, so an id that is unknown, or not this caller's, is refused
+   * here rather than at the first call. Its domain is the one it was started
+   * in, which the service reports and supplies on every call it makes, and
+   * which cannot be changed.
+   *
+   * @param sessionId The id of the session to resume, as a session's `id` or a
+   *   search result's `sessionId` reported it.
+   * @param options The user to act as, if any, and a per-call deadline.
+   * @returns The session, with every session-bound operation already applied.
+   * @throws MemcoInvalidRequestError If the session id or the `externalId` is
+   *   blank, or `keyTtlMinutes` is not a whole number of minutes from 1 up.
+   *   Each is refused before a key is minted.
+   * @throws MemcoNotFoundError If the session is unknown or not the caller's.
+   *   With an `externalId`, the key is ended before this is thrown.
+   * @throws MemcoAPIError If the service refuses. With an `externalId`, a
+   *   failure after the key was minted ends it before this is thrown.
+   * @throws MemcoTimeoutError If the deadline passes first.
+   *
+   * @example
+   * ```ts
+   * const session = await client.memory.resumeSession(stored.sessionId, {
+   *   externalId: 'customer-42'
+   * })
+   * try {
+   *   await session.search('what did we decide about retries')
+   * } finally {
+   *   await session.close()
+   * }
+   * ```
+   */
+  async resumeSession(
+    sessionId: string,
+    options: SessionOptions = {}
+  ): Promise<Session> {
+    validate.checkSessionId(sessionId)
+    return this.open({ sessionId }, options)
+  }
+
+  /**
+   * Open a session: start one, or resume the one `sessionId` names.
+   *
+   * @param opening The domain to start a session in, or the session to resume.
+   * @param options The user to act as, if any, the key's lifetime, and a
+   *   per-call deadline.
+   * @returns The open session.
+   */
+  private async open(
+    opening: Opening,
+    options: SessionOptions
+  ): Promise<Session> {
+    const { externalId, keyTtlMinutes, timeout } = options
+    // Checked before anything is sent, so a blank value costs no call or key.
+    if ('domain' in opening) validate.checkDomain(opening.domain)
+    if (keyTtlMinutes != null) validate.checkKeyTtl(keyTtlMinutes)
     // `== null` rather than `=== undefined`: a JavaScript caller's null means
     // "no user", as everywhere else in this SDK, not a blank id.
     if (externalId == null) {
-      return this.openSession(domain, { timeout })
+      return this.openSession(opening, { timeout })
     }
-    // Checked before the mint, so a blank value costs no key.
-    validate.checkDomain(domain)
     validate.checkIdx(externalId, 'external_id')
-    const key = this.impersonate(externalId)
+    const key = this.impersonate(externalId, keyTtlMinutes ?? 0)
     try {
       // Every call from here on carries the key — including what a session's
       // tools and returned memories send, since they reach the service through
@@ -536,11 +626,7 @@ export class MemoryOperations {
         this.impersonate,
         this.known
       )
-      // Its first lease mints the key, once, before the two calls below are
-      // sent together; this is also what tells the session its limits and any
-      // deprecation, as that user.
-      await scoped.listDomains({ timeout })
-      return await scoped.openSession(domain, { timeout }, () => key.close())
+      return await scoped.openSession(opening, { timeout }, () => key.close())
     } catch (error) {
       // Ends the key, once whatever mint is in flight has landed. Past the
       // caller's deadline that is not waited for — the caller has given up on
@@ -556,19 +642,24 @@ export class MemoryOperations {
   }
 
   /**
-   * Start a session under whatever credential this namespace sends.
+   * Start or resume a session under whatever credential this namespace sends.
    *
-   * @param domain The domain to work in.
+   * @param opening The domain to start a session in, or the session to resume.
    * @param options Per-call deadline.
    * @param release What closing the session does, or `undefined` for a session
    *   holding nothing to end.
    * @returns The open session.
    */
   private async openSession(
-    domain: string,
+    opening: Opening,
     options: TimeoutOptions,
     release?: () => Promise<void>
   ): Promise<Session> {
+    // Listed first, under this namespace's credential, so the session's entry
+    // is what this caller is shown, and so an impersonated session's first
+    // lease mints its key once, before the two calls below are sent together.
+    // It is also what tells the session its limits and any deprecation.
+    const listed = await this.listDomains(options)
     // Run concurrently: listToolsRequest() carries no fields and does not
     // depend on the StartSession response, so there is nothing to gain from
     // waiting for one before sending the other.
@@ -586,9 +677,7 @@ export class MemoryOperations {
     // That rejection waits for the catalog fetch to settle first. The fetch
     // holds the session's key while it is in flight, and a key is ended only
     // after its last call: rejecting at once would let the caller see the open
-    // fail while the key it minted was still live. The StartSession request is
-    // built before the fetch is sent, so a blank domain sends neither.
-    const request = requests.startSessionRequest(domain)
+    // fail while the key it minted was still live.
     const catalog = this.listTools(options).catch((error: unknown) => {
       if (!(error instanceof MemcoAPIError)) throw error
       log.warning(
@@ -597,23 +686,42 @@ export class MemoryOperations {
       )
       return null
     })
-    const [response, toolCatalog] = await Promise.all([
-      this.call(
-        this.stub.startSession.bind(this.stub),
-        request,
-        options.timeout,
-        'StartSession'
-      ).catch(async (error: unknown) => {
+    // Started: the domain is the one named. Resumed: the service looks the
+    // session up, refusing one that is unknown or not this caller's, and says
+    // which domain it runs in.
+    const started: Promise<[convert.SessionFields, string]> =
+      'domain' in opening
+        ? this.call(
+            this.stub.startSession.bind(this.stub),
+            requests.startSessionRequest(opening.domain),
+            options.timeout,
+            'StartSession'
+          ).then(response => [
+            convert.toSessionFields(response),
+            opening.domain
+          ])
+        : this.getSession(opening.sessionId, options).then(info => [
+            // The id it was resumed by, not the lookup's echo of it. A resumed
+            // session's instructions were given when it started.
+            convert.toSessionFields(
+              pb.StartSessionResponse.fromPartial({
+                sessionId: opening.sessionId
+              })
+            ),
+            info.domain
+          ])
+    const [[fields, domain], toolCatalog] = await Promise.all([
+      started.catch(async (error: unknown) => {
         await catalog.catch(() => undefined)
         throw error
       }),
       catalog
     ])
-    const fields = convert.toSessionFields(response)
     return new Session(
       this,
       fields.id,
       fields.instructions,
+      listed.domains.find(entry => entry.slug === domain) ?? null,
       toolCatalog,
       release
     )
@@ -682,6 +790,40 @@ export class MemoryOperations {
       'Search'
     )
     return convert.toSearchResult(response, opts => this.shareFeedback(opts))
+  }
+
+  /**
+   * Look a session up: the domain it runs in and what has happened under it.
+   *
+   * Answered only for a session the caller may continue — under an
+   * impersonation key, one that user started.
+   *
+   * @param sessionId The session id, as a session's `id` or a search result's
+   *   `sessionId` reported it.
+   * @param options Per-call deadline.
+   * @returns The session's domain, start and counts. The counts are kept
+   *   asynchronously, so they can trail a call made just before.
+   * @throws MemcoInvalidRequestError If the session id is blank.
+   * @throws MemcoNotFoundError If the session is unknown or not the caller's.
+   *   The two are answered alike, so an id cannot be probed.
+   *
+   * @example
+   * ```ts
+   * const info = await client.memory.getSession(stored.sessionId)
+   * console.log(info.domain, info.searches)
+   * ```
+   */
+  async getSession(
+    sessionId: string,
+    options: TimeoutOptions = {}
+  ): Promise<SessionInfo> {
+    const response = await this.call(
+      this.stub.getSession.bind(this.stub),
+      requests.getSessionRequest(sessionId),
+      options.timeout,
+      'GetSession'
+    )
+    return convert.toSessionInfo(response)
   }
 
   /**
@@ -878,8 +1020,9 @@ export class MemoryOperations {
 /**
  * An open session, with every session-bound memory operation applied.
  *
- * Returned by {@link MemoryOperations.startSession} and
- * {@link MemoryOperations.withSession} alike; not constructed directly. No
+ * Returned by {@link MemoryOperations.startSession},
+ * {@link MemoryOperations.withSession} and
+ * {@link MemoryOperations.resumeSession} alike; not constructed directly. No
  * method here takes a session id or a domain: this object supplies both. That
  * is the point of it — a call that silently drops the session id is still a
  * valid call. It opens a session of its own and records the search there, so
@@ -904,6 +1047,8 @@ export class Session {
    * @param operations The namespace this session's calls forward to.
    * @param id The session id that was opened.
    * @param instructions What the service said when the session was opened.
+   * @param domain What the service said about the session's domain, or `null`
+   *   when its listing did not describe it.
    * @param toolCatalog What {@link MemoryOperations.listTools} reported when
    *   this session was opened, which {@link tools} filters against. `null`
    *   when that fetch failed -- every tool is then treated as available
@@ -911,13 +1056,15 @@ export class Session {
    * @param release Ends what the session holds, on {@link close}; `undefined`
    *   for a session holding nothing.
    *
-   * @internal Constructed by {@link MemoryOperations.startSession}, never by a
+   * @internal Constructed by {@link MemoryOperations.startSession} and
+   *   {@link MemoryOperations.resumeSession}, never by a
    *   caller.
    */
   constructor(
     private readonly operations: MemoryOperations,
     readonly id: string,
     readonly instructions: Instructions,
+    readonly domain: DomainEntry | null,
     readonly toolCatalog: readonly ToolDescriptor[] | null,
     private readonly release?: () => Promise<void>
   ) {}
@@ -961,6 +1108,16 @@ export class Session {
    */
   async close(): Promise<void> {
     await this.release?.()
+  }
+
+  /**
+   * Look this session up: its domain and what has happened under it.
+   *
+   * @param options Per-call deadline.
+   * @returns What {@link MemoryOperations.getSession} reports for this session.
+   */
+  getSession(options: TimeoutOptions = {}): Promise<SessionInfo> {
+    return this.operations.getSession(this.id, options)
   }
 
   /**

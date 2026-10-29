@@ -97,13 +97,18 @@ export const HEALTH_SERVICE = 'grpc.health.v1.Health'
  * role, depends on who is asking — so a replay costs even less than
  * `GetMemory`'s.
  *
+ * `GetSession` only reads: it reports a session's domain and counts, and moves
+ * none of them. Retrying it also keeps a resume from failing on one dropped
+ * connection while the listing and catalog sent beside it are retried.
+ *
  * The health probe is retried too, and is named separately below because it
  * belongs to a service this SDK does not own.
  */
 export const RETRYABLE_METHODS = [
   'ListDomains',
   'GetMemory',
-  'ListTools'
+  'ListTools',
+  'GetSession'
 ] as const
 
 const RETRY_POLICY = {

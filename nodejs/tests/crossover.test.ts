@@ -300,11 +300,15 @@ function recordOwners(memco: Memco, ledger: Ledger): void {
   const ids = new WeakMap<object, number>()
   let credentials = 0
   const internals = memco as unknown as {
-    mintKey(externalId: string, owner: object): Promise<Held>
+    mintKey(
+      externalId: string,
+      owner: object,
+      ttlMinutes: number
+    ): Promise<Held>
   }
   const mint = internals.mintKey.bind(memco)
-  internals.mintKey = async (externalId, owner) => {
-    const minted = await mint(externalId, owner)
+  internals.mintKey = async (externalId, owner, ttlMinutes) => {
+    const minted = await mint(externalId, owner, ttlMinutes)
     if (!ids.has(owner)) {
       credentials += 1
       ids.set(owner, credentials)
