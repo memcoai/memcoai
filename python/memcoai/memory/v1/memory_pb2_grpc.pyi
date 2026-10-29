@@ -49,6 +49,13 @@ class MemoryServiceStub:
     """StartSession opens a session. Every search made under it is recorded as
     one series, which is what relates the searches an agent runs for a task.
     """
+    GetSession: _grpc.UnaryUnaryMultiCallable[_memory_pb2.GetSessionRequest, _memory_pb2.GetSessionResponse]
+    """GetSession returns a session the caller can still continue: what it was
+    started with and what has happened under it, so a client resuming one can
+    pick up where it left off. A session that is unknown or not the caller's is
+    NotFound. Writes and ratings are stored asynchronously, so the counts can
+    trail a call made just before.
+    """
     Search: _grpc.UnaryUnaryMultiCallable[_memory_pb2.SearchRequest, _memory_pb2.SearchResponse]
     """Search retrieves memories for a task-based query, recording the search
     against a session so it can be rated afterwards.
@@ -117,6 +124,13 @@ class MemoryServiceAsyncStub(MemoryServiceStub):
     StartSession: _aio.UnaryUnaryMultiCallable[_memory_pb2.StartSessionRequest, _memory_pb2.StartSessionResponse]  # type: ignore[assignment]
     """StartSession opens a session. Every search made under it is recorded as
     one series, which is what relates the searches an agent runs for a task.
+    """
+    GetSession: _aio.UnaryUnaryMultiCallable[_memory_pb2.GetSessionRequest, _memory_pb2.GetSessionResponse]  # type: ignore[assignment]
+    """GetSession returns a session the caller can still continue: what it was
+    started with and what has happened under it, so a client resuming one can
+    pick up where it left off. A session that is unknown or not the caller's is
+    NotFound. Writes and ratings are stored asynchronously, so the counts can
+    trail a call made just before.
     """
     Search: _aio.UnaryUnaryMultiCallable[_memory_pb2.SearchRequest, _memory_pb2.SearchResponse]  # type: ignore[assignment]
     """Search retrieves memories for a task-based query, recording the search
@@ -195,6 +209,19 @@ class MemoryServiceServicer(metaclass=_abc_1.ABCMeta):
     ) -> _typing.Union[_memory_pb2.StartSessionResponse, _abc.Awaitable[_memory_pb2.StartSessionResponse]]:
         """StartSession opens a session. Every search made under it is recorded as
         one series, which is what relates the searches an agent runs for a task.
+        """
+
+    @_abc_1.abstractmethod
+    def GetSession(
+        self,
+        request: _memory_pb2.GetSessionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_memory_pb2.GetSessionResponse, _abc.Awaitable[_memory_pb2.GetSessionResponse]]:
+        """GetSession returns a session the caller can still continue: what it was
+        started with and what has happened under it, so a client resuming one can
+        pick up where it left off. A session that is unknown or not the caller's is
+        NotFound. Writes and ratings are stored asynchronously, so the counts can
+        trail a call made just before.
         """
 
     @_abc_1.abstractmethod

@@ -844,7 +844,6 @@ class Network:
         parent_id: Deprecated: read ``parent_ids``, since a network may have
             several parents. The first of them, or ``None`` for a root.
         domain: The memory domain the network belongs to.
-        region: The network's data residency. ``"global"`` replicates everywhere.
         scope: ``"internal"`` or ``"customer"``, or ``None`` where the
             organization does not use scopes. An external user can be placed
             only in a customer network.
@@ -858,7 +857,6 @@ class Network:
     name: str
     parent_id: str | None
     domain: str
-    region: str
     scope: str | None
     owner: str | None
     description: str

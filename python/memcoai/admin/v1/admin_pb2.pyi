@@ -188,16 +188,20 @@ class RemoveNetworkMemberResponse(_message.Message):
     def __init__(self, id: _Optional[str] = ..., user_id: _Optional[str] = ...) -> None: ...
 
 class Group(_message.Message):
-    __slots__ = ("id", "name", "memory_network_id", "member_count")
+    __slots__ = ("id", "name", "memory_network_id", "member_count", "memory_network_ids", "limit_assignable_roles")
     ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     MEMORY_NETWORK_ID_FIELD_NUMBER: _ClassVar[int]
     MEMBER_COUNT_FIELD_NUMBER: _ClassVar[int]
+    MEMORY_NETWORK_IDS_FIELD_NUMBER: _ClassVar[int]
+    LIMIT_ASSIGNABLE_ROLES_FIELD_NUMBER: _ClassVar[int]
     id: str
     name: str
     memory_network_id: str
     member_count: int
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., memory_network_id: _Optional[str] = ..., member_count: _Optional[int] = ...) -> None: ...
+    memory_network_ids: _containers.RepeatedScalarFieldContainer[str]
+    limit_assignable_roles: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., memory_network_id: _Optional[str] = ..., member_count: _Optional[int] = ..., memory_network_ids: _Optional[_Iterable[str]] = ..., limit_assignable_roles: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ListGroupsRequest(_message.Message):
     __slots__ = ("name", "network_id", "ids", "page", "page_size")
@@ -234,12 +238,14 @@ class ListGroupMembersResponse(_message.Message):
     def __init__(self, members: _Optional[_Iterable[_Union[Member, _Mapping]]] = ...) -> None: ...
 
 class AddNetworkGroupRequest(_message.Message):
-    __slots__ = ("id", "group_id")
+    __slots__ = ("id", "group_id", "limit_assignable_roles")
     ID_FIELD_NUMBER: _ClassVar[int]
     GROUP_ID_FIELD_NUMBER: _ClassVar[int]
+    LIMIT_ASSIGNABLE_ROLES_FIELD_NUMBER: _ClassVar[int]
     id: str
     group_id: str
-    def __init__(self, id: _Optional[str] = ..., group_id: _Optional[str] = ...) -> None: ...
+    limit_assignable_roles: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, id: _Optional[str] = ..., group_id: _Optional[str] = ..., limit_assignable_roles: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class AddNetworkGroupResponse(_message.Message):
     __slots__ = ("id", "group_id")

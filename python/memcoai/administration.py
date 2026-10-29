@@ -130,7 +130,6 @@ class NetworkOperations:
         parent_id: str | None = None,
         parent_ids: Iterable[str] | None = None,
         domain: str | None = None,
-        region: str | None = None,
         scope: str | None = None,
         owner: str | None = None,
         description: str | None = None,
@@ -152,8 +151,6 @@ class NetworkOperations:
                 Omitted or empty, the new network is a root.
             domain: The memory domain of a root network. Omitted, your
                 organization's default. A child must not name one.
-            region: The network's data residency. Omitted, your organization's
-                default. ``"global"`` replicates everywhere.
             scope: ``"internal"`` or ``"customer"``, where your organization
                 uses scopes. An external user can be placed only in a customer
                 network.
@@ -179,7 +176,6 @@ class NetworkOperations:
             parent_id=parent_id,
             parent_ids=parent_ids,
             domain=domain,
-            region=region,
             scope=scope,
             owner=owner,
             description=description,
@@ -566,7 +562,6 @@ class AsyncNetworkOperations:
         parent_id: str | None = None,
         parent_ids: Iterable[str] | None = None,
         domain: str | None = None,
-        region: str | None = None,
         scope: str | None = None,
         owner: str | None = None,
         description: str | None = None,
@@ -588,8 +583,6 @@ class AsyncNetworkOperations:
                 Omitted or empty, the new network is a root.
             domain: The memory domain of a root network. Omitted, your
                 organization's default. A child must not name one.
-            region: The network's data residency. Omitted, your organization's
-                default. ``"global"`` replicates everywhere.
             scope: ``"internal"`` or ``"customer"``, where your organization
                 uses scopes. An external user can be placed only in a customer
                 network.
@@ -615,7 +608,6 @@ class AsyncNetworkOperations:
             parent_id=parent_id,
             parent_ids=parent_ids,
             domain=domain,
-            region=region,
             scope=scope,
             owner=owner,
             description=description,

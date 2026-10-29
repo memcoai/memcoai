@@ -60,7 +60,6 @@ const NETWORK = {
   parentId: 'network-root',
   parentIds: ['network-root'],
   domain: 'coding',
-  region: 'global',
   scope: 'customer',
   owner: 'acme',
   description: "Acme's support knowledge"
@@ -131,7 +130,6 @@ const CASES: readonly Case[] = [
         name: 'Acme',
         parentIds: ['network-root', 'network-shared'],
         domain: 'coding',
-        region: 'global',
         scope: 'customer',
         owner: 'acme',
         description: "Acme's support knowledge"
@@ -141,7 +139,6 @@ const CASES: readonly Case[] = [
       name: 'Acme',
       parentIds: ['network-root', 'network-shared'],
       domain: 'coding',
-      region: 'global',
       scope: 'customer',
       owner: 'acme',
       description: "Acme's support knowledge"

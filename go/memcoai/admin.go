@@ -64,9 +64,6 @@ type CreateNetworkParams struct {
 	// Domain is a root network's memory domain; empty is your organization's
 	// default. A child names none.
 	Domain string
-	// Region is where the network's data resides; empty is your
-	// organization's default, and "global" replicates everywhere.
-	Region string
 	// Scope is "internal" or "customer", where your organization uses scopes.
 	// An external user can be placed only in a customer network.
 	Scope string
@@ -173,7 +170,7 @@ func (n *NetworkOperations) List(ctx context.Context, p ListNetworksParams) (*Ne
 func (n *NetworkOperations) Create(ctx context.Context, p CreateNetworkParams) (*Network, error) {
 	response, err := administer(ctx, n.client, "CreateNetwork", &adminv1.CreateNetworkRequest{
 		Name: p.Name, ParentId: p.ParentID, ParentIds: slices.Clone(p.ParentIDs), Domain: p.Domain,
-		Region: p.Region, Scope: p.Scope, Owner: p.Owner, Description: p.Description,
+		Scope: p.Scope, Owner: p.Owner, Description: p.Description,
 	}, n.rpc.CreateNetwork)
 	if err != nil {
 		return nil, err

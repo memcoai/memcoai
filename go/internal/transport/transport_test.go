@@ -70,6 +70,10 @@ func callEvery(ctx context.Context, t *testing.T, client memoryv1.MemoryServiceC
 			return err
 		},
 		func() error {
+			_, err := client.GetSession(ctx, &memoryv1.GetSessionRequest{SessionId: "s"})
+			return err
+		},
+		func() error {
 			_, err := client.Search(ctx, &memoryv1.SearchRequest{Query: "q", Domain: "d"})
 			return err
 		},

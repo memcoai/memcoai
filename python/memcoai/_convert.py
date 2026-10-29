@@ -541,7 +541,6 @@ def to_network(message: _admin_pb.Network) -> Network:
         parent_id=_optional(message.parent_id),
         parent_ids=tuple(message.parent_ids),
         domain=message.domain,
-        region=message.region,
         scope=_optional(message.scope),
         owner=_optional(message.owner),
         description=message.description,

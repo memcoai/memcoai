@@ -154,6 +154,34 @@ class StartSessionResponse(_message.Message):
     instructions: Instructions
     def __init__(self, session_id: _Optional[str] = ..., instructions: _Optional[_Union[Instructions, _Mapping]] = ...) -> None: ...
 
+class GetSessionRequest(_message.Message):
+    __slots__ = ("session_id",)
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    def __init__(self, session_id: _Optional[str] = ...) -> None: ...
+
+class GetSessionResponse(_message.Message):
+    __slots__ = ("session_id", "domain", "created_at", "source", "searches", "feedbacks", "assists", "memories_created", "enrichments")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    DOMAIN_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    SEARCHES_FIELD_NUMBER: _ClassVar[int]
+    FEEDBACKS_FIELD_NUMBER: _ClassVar[int]
+    ASSISTS_FIELD_NUMBER: _ClassVar[int]
+    MEMORIES_CREATED_FIELD_NUMBER: _ClassVar[int]
+    ENRICHMENTS_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    domain: str
+    created_at: int
+    source: str
+    searches: int
+    feedbacks: int
+    assists: int
+    memories_created: int
+    enrichments: int
+    def __init__(self, session_id: _Optional[str] = ..., domain: _Optional[str] = ..., created_at: _Optional[int] = ..., source: _Optional[str] = ..., searches: _Optional[int] = ..., feedbacks: _Optional[int] = ..., assists: _Optional[int] = ..., memories_created: _Optional[int] = ..., enrichments: _Optional[int] = ...) -> None: ...
+
 class SearchRequest(_message.Message):
     __slots__ = ("tags", "domain", "query", "session_id")
     TAGS_FIELD_NUMBER: _ClassVar[int]

@@ -513,7 +513,6 @@ export function toNetwork(message: pb.admin.Network): Network {
     parentId: optional(message.parentId),
     parentIds: [...message.parentIds],
     domain: message.domain,
-    region: message.region,
     scope: optional(message.scope),
     owner: optional(message.owner),
     description: message.description

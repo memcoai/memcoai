@@ -401,6 +401,37 @@ export interface StartSessionResponse {
   instructions?: Instructions | undefined;
 }
 
+export interface GetSessionRequest {
+  /** session_id is required: the session id a previous response returned. */
+  sessionId: string;
+}
+
+export interface GetSessionResponse {
+  sessionId: string;
+  /** domain is the memory domain the session runs in. */
+  domain: string;
+  /** created_at is when the session started, in Unix seconds. */
+  createdAt: number;
+  /** source is the client surface that opened the session, such as "mcp" or "cli". */
+  source: string;
+  /** searches counts the searches made under the session. */
+  searches: number;
+  /** feedbacks counts the ratings given on those searches. */
+  feedbacks: number;
+  /** assists counts the searches rated both relevant and correct at least once. */
+  assists: number;
+  /**
+   * memories_created counts the CreateMemory writes made under the session,
+   * including ones the validator rejected; a reverted write is no longer counted.
+   */
+  memoriesCreated: number;
+  /**
+   * enrichments counts the EnrichMemory writes made under the session, including
+   * one that opened a new memory, on the same terms as memories_created.
+   */
+  enrichments: number;
+}
+
 export interface SearchRequest {
   /**
    * tags narrow or boost the results. Call ListDomains for the tag types a
@@ -1667,6 +1698,262 @@ export const StartSessionResponse: MessageFns<StartSessionResponse> = {
     message.instructions = (object.instructions !== undefined && object.instructions !== null)
       ? Instructions.fromPartial(object.instructions)
       : undefined;
+    return message;
+  },
+};
+
+function createBaseGetSessionRequest(): GetSessionRequest {
+  return { sessionId: "" };
+}
+
+export const GetSessionRequest: MessageFns<GetSessionRequest> = {
+  encode(message: GetSessionRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.sessionId !== "") {
+      writer.uint32(10).string(message.sessionId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetSessionRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetSessionRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.sessionId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetSessionRequest {
+    return { sessionId: isSet(object.sessionId) ? globalThis.String(object.sessionId) : "" };
+  },
+
+  toJSON(message: GetSessionRequest): unknown {
+    const obj: any = {};
+    if (message.sessionId !== "") {
+      obj.sessionId = message.sessionId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetSessionRequest>, I>>(base?: I): GetSessionRequest {
+    return GetSessionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetSessionRequest>, I>>(object: I): GetSessionRequest {
+    const message = createBaseGetSessionRequest();
+    message.sessionId = object.sessionId ?? "";
+    return message;
+  },
+};
+
+function createBaseGetSessionResponse(): GetSessionResponse {
+  return {
+    sessionId: "",
+    domain: "",
+    createdAt: 0,
+    source: "",
+    searches: 0,
+    feedbacks: 0,
+    assists: 0,
+    memoriesCreated: 0,
+    enrichments: 0,
+  };
+}
+
+export const GetSessionResponse: MessageFns<GetSessionResponse> = {
+  encode(message: GetSessionResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.sessionId !== "") {
+      writer.uint32(10).string(message.sessionId);
+    }
+    if (message.domain !== "") {
+      writer.uint32(18).string(message.domain);
+    }
+    if (message.createdAt !== 0) {
+      writer.uint32(24).int64(message.createdAt);
+    }
+    if (message.source !== "") {
+      writer.uint32(34).string(message.source);
+    }
+    if (message.searches !== 0) {
+      writer.uint32(40).int64(message.searches);
+    }
+    if (message.feedbacks !== 0) {
+      writer.uint32(48).int64(message.feedbacks);
+    }
+    if (message.assists !== 0) {
+      writer.uint32(56).int64(message.assists);
+    }
+    if (message.memoriesCreated !== 0) {
+      writer.uint32(64).int64(message.memoriesCreated);
+    }
+    if (message.enrichments !== 0) {
+      writer.uint32(72).int64(message.enrichments);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetSessionResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetSessionResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.sessionId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.domain = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.createdAt = longToNumber(reader.int64());
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.source = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.searches = longToNumber(reader.int64());
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.feedbacks = longToNumber(reader.int64());
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.assists = longToNumber(reader.int64());
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.memoriesCreated = longToNumber(reader.int64());
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.enrichments = longToNumber(reader.int64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetSessionResponse {
+    return {
+      sessionId: isSet(object.sessionId) ? globalThis.String(object.sessionId) : "",
+      domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
+      createdAt: isSet(object.createdAt) ? globalThis.Number(object.createdAt) : 0,
+      source: isSet(object.source) ? globalThis.String(object.source) : "",
+      searches: isSet(object.searches) ? globalThis.Number(object.searches) : 0,
+      feedbacks: isSet(object.feedbacks) ? globalThis.Number(object.feedbacks) : 0,
+      assists: isSet(object.assists) ? globalThis.Number(object.assists) : 0,
+      memoriesCreated: isSet(object.memoriesCreated) ? globalThis.Number(object.memoriesCreated) : 0,
+      enrichments: isSet(object.enrichments) ? globalThis.Number(object.enrichments) : 0,
+    };
+  },
+
+  toJSON(message: GetSessionResponse): unknown {
+    const obj: any = {};
+    if (message.sessionId !== "") {
+      obj.sessionId = message.sessionId;
+    }
+    if (message.domain !== "") {
+      obj.domain = message.domain;
+    }
+    if (message.createdAt !== 0) {
+      obj.createdAt = Math.round(message.createdAt);
+    }
+    if (message.source !== "") {
+      obj.source = message.source;
+    }
+    if (message.searches !== 0) {
+      obj.searches = Math.round(message.searches);
+    }
+    if (message.feedbacks !== 0) {
+      obj.feedbacks = Math.round(message.feedbacks);
+    }
+    if (message.assists !== 0) {
+      obj.assists = Math.round(message.assists);
+    }
+    if (message.memoriesCreated !== 0) {
+      obj.memoriesCreated = Math.round(message.memoriesCreated);
+    }
+    if (message.enrichments !== 0) {
+      obj.enrichments = Math.round(message.enrichments);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetSessionResponse>, I>>(base?: I): GetSessionResponse {
+    return GetSessionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetSessionResponse>, I>>(object: I): GetSessionResponse {
+    const message = createBaseGetSessionResponse();
+    message.sessionId = object.sessionId ?? "";
+    message.domain = object.domain ?? "";
+    message.createdAt = object.createdAt ?? 0;
+    message.source = object.source ?? "";
+    message.searches = object.searches ?? 0;
+    message.feedbacks = object.feedbacks ?? 0;
+    message.assists = object.assists ?? 0;
+    message.memoriesCreated = object.memoriesCreated ?? 0;
+    message.enrichments = object.enrichments ?? 0;
     return message;
   },
 };
@@ -3987,6 +4274,22 @@ export const MemoryServiceService = {
     responseDeserialize: (value: Buffer) => StartSessionResponse.decode(value),
   },
   /**
+   * GetSession returns a session the caller can still continue: what it was
+   * started with and what has happened under it, so a client resuming one can
+   * pick up where it left off. A session that is unknown or not the caller's is
+   * NotFound. Writes and ratings are stored asynchronously, so the counts can
+   * trail a call made just before.
+   */
+  getSession: {
+    path: "/memcoai.memory.v1.MemoryService/GetSession",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: GetSessionRequest) => Buffer.from(GetSessionRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => GetSessionRequest.decode(value),
+    responseSerialize: (value: GetSessionResponse) => Buffer.from(GetSessionResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => GetSessionResponse.decode(value),
+  },
+  /**
    * Search retrieves memories for a task-based query, recording the search
    * against a session so it can be rated afterwards.
    */
@@ -4119,6 +4422,14 @@ export interface MemoryServiceServer extends UntypedServiceImplementation {
    */
   startSession: handleUnaryCall<StartSessionRequest, StartSessionResponse>;
   /**
+   * GetSession returns a session the caller can still continue: what it was
+   * started with and what has happened under it, so a client resuming one can
+   * pick up where it left off. A session that is unknown or not the caller's is
+   * NotFound. Writes and ratings are stored asynchronously, so the counts can
+   * trail a call made just before.
+   */
+  getSession: handleUnaryCall<GetSessionRequest, GetSessionResponse>;
+  /**
    * Search retrieves memories for a task-based query, recording the search
    * against a session so it can be rated afterwards.
    */
@@ -4213,6 +4524,28 @@ export interface MemoryServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: StartSessionResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * GetSession returns a session the caller can still continue: what it was
+   * started with and what has happened under it, so a client resuming one can
+   * pick up where it left off. A session that is unknown or not the caller's is
+   * NotFound. Writes and ratings are stored asynchronously, so the counts can
+   * trail a call made just before.
+   */
+  getSession(
+    request: GetSessionRequest,
+    callback: (error: ServiceError | null, response: GetSessionResponse) => void,
+  ): ClientUnaryCall;
+  getSession(
+    request: GetSessionRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: GetSessionResponse) => void,
+  ): ClientUnaryCall;
+  getSession(
+    request: GetSessionRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: GetSessionResponse) => void,
   ): ClientUnaryCall;
   /**
    * Search retrieves memories for a task-based query, recording the search

@@ -1655,7 +1655,7 @@ wheels = [
 
 [[package]]
 name = "memcoai"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "googleapis-common-protos" },

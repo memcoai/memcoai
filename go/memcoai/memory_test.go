@@ -37,7 +37,7 @@ func TestListDomainsReturnsTheDomains(t *testing.T) {
 func TestListToolsReturnsTheCatalog(t *testing.T) {
 	f := connected(t)
 	got, err := f.client.Memory.ListTools(ctx)
-	if err != nil || len(got) != 10 || got[0] != (ToolDescriptor{"list_domains", "list_domains tool", true}) {
+	if err != nil || len(got) != len(testserver.Tools) || got[0] != (ToolDescriptor{"list_domains", "list_domains tool", true}) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
@@ -62,7 +62,7 @@ func TestStartSessionAlsoFetchesTheCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.ID != "session-b" || session.Instructions.Content != "c" || !session.catalogKnown || len(session.catalog) != 10 {
+	if session.ID != "session-b" || session.Instructions.Content != "c" || !session.catalogKnown || len(session.catalog) != len(testserver.Tools) {
 		t.Fatalf("got %+v", session)
 	}
 	calls := f.server.Memory.Calls()

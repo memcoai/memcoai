@@ -34,7 +34,9 @@ type Network struct {
 	ParentId string `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	// domain is the memory domain the network's tree belongs to.
 	Domain string `protobuf:"bytes,4,opt,name=domain,proto3" json:"domain,omitempty"`
-	// region is the network's data residency; "global" replicates everywhere.
+	// region is always "eu": Memco runs in one region. Kept for older clients.
+	//
+	// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 	Region string `protobuf:"bytes,5,opt,name=region,proto3" json:"region,omitempty"`
 	// scope is "internal" or "customer", where the organization uses it.
 	Scope string `protobuf:"bytes,6,opt,name=scope,proto3" json:"scope,omitempty"`
@@ -106,6 +108,7 @@ func (x *Network) GetDomain() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 func (x *Network) GetRegion() string {
 	if x != nil {
 		return x.Region
@@ -314,7 +317,9 @@ type CreateNetworkRequest struct {
 	// domain places a root network; empty takes the organization's default. A child
 	// must not name one.
 	Domain string `protobuf:"bytes,3,opt,name=domain,proto3" json:"domain,omitempty"`
-	// region is the data residency; empty takes the organization's default.
+	// region is ignored: Memco runs in one region. Kept for older clients.
+	//
+	// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 	Region      string `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
 	Scope       string `protobuf:"bytes,5,opt,name=scope,proto3" json:"scope,omitempty"`
 	Owner       string `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
@@ -378,6 +383,7 @@ func (x *CreateNetworkRequest) GetDomain() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in memcoai/admin/v1/admin.proto.
 func (x *CreateNetworkRequest) GetRegion() string {
 	if x != nil {
 		return x.Region
@@ -1082,8 +1088,14 @@ type Group struct {
 	// when the group is assigned to none.
 	MemoryNetworkId string `protobuf:"bytes,3,opt,name=memory_network_id,json=memoryNetworkId,proto3" json:"memory_network_id,omitempty"`
 	MemberCount     int64  `protobuf:"varint,4,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// memory_network_ids is every network the group is bound to; a group limited
+	// to moderation may be bound to several in one domain.
+	MemoryNetworkIds []string `protobuf:"bytes,5,rep,name=memory_network_ids,json=memoryNetworkIds,proto3" json:"memory_network_ids,omitempty"`
+	// limit_assignable_roles is empty when the group gives every role its members
+	// hold, or ["content_moderator"] when it gives moderation only.
+	LimitAssignableRoles []string `protobuf:"bytes,6,rep,name=limit_assignable_roles,json=limitAssignableRoles,proto3" json:"limit_assignable_roles,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Group) Reset() {
@@ -1142,6 +1154,20 @@ func (x *Group) GetMemberCount() int64 {
 		return x.MemberCount
 	}
 	return 0
+}
+
+func (x *Group) GetMemoryNetworkIds() []string {
+	if x != nil {
+		return x.MemoryNetworkIds
+	}
+	return nil
+}
+
+func (x *Group) GetLimitAssignableRoles() []string {
+	if x != nil {
+		return x.LimitAssignableRoles
+	}
+	return nil
 }
 
 // ListGroupsRequest pages through the organization's groups.
@@ -1369,11 +1395,16 @@ func (x *ListGroupMembersResponse) GetMembers() []*Member {
 
 // AddNetworkGroupRequest assigns a group to a network.
 type AddNetworkGroupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	GroupId       string                 `protobuf:"bytes,2,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	GroupId string                 `protobuf:"bytes,2,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	// limit_assignable_roles ["content_moderator"] limits the group to moderation
+	// and adds the network beside its others; empty keeps the group's limit. The
+	// limit is the group's on every network it is bound to, and changes only while
+	// the group is bound to this network alone.
+	LimitAssignableRoles []string `protobuf:"bytes,3,rep,name=limit_assignable_roles,json=limitAssignableRoles,proto3" json:"limit_assignable_roles,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *AddNetworkGroupRequest) Reset() {
@@ -1418,6 +1449,13 @@ func (x *AddNetworkGroupRequest) GetGroupId() string {
 		return x.GroupId
 	}
 	return ""
+}
+
+func (x *AddNetworkGroupRequest) GetLimitAssignableRoles() []string {
+	if x != nil {
+		return x.LimitAssignableRoles
+	}
+	return nil
 }
 
 // AddNetworkGroupResponse is the acknowledgement of an assignment.
@@ -2720,13 +2758,13 @@ var File_memcoai_admin_v1_admin_proto protoreflect.FileDescriptor
 
 const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x1cmemcoai/admin/v1/admin.proto\x12\x10memcoai.admin.v1\"\xeb\x01\n" +
+	"\x1cmemcoai/admin/v1/admin.proto\x12\x10memcoai.admin.v1\"\xef\x01\n" +
 	"\aNetwork\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
 	"\tparent_id\x18\x03 \x01(\tB\x02\x18\x01R\bparentId\x12\x16\n" +
-	"\x06domain\x18\x04 \x01(\tR\x06domain\x12\x16\n" +
-	"\x06region\x18\x05 \x01(\tR\x06region\x12\x14\n" +
+	"\x06domain\x18\x04 \x01(\tR\x06domain\x12\x1a\n" +
+	"\x06region\x18\x05 \x01(\tB\x02\x18\x01R\x06region\x12\x14\n" +
 	"\x05scope\x18\x06 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05owner\x18\a \x01(\tR\x05owner\x12 \n" +
 	"\vdescription\x18\b \x01(\tR\vdescription\x12\x1d\n" +
@@ -2744,12 +2782,12 @@ const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\x14ListNetworksResponse\x125\n" +
 	"\bnetworks\x18\x01 \x03(\v2\x19.memcoai.admin.v1.NetworkR\bnetworks\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x03R\n" +
-	"totalCount\"\xe8\x01\n" +
+	"totalCount\"\xec\x01\n" +
 	"\x14CreateNetworkRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
 	"\tparent_id\x18\x02 \x01(\tB\x02\x18\x01R\bparentId\x12\x16\n" +
-	"\x06domain\x18\x03 \x01(\tR\x06domain\x12\x16\n" +
-	"\x06region\x18\x04 \x01(\tR\x06region\x12\x14\n" +
+	"\x06domain\x18\x03 \x01(\tR\x06domain\x12\x1a\n" +
+	"\x06region\x18\x04 \x01(\tB\x02\x18\x01R\x06region\x12\x14\n" +
 	"\x05scope\x18\x05 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05owner\x18\x06 \x01(\tR\x05owner\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x12\x1d\n" +
@@ -2807,12 +2845,14 @@ const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"F\n" +
 	"\x1bRemoveNetworkMemberResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"z\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\xde\x01\n" +
 	"\x05Group\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12*\n" +
 	"\x11memory_network_id\x18\x03 \x01(\tR\x0fmemoryNetworkId\x12!\n" +
-	"\fmember_count\x18\x04 \x01(\x03R\vmemberCount\"\x89\x01\n" +
+	"\fmember_count\x18\x04 \x01(\x03R\vmemberCount\x12,\n" +
+	"\x12memory_network_ids\x18\x05 \x03(\tR\x10memoryNetworkIds\x124\n" +
+	"\x16limit_assignable_roles\x18\x06 \x03(\tR\x14limitAssignableRoles\"\x89\x01\n" +
 	"\x11ListGroupsRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -2827,10 +2867,11 @@ const file_memcoai_admin_v1_admin_proto_rawDesc = "" +
 	"\x17ListGroupMembersRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"N\n" +
 	"\x18ListGroupMembersResponse\x122\n" +
-	"\amembers\x18\x01 \x03(\v2\x18.memcoai.admin.v1.MemberR\amembers\"C\n" +
+	"\amembers\x18\x01 \x03(\v2\x18.memcoai.admin.v1.MemberR\amembers\"y\n" +
 	"\x16AddNetworkGroupRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bgroup_id\x18\x02 \x01(\tR\agroupId\"D\n" +
+	"\bgroup_id\x18\x02 \x01(\tR\agroupId\x124\n" +
+	"\x16limit_assignable_roles\x18\x03 \x03(\tR\x14limitAssignableRoles\"D\n" +
 	"\x17AddNetworkGroupResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bgroup_id\x18\x02 \x01(\tR\agroupId\"F\n" +

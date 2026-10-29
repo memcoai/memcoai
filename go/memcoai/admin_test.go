@@ -23,7 +23,7 @@ func text(s string) *string { return &s }
 
 var canned = Network{
 	ID: "network-a", Name: "Acme", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding",
-	Region: "global", Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
+	Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
 }
 
 var cannedMember = Member{UserID: "user-a", Email: "ada@example.com", Name: "Ada"}
@@ -58,18 +58,18 @@ func roundTrips() []roundTrip {
 		}, &NetworkList{Networks: []Network{canned}, TotalCount: 1}},
 		{"CreateNetwork", func(c *Client) (any, error) {
 			return c.Networks.Create(ctx, CreateNetworkParams{
-				Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
+				Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Scope: "customer", Owner: "acme", Description: "d",
 			})
 		}, &adminv1.CreateNetworkRequest{
-			Name: "Acme", ParentIds: []string{"network-root", "network-shared"}, Region: "eu", Scope: "customer", Owner: "acme", Description: "d",
+			Name: "Acme", ParentIds: []string{"network-root", "network-shared"}, Scope: "customer", Owner: "acme", Description: "d",
 		}, &Network{
-			ID: "network-1", Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Domain: "coding", Region: "eu",
+			ID: "network-1", Name: "Acme", ParentIDs: []string{"network-root", "network-shared"}, Domain: "coding",
 			Scope: "customer", Owner: "acme", Description: "d",
 		}},
 		{"UpdateNetwork", func(c *Client) (any, error) {
 			return c.Networks.Update(ctx, "network-a", UpdateNetworkParams{Name: text("Acme Corp"), Description: text("")})
 		}, &adminv1.UpdateNetworkRequest{Id: "network-a", Name: text("Acme Corp"), Description: text("")}, &Network{
-			ID: "network-a", Name: "Acme Corp", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding", Region: "global",
+			ID: "network-a", Name: "Acme Corp", ParentID: "network-root", ParentIDs: []string{"network-root"}, Domain: "coding",
 			Scope: "customer", Owner: "acme",
 		}},
 		{"DeleteNetwork", func(c *Client) (any, error) {
