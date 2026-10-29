@@ -949,15 +949,23 @@ class Group:
     Attributes:
         id: Handle addressing this group.
         name: The group's name, as the identity provider has it.
-        memory_network_id: The network the group's members are placed in, or
-            ``None`` when the group is assigned to none.
+        memory_network_id: One of the networks the group's members are placed
+            in, or ``None`` when the group is assigned to none. Read
+            ``memory_network_ids`` for every one of them.
         member_count: How many users the group holds.
+        memory_network_ids: Every network the group is bound to. A group
+            limited to moderation may be bound to several in one memory domain.
+        limit_assignable_roles: The roles the group may give its members, or
+            empty when it gives every role they hold. ``("content_moderator",)``
+            gives moderation only.
     """
 
     id: str
     name: str
     memory_network_id: str | None
     member_count: int
+    memory_network_ids: tuple[str, ...] = ()
+    limit_assignable_roles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

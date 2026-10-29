@@ -407,8 +407,11 @@ var (
 		Scope: "customer", Owner: "acme", Description: "Acme's support knowledge",
 	}
 	CannedMember = &adminv1.Member{UserId: "user-a", Email: "ada@example.com", Name: "Ada"}
-	CannedGroup  = &adminv1.Group{Id: "group-a", Name: "Support", MemoryNetworkId: "network-a", MemberCount: 2}
-	CannedUser   = &adminv1.ExternalUser{
+	CannedGroup  = &adminv1.Group{
+		Id: "group-a", Name: "Support", MemoryNetworkId: "network-a", MemberCount: 2,
+		MemoryNetworkIds: []string{"network-a", "network-b"}, LimitAssignableRoles: []string{"content_moderator"},
+	}
+	CannedUser = &adminv1.ExternalUser{
 		Id: "xuser-a", ExternalId: "customer-42", Name: "Ada", Email: "ada@example.com",
 		Roles: []string{"reader"}, Active: true,
 	}

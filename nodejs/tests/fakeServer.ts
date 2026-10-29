@@ -439,7 +439,9 @@ export const GROUP = pb.admin.Group.fromPartial({
   id: 'group-a',
   name: 'Support',
   memoryNetworkId: 'network-a',
-  memberCount: 2
+  memberCount: 2,
+  memoryNetworkIds: ['network-a', 'network-b'],
+  limitAssignableRoles: ['content_moderator']
 })
 
 /** The external user every user method answers with. */

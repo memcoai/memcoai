@@ -236,7 +236,9 @@ const CASES: readonly Case[] = [
           id: 'group-a',
           name: 'Support',
           memoryNetworkId: 'network-a',
-          memberCount: 2
+          memberCount: 2,
+          memoryNetworkIds: ['network-a', 'network-b'],
+          limitAssignableRoles: ['content_moderator']
         }
       ],
       totalCount: 1
@@ -256,6 +258,21 @@ const CASES: readonly Case[] = [
     sent: a.AddNetworkGroupRequest.fromPartial({
       id: 'network-a',
       groupId: 'group-a'
+    }),
+    returned: undefined
+  },
+  {
+    name: 'networks.addGroup limited',
+    call: memco =>
+      memco.networks.addGroup('network-a', {
+        groupId: 'group-a',
+        limitAssignableRoles: ['content_moderator']
+      }),
+    rpc: 'addNetworkGroup',
+    sent: a.AddNetworkGroupRequest.fromPartial({
+      id: 'network-a',
+      groupId: 'group-a',
+      limitAssignableRoles: ['content_moderator']
     }),
     returned: undefined
   },
@@ -627,6 +644,8 @@ test('a group assigned to no network reads it as null', async () => {
     )
     const { groups } = await memco.networks.listGroups()
     assert.equal(groups[0]?.memoryNetworkId, null)
+    assert.deepEqual(groups[0]?.memoryNetworkIds, [])
+    assert.deepEqual(groups[0]?.limitAssignableRoles, [])
   })
 })
 
@@ -709,6 +728,14 @@ const REJECTED: readonly [string, (memco: Memco) => Promise<unknown>][] = [
   [
     'networks.addGroup blank group',
     m => m.networks.addGroup('n', { groupId: '' })
+  ],
+  [
+    'networks.addGroup bare string roles',
+    m =>
+      m.networks.addGroup('n', {
+        groupId: 'g',
+        limitAssignableRoles: 'content_moderator'
+      })
   ],
   [
     'networks.removeGroup blank network',

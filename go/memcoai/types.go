@@ -408,10 +408,18 @@ type Group struct {
 	ID string
 	// Name is the group's name.
 	Name string
-	// MemoryNetworkID is the network the group is assigned to, or empty.
+	// MemoryNetworkID is one of the networks the group is assigned to, or
+	// empty when it is assigned to none. Read MemoryNetworkIDs for every one.
 	MemoryNetworkID string
 	// MemberCount is how many users the group holds.
 	MemberCount int64
+	// MemoryNetworkIDs are every network the group is bound to. A group
+	// limited to moderation may be bound to several in one memory domain.
+	MemoryNetworkIDs []string
+	// LimitAssignableRoles are the roles the group may give its members, or
+	// empty when it gives every role they hold. ["content_moderator"] gives
+	// moderation only.
+	LimitAssignableRoles []string
 }
 
 // GroupList is one page of groups.

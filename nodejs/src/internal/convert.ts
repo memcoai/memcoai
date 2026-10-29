@@ -606,7 +606,9 @@ export function toGroupList(message: pb.admin.ListGroupsResponse): GroupList {
       id: group.id,
       name: group.name,
       memoryNetworkId: optional(group.memoryNetworkId),
-      memberCount: group.memberCount
+      memberCount: group.memberCount,
+      memoryNetworkIds: [...group.memoryNetworkIds],
+      limitAssignableRoles: [...group.limitAssignableRoles]
     })),
     totalCount: message.totalCount
   }

@@ -143,14 +143,19 @@ test(
         )
         return
       }
-      // Assigning replaces a group's network in the network's domain, and a
-      // group reports one network id however many domains it is placed in, so a
+      // Assigning can replace a group's network in the network's domain, so a
       // real group's placement could not be put back for certain. Only a group
-      // placed nowhere is used: taking it out again restores exactly that.
-      const group = groups.find(each => each.memoryNetworkId === null)
+      // placed nowhere and limited to no roles is used: taking it out again
+      // restores exactly that.
+      const group = groups.find(
+        each =>
+          each.memoryNetworkId === null &&
+          each.memoryNetworkIds.length === 0 &&
+          each.limitAssignableRoles.length === 0
+      )
       if (group === undefined) {
         t.skip(
-          'the organisation has no identity-provider group placed in no network'
+          'the organisation has no identity-provider group placed in no network and limited to no roles'
         )
         return
       }
@@ -174,6 +179,8 @@ test(
       const [restored] = (await admin.networks.listGroups({ ids: [group.id] }))
         .groups
       assert.equal(restored?.memoryNetworkId, null)
+      assert.deepEqual(restored?.memoryNetworkIds, [])
+      assert.deepEqual(restored?.limitAssignableRoles, [])
     })
   }
 )

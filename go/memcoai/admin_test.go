@@ -93,13 +93,18 @@ func roundTrips() []roundTrip {
 				Name: "Support", NetworkID: "network-a", IDs: []string{"group-a"}, Page: 1, PageSize: 5,
 			})
 		}, &adminv1.ListGroupsRequest{Name: "Support", NetworkId: "network-a", Ids: []string{"group-a"}, Page: 1, PageSize: 5},
-			&GroupList{Groups: []Group{{ID: "group-a", Name: "Support", MemoryNetworkID: "network-a", MemberCount: 2}}, TotalCount: 1}},
+			&GroupList{Groups: []Group{{
+				ID: "group-a", Name: "Support", MemoryNetworkID: "network-a", MemberCount: 2,
+				MemoryNetworkIDs: []string{"network-a", "network-b"}, LimitAssignableRoles: []string{"content_moderator"},
+			}}, TotalCount: 1}},
 		{"ListGroupMembers", func(c *Client) (any, error) {
 			return c.Networks.ListGroupMembers(ctx, "group-a")
 		}, &adminv1.ListGroupMembersRequest{Id: "group-a"}, []Member{cannedMember}},
 		{"AddNetworkGroup", func(c *Client) (any, error) {
-			return none(c.Networks.AddGroup(ctx, "network-a", "group-a"))
-		}, &adminv1.AddNetworkGroupRequest{Id: "network-a", GroupId: "group-a"}, nil},
+			return none(c.Networks.AddGroup(ctx, "network-a", "group-a", AddGroupParams{
+				LimitAssignableRoles: []string{"content_moderator"},
+			}))
+		}, &adminv1.AddNetworkGroupRequest{Id: "network-a", GroupId: "group-a", LimitAssignableRoles: []string{"content_moderator"}}, nil},
 		{"RemoveNetworkGroup", func(c *Client) (any, error) {
 			return none(c.Networks.RemoveGroup(ctx, "network-a", "group-a"))
 		}, &adminv1.RemoveNetworkGroupRequest{Id: "network-a", GroupId: "group-a"}, nil},
@@ -330,7 +335,7 @@ func TestABadArgumentIsRefusedBeforeAnythingIsSent(t *testing.T) {
 			_, err := f.client.Networks.AddMember(ctx, "network-a", "", AddMemberParams{})
 			return err
 		},
-		"group_id must not be empty":    func() error { return f.client.Networks.AddGroup(ctx, "network-a", "\t") },
+		"group_id must not be empty":    func() error { return f.client.Networks.AddGroup(ctx, "network-a", "\t", AddGroupParams{}) },
 		"key_id must not be empty":      func() error { return f.client.Users.DeleteKey(ctx, "customer-7", "") },
 		"external_id must not be empty": func() error { _, err := f.client.Users.Get(ctx, "  "); return err },
 		"roles must name at least one role": func() error {
