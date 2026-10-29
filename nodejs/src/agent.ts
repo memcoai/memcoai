@@ -289,6 +289,33 @@ export interface OpenAITool {
 export type Rendered =
   SearchResult | Memory | WriteResult | FeedbackResult | RevertResult
 
+/**
+ * What {@link Session.tools} takes.
+ *
+ * @example
+ * ```ts
+ * // For a host that names a memory's tools `<slot>__<tool>`.
+ * const toolset = session.tools({ prefix: 'memco__' })
+ * toolset.tools[0].name // 'memco__search'
+ * ```
+ */
+export interface ToolsOptions {
+  /**
+   * What every tool name starts with: `memco_` unless given.
+   *
+   * Give the prefix a host calls the tools by, when it renames them. Every
+   * description and rendered result then names the tools that way, so a model
+   * is never pointed at a name it was not offered; pass the same prefix to
+   * {@link briefing}. A tool's error is the exception: it is reported as the
+   * service wrote it, since it may quote what the model sent.
+   *
+   * Model providers accept tool names of letters, digits, `_` and `-`, at most
+   * 64 characters, so a prefix that cannot form one is refused with a
+   * {@link MemcoConfigError}. `null` is the same as leaving it out.
+   */
+  readonly prefix?: string
+}
+
 // -- the shapes a model may send ------------------------------------------
 
 /**
@@ -484,14 +511,79 @@ const OPERATIONS: readonly Operation[] = [
   }
 ]
 
+// -- tool names -----------------------------------------------------------
+
+/**
+ * A tool name in model-facing text: `memco_<op>`, or a bare operation name
+ * that cannot be read as an English word.
+ *
+ * The service writes the bare MCP names (`enrich_memory`) and the generated
+ * copy the prefixed ones (`memco_enrich_memory`); both mean the tool. Bare
+ * `search` is left out because it is also a word the service's prose uses. The
+ * guards keep a name inside a longer identifier, such as `memco_search_v2`,
+ * from matching.
+ */
+const TOOL_NAME = new RegExp(
+  `(?<![A-Za-z0-9_])(?:${TOOL_PREFIX}(${OFFERED.join('|')})|` +
+    `(${OFFERED.filter(name => name.includes('_')).join('|')}))(?![A-Za-z0-9_])`,
+  'g'
+)
+
+/**
+ * Name every tool `text` mentions the way it is offered: `<prefix><op>`.
+ *
+ * Without a prefix the text is left as written, for a caller rendering beside
+ * a host that offers the bare names, such as Memco's MCP server. `null` is
+ * the same as none: a JavaScript caller's null means unset.
+ */
+function named(text: string, prefix: string | undefined): string {
+  // `== null` rather than `=== undefined`, so a JavaScript caller's null is
+  // never written in front of a tool name.
+  if (prefix == null) return text
+  return text.replace(
+    TOOL_NAME,
+    (_match, prefixed: string | undefined, bare: string | undefined) =>
+      prefix + (prefixed ?? bare)
+  )
+}
+
+/** The longest name an operation adds to the prefix. */
+const LONGEST_OPERATION = Math.max(...OFFERED.map(name => name.length))
+
+/**
+ * Refuse a prefix no tool name can carry.
+ *
+ * Model providers accept tool names matching `^[A-Za-z0-9_-]{1,64}$`. A prefix
+ * that breaks it would otherwise fail later, as the provider's error rather
+ * than this SDK's.
+ */
+function checkPrefix(prefix: string): void {
+  if (
+    // `typeof` first: a JavaScript caller has no compiler, and the pattern
+    // test would coerce a number or an array and let it through.
+    typeof prefix !== 'string' ||
+    !/^[A-Za-z0-9_-]*$/.test(prefix) ||
+    prefix.length + LONGEST_OPERATION > 64
+  ) {
+    throw new MemcoConfigError(
+      `tool name prefix ${JSON.stringify(prefix)} must be letters, digits, ` +
+        `_ or -, at most ${64 - LONGEST_OPERATION} characters`
+    )
+  }
+}
+
 // -- schemas --------------------------------------------------------------
 
 /** Name the description of one argument: the manifest's copy for it. */
-function describes(operation: Operation, argument: Argument): string {
+function describes(
+  operation: Operation,
+  argument: Argument,
+  prefix: string
+): string {
   // Widened from its literal type so a name can be looked up rather than
   // spelled: the interface declares an index signature, the literal does not.
   const copy: ToolCopy = TOOL_COPY[operation.name]
-  return copy.parameters[argument.name]
+  return named(copy.parameters[argument.name], prefix)
 }
 
 /** Describe one object a model may send as a JSON Schema object. */
@@ -527,13 +619,13 @@ function argumentSchema(shape: Shape, description: string): JsonSchema {
 }
 
 /** Describe one operation's arguments as a JSON Schema object. */
-function parametersFor(operation: Operation): ToolParameters {
+function parametersFor(operation: Operation, prefix: string): ToolParameters {
   const properties: Record<string, JsonSchema> = {}
   const required: string[] = []
   for (const argument of operation.arguments) {
     properties[argument.name] = argumentSchema(
       argument.shape,
-      describes(operation, argument)
+      describes(operation, argument, prefix)
     )
     if (argument.required) {
       required.push(argument.name)
@@ -961,23 +1053,30 @@ function availableOperationNames(session: Session): ReadonlySet<string> {
  *
  * @param session The open session every call through these tools is recorded
  *   under.
+ * @param prefix What every tool name starts with.
  * @returns One tool per operation the session's cached catalog marks
  *   available.
+ * @throws MemcoConfigError If no tool name can carry the prefix.
  *
  * @internal Reached as {@link Session.tools}.
  */
-export function toolset(session: Session): Toolset {
+export function toolset(
+  session: Session,
+  prefix: string = TOOL_PREFIX
+): Toolset {
+  checkPrefix(prefix)
   const available = availableOperationNames(session)
   return new Toolset(
     OPERATIONS.filter(operation => available.has(operation.name)).map(
       operation => ({
-        name: TOOL_PREFIX + operation.name,
-        description: TOOL_COPY[operation.name].description,
-        parameters: parametersFor(operation),
+        name: prefix + operation.name,
+        description: named(TOOL_COPY[operation.name].description, prefix),
+        parameters: parametersFor(operation, prefix),
         call: async (args: Record<string, unknown>): Promise<string> => {
           try {
             return render(
-              await operation.invoke(session, argumentsFor(operation, args))
+              await operation.invoke(session, argumentsFor(operation, args)),
+              prefix
             )
           } catch (error) {
             if (recoverable(error)) return reported(error)
@@ -997,22 +1096,33 @@ function joined(...parts: string[]): string {
 }
 
 /** Render the guidance a response carried. */
-function renderedInstructions(instructions: Instructions): string {
-  return joined(
-    instructions.content,
-    instructions.policy,
-    instructions.adding,
-    instructions.rating,
-    instructions.next
+function renderedInstructions(
+  instructions: Instructions,
+  prefix: string | undefined
+): string {
+  return named(
+    joined(
+      instructions.content,
+      instructions.policy,
+      instructions.adding,
+      instructions.rating,
+      instructions.next
+    ),
+    prefix
   )
 }
 
-/** Render one memory and its insights. */
-function renderedMemory(memory: Memory): string {
+/**
+ * Render one memory and its insights.
+ *
+ * What the memory says is quoted as written, never renamed: it is someone's
+ * knowledge, and one that explains `get_memory` must still say so.
+ */
+function renderedMemory(memory: Memory, prefix: string | undefined): string {
   if (memory.reference) {
     return (
       `${memory.idx}  already returned in this session as ${memory.reference}; ` +
-      `fetch it again with ${TOOL_PREFIX}get_memory`
+      `fetch it again with ${prefix ?? TOOL_PREFIX}get_memory`
     )
   }
   let heading = `${memory.idx}  served ${memory.timesServed}x`
@@ -1042,49 +1152,61 @@ function renderedMemory(memory: Memory): string {
 }
 
 /** Render what a search selected. */
-function renderedSearch(result: SearchResult): string {
+function renderedSearch(
+  result: SearchResult,
+  prefix: string | undefined
+): string {
   const found = result.memories.length
   return joined(
     joined(
       `${found} ${found === 1 ? 'memory' : 'memories'}`,
-      result.notice ?? ''
+      named(result.notice ?? '', prefix)
     ),
-    result.memories.map(renderedMemory).join('\n\n'),
-    renderedInstructions(result.instructions)
+    result.memories.map(one => renderedMemory(one, prefix)).join('\n\n'),
+    renderedInstructions(result.instructions, prefix)
   )
 }
 
 /** Render an accepted write. */
-function renderedWrite(result: WriteResult): string {
+function renderedWrite(
+  result: WriteResult,
+  prefix: string | undefined
+): string {
   return joined(
     result.operationId
       ? `accepted as operation ${result.operationId}`
       : 'accepted; this write cannot be undone',
-    renderedInstructions(result.instructions)
+    renderedInstructions(result.instructions, prefix)
   )
 }
 
 /** Render what ratings were recorded. */
-function renderedFeedback(result: FeedbackResult): string {
+function renderedFeedback(
+  result: FeedbackResult,
+  prefix: string | undefined
+): string {
   return joined(
     result.entries
       .map(
         entry =>
           `${entry.idx}  relevant=${entry.relevant}` +
           (entry.correct === null ? '' : ` correct=${entry.correct}`) +
-          (entry.advice ? `  ${entry.advice}` : '')
+          (entry.advice ? `  ${named(entry.advice, prefix)}` : '')
       )
       .join('\n'),
-    renderedInstructions(result.instructions)
+    renderedInstructions(result.instructions, prefix)
   )
 }
 
 /** Render what a revert removed. */
-function renderedRevert(result: RevertResult): string {
+function renderedRevert(
+  result: RevertResult,
+  prefix: string | undefined
+): string {
   const outcome = RevertOutcome[result.outcome].toLowerCase().replace(/_/g, ' ')
   return joined(
     `${result.operationId}: ${outcome}`,
-    renderedInstructions(result.instructions)
+    renderedInstructions(result.instructions, prefix)
   )
 }
 
@@ -1099,7 +1221,13 @@ function renderedRevert(result: RevertResult): string {
  * dispatch here is on the field only one of them carries. `outcome` is tested
  * before `operationId` because a revert carries both.
  *
+ * The service's guidance names tools. Given a prefix, it is rewritten to name
+ * them as the prefix spells them; without one it is left as written. What a
+ * memory says is never rewritten.
+ *
  * @param value Any result a memory operation returns.
+ * @param prefix What the tools a model was offered start with, as given to
+ *   {@link Session.tools}. Leave it out to keep the service's text as written.
  * @returns The result as text.
  * @throws TypeError If the value is not a result this renders. The parameter
  *   type stops a typed caller reaching this; the guard is for the untyped
@@ -1108,24 +1236,25 @@ function renderedRevert(result: RevertResult): string {
  * @example
  * ```ts
  * console.log(render(await session.search('how does X work')))
+ * console.log(render(await session.search('how does X work'), 'memco__'))
  * ```
  */
-export function render(value: Rendered): string {
+export function render(value: Rendered, prefix?: string): string {
   const held: Record<string, unknown> = isObject(value) ? value : {}
   if (Array.isArray(held.memories)) {
-    return renderedSearch(value as SearchResult)
+    return renderedSearch(value as SearchResult, prefix)
   }
   if (Array.isArray(held.insights)) {
-    return renderedMemory(value as Memory)
+    return renderedMemory(value as Memory, prefix)
   }
   if (Array.isArray(held.entries)) {
-    return renderedFeedback(value as FeedbackResult)
+    return renderedFeedback(value as FeedbackResult, prefix)
   }
   if (typeof held.outcome === 'number') {
-    return renderedRevert(value as RevertResult)
+    return renderedRevert(value as RevertResult, prefix)
   }
   if (Object.hasOwn(held, 'operationId')) {
-    return renderedWrite(value as WriteResult)
+    return renderedWrite(value as WriteResult, prefix)
   }
   throw new TypeError(`no rendering for ${jsonType(value)}`)
 }
@@ -1139,32 +1268,41 @@ export function render(value: Rendered): string {
  * the sentence naming the two operations a bound session has already answered. Supply it up front rather than leaving a model to ask:
  * guidance behind a tool only steers the models that reach for it.
  *
- * @param domain The domain the session was opened in, from `listDomains`.
+ * @param domain The domain the session runs in: the session's own
+ *   {@link Session.domain}, or an entry from `listDomains`.
  * @param instructions What the service said when the session was opened, as
  *   carried by the scope's `instructions`.
+ * @param prefix What the tools a model was offered start with, as given to
+ *   {@link Session.tools}. Given, the service's text is rewritten to name the
+ *   tools that way; left out, it is kept as written.
  * @returns The guidance as text, ready to be a system prompt or part of one.
  *
  * @example
  * ```ts
- * const { domains } = await client.memory.listDomains()
- * const entry = domains.find(one => one.slug === 'coding')!
  * await using session = await client.memory.withSession('coding')
- * console.log(briefing(entry, session.instructions))
+ * // null when the credential's listing does not describe the domain.
+ * if (session.domain !== null) {
+ *   console.log(briefing(session.domain, session.instructions))
+ * }
  * ```
  */
 export function briefing(
   domain: DomainEntry,
-  instructions: Instructions
+  instructions: Instructions,
+  prefix?: string
 ): string {
+  const said = (text: string): string => named(text, prefix)
   const parts = [
     `You share a persistent memory with your team, in the '${domain.slug}' ` +
       `domain (${domain.title}). Search it before working anything out from ` +
       `scratch, and save what you learn so nobody has to learn it twice.`,
-    domain.summary,
-    domain.whenToSearch ? `When to search: ${domain.whenToSearch}` : '',
-    domain.whenToSave ? `When to save: ${domain.whenToSave}` : '',
-    domain.whatNotToSave ? `What not to save: ${domain.whatNotToSave}` : '',
-    domain.tagsDescription
+    said(domain.summary),
+    domain.whenToSearch ? `When to search: ${said(domain.whenToSearch)}` : '',
+    domain.whenToSave ? `When to save: ${said(domain.whenToSave)}` : '',
+    domain.whatNotToSave
+      ? `What not to save: ${said(domain.whatNotToSave)}`
+      : '',
+    said(domain.tagsDescription)
   ]
   if (domain.filterTagTypes.length > 0) {
     parts.push(
@@ -1187,9 +1325,9 @@ export function briefing(
       'would have told you is above.'
   )
   parts.push(
-    `Pass '${NEW_MEMORY}' as memoryIdx to ${TOOL_PREFIX}enrich_memory to open ` +
+    `Pass '${NEW_MEMORY}' as memoryIdx to ${prefix ?? TOOL_PREFIX}enrich_memory to open ` +
       'a new memory.'
   )
-  parts.push(instructions.content)
+  parts.push(said(instructions.content))
   return joined(...parts)
 }

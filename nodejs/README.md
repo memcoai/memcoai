@@ -119,15 +119,15 @@ import { briefing } from '@memco/memcoai'
 import { createAgent } from 'langchain'
 
 await using client = await new Memco().connect()
-const { domains } = await client.memory.listDomains()
-const entry = domains.find(domain => domain.slug === 'coding')!
-
-await using session = await client.memory.withSession(entry.slug)
+await using session = await client.memory.withSession('coding')
+// What the service says about the domain the session runs in; null when the
+// credential's listing does not describe it.
+if (session.domain === null) throw new Error('coding is not listed for you')
 
 const agent = createAgent({
   model: 'google_genai:gemini-3.7-flash',
   tools: await session.tools().toLangChain(),
-  systemPrompt: briefing(entry, session.instructions)
+  systemPrompt: briefing(session.domain, session.instructions)
 })
 ```
 
@@ -298,6 +298,8 @@ Reached as `client.memory`, or on a session without the session/domain arguments
 | `listDomains()`                     | The domains this credential may name, and the limits in force                                                                     |
 | `startSession(domain, options)`     | Open a session and return it right away — the same bound operations `withSession` yields; `externalId` acts for one of your users |
 | `withSession(domain, options)`      | Open one lazily — await it once for the same disposable session, however many times it's referenced                               |
+| `resumeSession(sessionId, options)` | Take up a session opened earlier, by its id — refused as not found when the id is unknown or not the caller's                     |
+| `getSession(sessionId, options)`    | The domain a session runs in, when it started, and its counts of searches, ratings and writes                                     |
 | `search(query, options)`            | Find existing knowledge                                                                                                           |
 | `getMemory(idx, options)`           | Fetch one memory in full                                                                                                          |
 | `createMemory(options)`             | Save new knowledge                                                                                                                |
@@ -309,6 +311,25 @@ Reached as `client.memory`, or on a session without the session/domain arguments
 `importMemories` splits a batch longer than the service accepts across several
 calls and renumbers every outcome back into the array you passed, so
 `outcome.index` always indexes your own input whatever the service's limit is.
+
+A session outlives the process that opened it. Keep its id, and resume it where
+the work continues — on an agent's next turn, say — so the searches stay one
+series:
+
+```ts
+const sessionId = session.id // stored with the conversation
+
+// Later, in this process or another:
+await using resumed = await client.memory.resumeSession(sessionId)
+resumed.domain?.slug // the domain it was started in; resuming cannot change it
+const info = await resumed.getSession() // info.searches, info.feedbacks, ...
+```
+
+Resuming starts nothing. The service looks the session up first, so an id that
+is unknown or not the caller's fails with `MemcoNotFoundError` there rather than
+at the first search. A resumed session carries no opening instructions; they
+were given when it started. See
+[`examples/resume_session.ts`](examples/resume_session.ts).
 
 ## Networks and users
 
@@ -365,7 +386,7 @@ either: read `created.value` where you mean to.
 
 ## Acting for your users
 
-Passing `externalId` to `startSession` or `withSession` opens a session that
+Passing `externalId` to `startSession`, `withSession` or `resumeSession` opens a session that
 acts as one of your external users, so what it finds is what that user may
 find, and what it writes is that user's:
 

@@ -232,6 +232,18 @@ export function startSessionRequest(domain: string): pb.StartSessionRequest {
   return built(() => ({ domain }))
 }
 
+/**
+ * Validate and build a `GetSession` request.
+ *
+ * @param sessionId The session to look up.
+ * @returns The request message.
+ * @throws A `MemcoInvalidRequestError` if the session id is blank.
+ */
+export function getSessionRequest(sessionId: string): pb.GetSessionRequest {
+  validate.checkSessionId(sessionId)
+  return built(() => ({ sessionId }))
+}
+
 /** Everything a search takes beyond the query itself. */
 export interface SearchOptions {
   /** The memory domain, if the search is not scoped by a session. */
@@ -640,14 +652,16 @@ export function issueTokenRequest(
  *
  * @param externalId The user the key acts as, already checked for blankness by
  *   the session opening it.
- * @returns The request message. It asks for no lifetime, which takes the
+ * @param ttlMinutes The key's lifetime. `0` asks for none, which takes the
  *   service's default: the session renews its key before it expires, so a
  *   longer one would only leave a leaked key usable for longer.
+ * @returns The request message.
  */
 export function impersonateRequest(
-  externalId: string
+  externalId: string,
+  ttlMinutes: number
 ): pb.admin.ImpersonateExternalUserRequest {
-  return built(() => ({ externalId, ttlMinutes: 0 }))
+  return built(() => ({ externalId, ttlMinutes }))
 }
 
 /**

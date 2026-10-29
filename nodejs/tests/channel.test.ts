@@ -96,6 +96,7 @@ test('the retry policy names only the calls a replay cannot change', () => {
     { service: MEMORY_SERVICE, method: 'ListDomains' },
     { service: MEMORY_SERVICE, method: 'GetMemory' },
     { service: MEMORY_SERVICE, method: 'ListTools' },
+    { service: MEMORY_SERVICE, method: 'GetSession' },
     { service: HEALTH_SERVICE, method: 'Check' }
   ])
   assert.deepEqual(entry.retryPolicy, {
@@ -109,7 +110,7 @@ test('the retry policy names only the calls a replay cannot change', () => {
   })
   assert.deepEqual(
     [...RETRYABLE_METHODS],
-    ['ListDomains', 'GetMemory', 'ListTools']
+    ['ListDomains', 'GetMemory', 'ListTools', 'GetSession']
   )
 })
 

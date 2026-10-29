@@ -23,6 +23,7 @@ import {
   MemcoAuthenticationError,
   MemcoConfigError,
   MemcoInvalidRequestError,
+  MemcoNotFoundError,
   MemcoPermissionError,
   MemcoResourceExhaustedError,
   MemcoTimeoutError
@@ -1168,5 +1169,118 @@ test('concurrent sessions for two users never cross keys', async () => {
         `${user} ended ${keyId}, which none of its calls carried`
       )
     }
+  })
+})
+
+// --- resuming ------------------------------------------------------------
+
+test('resuming impersonates, lists domains, looks the session up, and starts nothing, under the key', async () => {
+  await withClient(async (memco, harness) => {
+    const session = await memco.memory.resumeSession('session-stored', {
+      externalId: XID
+    })
+    assert.equal(session.id, 'session-stored')
+    assert.deepEqual(harness.admin.calls, ['impersonateExternalUser'])
+    assert.equal(harness.memory.calls[0], 'listDomains')
+    // Sorted: the lookup and the catalog are sent together.
+    assert.deepEqual(harness.memory.calls.slice(1).sort(), [
+      'getSession',
+      'listTools'
+    ])
+    // The lookup carries the user's key, so the service answers for that user.
+    assert.deepEqual(harness.memory.authorization, [[KEY_1], [KEY_1], [KEY_1]])
+
+    await session.search('anything')
+    assert.deepEqual(carried(harness, 'search'), [KEY_1])
+    assert.equal(
+      (harness.memory.requests.get('search') as pb.SearchRequest).sessionId,
+      'session-stored'
+    )
+
+    await session.close()
+    assert.deepEqual(ends(harness), [[XID, 'key-1']])
+  })
+})
+
+test('a session knows its domain as the user sees it', async () => {
+  await withClient(async (memco, harness) => {
+    harness.memory.responses.set(
+      'listDomains',
+      pb.ListDomainsResponse.fromPartial({
+        domains: [{ slug: 'coding', title: 'As the user sees it' }]
+      })
+    )
+    const session = await memco.memory.startSession('coding', {
+      externalId: XID
+    })
+    assert.equal(session.domain?.title, 'As the user sees it')
+    // Listed under the user's key, not the client's own credential.
+    assert.equal(carried(harness, 'listDomains').at(-1), KEY_1)
+  })
+})
+
+test('a key lifetime reaches the service as the minutes asked for', async () => {
+  await withClient(async (memco, harness) => {
+    await memco.memory.startSession('coding', {
+      externalId: XID,
+      keyTtlMinutes: 10
+    })
+    await memco.memory.resumeSession('session-stored', {
+      externalId: XID,
+      keyTtlMinutes: 5
+    })
+    assert.deepEqual(harness.admin.received, [
+      pb.admin.ImpersonateExternalUserRequest.fromPartial({
+        externalId: XID,
+        ttlMinutes: 10
+      }),
+      pb.admin.ImpersonateExternalUserRequest.fromPartial({
+        externalId: XID,
+        ttlMinutes: 5
+      })
+    ])
+  })
+})
+
+for (const keyTtlMinutes of [0, -5, 1.5, Number.NaN, 2 ** 31]) {
+  test(`a key lifetime of ${keyTtlMinutes} minutes is refused before a key is minted`, async () => {
+    await withClient(async (memco, harness) => {
+      await assert.rejects(
+        memco.memory.startSession('coding', { externalId: XID, keyTtlMinutes }),
+        MemcoInvalidRequestError
+      )
+      assert.deepEqual(harness.admin.received, [])
+    })
+  })
+}
+
+test('a key lifetime at either end of the range reaches the service', async () => {
+  await withClient(async (memco, harness) => {
+    for (const keyTtlMinutes of [1, 2 ** 31 - 1]) {
+      await memco.memory.startSession('coding', {
+        externalId: XID,
+        keyTtlMinutes
+      })
+    }
+    assert.deepEqual(
+      harness.admin.received.map(
+        request =>
+          (request as pb.admin.ImpersonateExternalUserRequest).ttlMinutes
+      ),
+      [1, 2 ** 31 - 1]
+    )
+  })
+})
+
+test("resuming a session that is not the user's ends the key it minted", async () => {
+  await withClient(async (memco, harness) => {
+    harness.memory.transientErrors.set('getSession', [
+      { code: status.NOT_FOUND, details: 'no such session' }
+    ])
+    await assert.rejects(
+      memco.memory.resumeSession('session-other', { externalId: XID }),
+      MemcoNotFoundError
+    )
+    assert.deepEqual(ends(harness), [[XID, 'key-1']])
   })
 })

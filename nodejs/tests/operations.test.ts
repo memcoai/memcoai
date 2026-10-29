@@ -165,10 +165,12 @@ test('opening a session fetches the tool catalog', async () => {
       await memco.memory.startSession('coding')
       // Availability is checked once, at open, rather than on every tools()
       // call -- see Session.tools(), which reads it back from the cache
-      // rather than calling listTools itself. Sorted rather than an exact
-      // order: startSession runs the two calls concurrently, so which one
-      // the fake server sees first is not settled.
-      assert.deepEqual([...harness.memory.calls].sort(), [
+      // rather than calling listTools itself. The domains are listed first;
+      // the rest sorted rather than in an exact order: startSession runs the
+      // two calls concurrently, so which one the fake server sees first is not
+      // settled.
+      assert.equal(harness.memory.calls[0], 'listDomains')
+      assert.deepEqual(harness.memory.calls.slice(1).sort(), [
         'listTools',
         'startSession'
       ])

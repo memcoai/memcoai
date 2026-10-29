@@ -468,14 +468,19 @@ export class Memco {
    * closing still has its key ended, by the next call this client makes.
    *
    * @param externalId The user the session acts as.
+   * @param ttlMinutes The lifetime each key asks for, `0` for the service's
+   *   default.
    * @returns The session's credential, which mints its first key on first use.
    */
-  private readonly impersonate = (externalId: string): Renewing => {
+  private readonly impersonate = (
+    externalId: string,
+    ttlMinutes: number
+  ): Renewing => {
     // A token standing for the credential in the registry of live keys, which
     // must not keep the credential itself alive.
     const owner = {}
     const key = new Renewing(
-      () => this.mintKey(externalId, owner),
+      () => this.mintKey(externalId, owner, ttlMinutes),
       minted => this.endKey(externalId, minted.keyId)
     )
     this.abandoned.register(key, owner)
@@ -495,6 +500,7 @@ export class Memco {
    *
    * @param externalId The user the key acts as.
    * @param owner The token standing for the session credential it is minted for.
+   * @param ttlMinutes The lifetime to ask for, `0` for the service's default.
    * @returns The key, due for renewal at {@link RENEW_AFTER} of its lifetime
    *   and expiring at the end of it. The lifetime is the service's own
    *   `expiresIn`, counted on the monotonic clock from before the request was
@@ -505,7 +511,11 @@ export class Memco {
    *   expired by this machine's clock, which is then too far ahead of the
    *   service's to hold one. The key is ended first.
    */
-  private mintKey(externalId: string, owner: object): Promise<Minted> {
+  private mintKey(
+    externalId: string,
+    owner: object,
+    ttlMinutes: number
+  ): Promise<Minted> {
     return this.counted(async () => {
       const now = clock.monotonic()
       for (const [keyId, key] of this.live) {
@@ -529,7 +539,7 @@ export class Memco {
       const asked = clock.monotonic()
       const key = await this.call(
         this.transport.admin.impersonateExternalUser.bind(this.transport.admin),
-        requests.impersonateRequest(externalId),
+        requests.impersonateRequest(externalId, ttlMinutes),
         undefined,
         'ImpersonateExternalUser'
       )

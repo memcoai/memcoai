@@ -20,10 +20,11 @@ import {
   briefing,
   render,
   type Rendered,
-  type Tool
+  type Tool,
+  type ToolsOptions
 } from '../src/agent.js'
 import { Memco } from '../src/client.js'
-import { MemcoAuthenticationError } from '../src/errors.js'
+import { MemcoAuthenticationError, MemcoConfigError } from '../src/errors.js'
 import {
   ENTRY_COPY,
   OFFERED,
@@ -55,7 +56,8 @@ async function withToolset(
     by: Readonly<Record<string, Tool>>,
     harness: Harness
   ) => Promise<void>,
-  arrange: (harness: Harness) => void = () => {}
+  arrange: (harness: Harness) => void = () => {},
+  options: ToolsOptions = {}
 ): Promise<void> {
   await withHarness(async harness => {
     const memco = new Memco({
@@ -66,7 +68,7 @@ async function withToolset(
     try {
       await memco.connect()
       const session = await memco.memory.withSession('coding')
-      const toolset = session.tools()
+      const toolset = session.tools(options)
       const by = Object.fromEntries(toolset.tools.map(one => [one.name, one]))
       // Arranged after the session is open, so a staged failure hits the tool
       // call rather than the connection check or the session itself.
@@ -143,7 +145,9 @@ const NOT_AN_OPERATION = new Set([
   'constructor',
   'tools',
   'importMemories',
-  'close'
+  'close',
+  // For the caller resuming a session, not for a model.
+  'getSession'
 ])
 
 test('the offered operations are exactly what the scope carries', async () => {
@@ -1300,4 +1304,447 @@ test('an argument name a model invented cannot shape the sentence it reads back'
     )
     assert.ok(reported.includes(JSON.stringify(hostile)))
   })
+})
+
+// -- what the tools are called --------------------------------------------
+
+/**
+ * A prefix a host puts on every tool, as Eve does with `<slot>__`.
+ *
+ * Whatever a model reads has to name the tools by the names it was offered:
+ * a description, a result or a briefing pointing at `memco_search` when the
+ * tool is called `notes__search` points the model at nothing.
+ */
+const PREFIX = 'notes__'
+
+/** Every offered tool name, spelled with the default prefix. */
+const DEFAULT_NAMES = offered.map(name => TOOL_PREFIX + name)
+
+/** Fail when text still names a tool by the default prefix. */
+function assertNoDefaultName(text: string): void {
+  for (const name of DEFAULT_NAMES) {
+    assert.ok(
+      !new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(text),
+      `${name} survived in: ${text}`
+    )
+  }
+}
+
+test('a prefix names every tool', async () => {
+  await withToolset(
+    async toolset => {
+      assert.deepEqual(
+        toolset.tools.map(one => one.name),
+        offered.map(name => PREFIX + name)
+      )
+    },
+    () => {},
+    { prefix: PREFIX }
+  )
+})
+
+for (const prefix of ['bad prefix', 'notes.', 'a'.repeat(51)]) {
+  test(`a prefix no tool name can carry is refused: ${JSON.stringify(prefix.slice(0, 12))}`, async () => {
+    // Model providers accept ^[A-Za-z0-9_-]{1,64}$. Refused here, a bad prefix
+    // is a typed error at the call that made it, not a provider's 400 later.
+    await withHarness(async harness => {
+      const memco = new Memco({
+        token: 'test-token',
+        host: harness.address,
+        tls: false
+      })
+      try {
+        await memco.connect()
+        const session = await memco.memory.withSession('coding')
+        assert.throws(() => session.tools({ prefix }), MemcoConfigError)
+      } finally {
+        await memco.close()
+      }
+    })
+  })
+}
+
+test('the longest prefix a tool name can carry is accepted', async () => {
+  await withToolset(
+    async toolset => {
+      const longest = Math.max(...toolset.tools.map(one => one.name.length))
+      assert.equal(longest, 64)
+    },
+    () => {},
+    { prefix: 'a'.repeat(50) }
+  )
+})
+
+for (const prefix of [5, ['notes__']]) {
+  test(`a prefix that is not a string is refused: ${JSON.stringify(prefix)}`, async () => {
+    // A JavaScript caller has no compiler to stop it, and the pattern test
+    // alone would coerce the value and let it through.
+    await withHarness(async harness => {
+      const memco = new Memco({
+        token: 'test-token',
+        host: harness.address,
+        tls: false
+      })
+      try {
+        await memco.connect()
+        const session = await memco.memory.withSession('coding')
+        assert.throws(
+          () => session.tools({ prefix: prefix as unknown as string }),
+          MemcoConfigError
+        )
+      } finally {
+        await memco.close()
+      }
+    })
+  })
+}
+
+test('a null prefix, or null options, is the default', async () => {
+  // A JavaScript caller's null means unset, as everywhere else in this SDK.
+  await withToolset(
+    async toolset => {
+      assert.deepEqual(
+        toolset.tools.map(one => one.name),
+        DEFAULT_NAMES
+      )
+    },
+    () => {},
+    { prefix: null as unknown as string }
+  )
+  await withToolset(
+    async toolset => {
+      assert.deepEqual(
+        toolset.tools.map(one => one.name),
+        DEFAULT_NAMES
+      )
+    },
+    () => {},
+    null as unknown as ToolsOptions
+  )
+})
+
+test('a description names the tools by the prefix they were offered under', async () => {
+  await withToolset(
+    async (_toolset, by) => {
+      for (const tool of Object.values(by)) {
+        assertNoDefaultName(tool.description)
+      }
+      assert.match(by.notes__create_memory!.description, /notes__enrich_memory/)
+    },
+    () => {},
+    { prefix: PREFIX }
+  )
+})
+
+test('a parameter description names the tools by the prefix too', async () => {
+  await withToolset(
+    async (_toolset, by) => {
+      for (const tool of Object.values(by)) {
+        assertNoDefaultName(JSON.stringify(tool.parameters))
+      }
+      // revert_memory's operationId tells the model which tools hand it one.
+      const operationId = by.notes__revert_memory!.parameters.properties
+        .operationId as Record<string, unknown>
+      assert.match(
+        operationId.description as string,
+        /notes__create_memory or notes__enrich_memory/
+      )
+    },
+    () => {},
+    { prefix: PREFIX }
+  )
+})
+
+test('a toolset runs a tool by its prefixed name', async () => {
+  await withToolset(
+    async toolset => {
+      assert.match(
+        await toolset.call('notes__search', { query: 'how does X work' }),
+        /memory-a-1/
+      )
+    },
+    harness => harness.memory.responses.set('search', searchResponse()),
+    { prefix: PREFIX }
+  )
+})
+
+test('the guidance a tool returns names the tools by the prefix', async () => {
+  await withToolset(
+    async (_toolset, by) => {
+      const rendered = await by.notes__search!.call({ query: 'q' })
+      assert.match(rendered, /notes__share_feedback rates these/)
+      assert.match(rendered, /notes__get_memory fetches one/)
+    },
+    harness =>
+      harness.memory.responses.set(
+        'search',
+        pb.SearchResponse.fromPartial({
+          sessionId: 'session-a',
+          instructions: {
+            rating: 'share_feedback rates these',
+            next: 'memco_get_memory fetches one'
+          }
+        })
+      ),
+    { prefix: PREFIX }
+  )
+})
+
+test('without a prefix the service guidance is rendered as written', () => {
+  // A caller rendering beside Memco's MCP server, where the tools really are
+  // bare-named, must still be told the names it can call.
+  const rendered = render({
+    operationId: 'create-a',
+    instructions: guidance('pass it to revert_memory to undo this write')
+  })
+  assert.match(rendered, /pass it to revert_memory to undo/)
+})
+
+test('without a prefix the briefing quotes the service as written', () => {
+  const rendered = briefing(
+    domain({ whenToSave: 'Use create_memory after you learn something.' }),
+    guidance('share_feedback after every search')
+  )
+  assert.match(rendered, /Use create_memory after you learn/)
+  assert.match(rendered, /share_feedback after every search/)
+  // The SDK's own sentence still names the tool it offers by default.
+  assert.match(
+    rendered,
+    new RegExp(`'${NEW_MEMORY}' as memoryIdx to ${TOOL_PREFIX}enrich_memory`)
+  )
+})
+
+test('a null prefix quotes the service as written, as leaving it out does', () => {
+  // A JavaScript caller's null means unset, as everywhere else in this SDK.
+  const rendered = briefing(
+    domain({ whenToSave: 'Use create_memory after you learn something.' }),
+    guidance('share_feedback after every search'),
+    null as unknown as string
+  )
+  assert.match(rendered, /Use create_memory after you learn/)
+  assert.match(rendered, /share_feedback after every search/)
+  assert.doesNotMatch(rendered, /null/)
+  const notice = render(
+    {
+      sessionId: 'session-a',
+      memories: [],
+      notice: 'call share_feedback next',
+      instructions: guidance('')
+    },
+    null as unknown as string
+  )
+  assert.match(notice, /call share_feedback next/)
+  assert.doesNotMatch(notice, /null/)
+})
+
+test('a tool result names the tools by the default prefix when none is given', async () => {
+  // The service writes the bare MCP names; the tools a toolset offers are
+  // never bare, so what a tool returns names them as offered.
+  await withToolset(
+    async toolset => {
+      assert.match(
+        await toolset.call('memco_search', { query: 'q' }),
+        /memco_share_feedback rates these/
+      )
+    },
+    harness =>
+      harness.memory.responses.set(
+        'search',
+        pb.SearchResponse.fromPartial({
+          sessionId: 'session-a',
+          instructions: { rating: 'share_feedback rates these' }
+        })
+      )
+  )
+})
+
+test('every part of the guidance a response carried is renamed', () => {
+  const rendered = render(
+    {
+      operationId: 'create-a',
+      instructions: {
+        content: 'content names enrich_memory',
+        policy: 'policy names get_memory',
+        adding: 'adding names create_memory',
+        rating: 'rating names share_feedback',
+        next: 'next names revert_memory'
+      }
+    },
+    PREFIX
+  )
+  assertNoDefaultName(rendered)
+  for (const name of [
+    'enrich_memory',
+    'get_memory',
+    'create_memory',
+    'share_feedback',
+    'revert_memory'
+  ]) {
+    assert.match(rendered, new RegExp(`${PREFIX}${name}`))
+  }
+})
+
+test('a search notice and a rating advice are renamed', () => {
+  const search = render(
+    {
+      sessionId: 'session-a',
+      memories: [],
+      notice: 'try get_memory for the earlier one',
+      instructions: guidance('')
+    },
+    PREFIX
+  )
+  assert.match(search, /try notes__get_memory for the earlier one/)
+  const rated = render(
+    {
+      sessionId: 'session-a',
+      entries: [
+        {
+          idx: 'memory-a-1',
+          relevant: false,
+          correct: null,
+          advice: 'consider using create_memory to share your solution'
+        }
+      ],
+      instructions: guidance('')
+    },
+    PREFIX
+  )
+  assert.match(rated, /consider using notes__create_memory to share/)
+})
+
+test('an error a model can act on is reported as the service wrote it', async () => {
+  // Never renamed: the text may quote what the model itself sent, and that
+  // must come back as sent.
+  await withToolset(
+    async toolset => {
+      const reported = await toolset.call('notes__get_memory', {
+        idx: 'memory-x-1'
+      })
+      assert.match(reported, /run memco_search first, then get_memory/)
+    },
+    harness =>
+      (harness.memory.error = {
+        code: status.INVALID_ARGUMENT,
+        details: 'run memco_search first, then get_memory'
+      }),
+    { prefix: PREFIX }
+  )
+})
+
+test('a reference names the fetch tool by the prefix', () => {
+  const rendered = render(
+    memory({ idx: 'memory-a-2', reference: 'memory-a-1' }),
+    PREFIX
+  )
+  assert.match(rendered, /fetch it again with notes__get_memory/)
+})
+
+test('what a memory says is never renamed', () => {
+  // A memory is someone's knowledge, quoted to the model as written. One that
+  // explains get_memory must still say get_memory.
+  const rendered = render(
+    memory({
+      intents: ['how does get_memory work'],
+      insights: [
+        {
+          idx: 'memory-a-1-insight-1',
+          title: 'Call get_memory with the idx',
+          content: 'memco_search returns refs; get_memory resolves them',
+          updated: '2026-08-01',
+          timesServed: 1,
+          endorsed: 0,
+          disputed: 0
+        }
+      ]
+    }),
+    PREFIX
+  )
+  assert.match(rendered, /how does get_memory work/)
+  assert.match(rendered, /Call get_memory with the idx/)
+  assert.match(rendered, /memco_search returns refs; get_memory resolves them/)
+})
+
+test('the word search is never renamed, only the tool', () => {
+  const rendered = render(
+    {
+      operationId: 'create-a',
+      instructions: guidance(
+        'Pass this id to every search you make. memco_search takes it.'
+      )
+    },
+    PREFIX
+  )
+  assert.match(rendered, /every search you make/)
+  assert.match(rendered, /notes__search takes it/)
+})
+
+test('the operations a bound session answered are never renamed', () => {
+  const rendered = render(
+    {
+      operationId: 'create-a',
+      instructions: guidance('call list_domains, then start_session')
+    },
+    PREFIX
+  )
+  assert.match(rendered, /call list_domains, then start_session/)
+})
+
+test('a tool name inside a longer identifier is left alone', () => {
+  const rendered = render(
+    {
+      operationId: 'create-a',
+      instructions: guidance(
+        'my_get_memory_helper and xmemco_search and memco_get_memory2 stay'
+      )
+    },
+    PREFIX
+  )
+  assert.match(
+    rendered,
+    /my_get_memory_helper and xmemco_search and memco_get_memory2 stay/
+  )
+})
+
+test('a name already carrying the prefix is not prefixed twice', () => {
+  const rendered = render(
+    {
+      operationId: 'create-a',
+      instructions: guidance('memco_get_memory and get_memory')
+    },
+    TOOL_PREFIX
+  )
+  assert.match(
+    rendered,
+    /^accepted as operation create-a\n\nmemco_get_memory and memco_get_memory$/
+  )
+})
+
+test('the briefing names the tools by the prefix', () => {
+  const rendered = briefing(
+    domain({
+      summary: 'summary names get_memory',
+      whenToSearch: 'whenToSearch names revert_memory',
+      whenToSave: 'whenToSave names create_memory',
+      whatNotToSave: 'whatNotToSave names enrich_memory',
+      tagsDescription: 'tagsDescription names share_feedback'
+    }),
+    guidance('content names memco_search'),
+    PREFIX
+  )
+  assertNoDefaultName(rendered)
+  for (const [field, name] of [
+    ['summary', 'get_memory'],
+    ['whenToSearch', 'revert_memory'],
+    ['whenToSave', 'create_memory'],
+    ['whatNotToSave', 'enrich_memory'],
+    ['tagsDescription', 'share_feedback'],
+    ['content', 'search']
+  ] as const) {
+    assert.match(rendered, new RegExp(`${field} names ${PREFIX}${name}`))
+  }
+  assert.match(
+    rendered,
+    new RegExp(`'${NEW_MEMORY}' as memoryIdx to ${PREFIX}enrich_memory`)
+  )
 })

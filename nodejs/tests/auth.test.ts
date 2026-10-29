@@ -73,7 +73,7 @@ test('every call a client makes carries exactly one credential, and the probe no
       ...harness.memory.authorization,
       ...harness.admin.authorization
     ]
-    assert.equal(sent.length, 5)
+    assert.equal(sent.length, 6)
     for (const credentials of sent) {
       assert.deepEqual(credentials, [`Bearer ${TOKEN}`])
     }

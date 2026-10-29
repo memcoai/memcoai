@@ -112,11 +112,15 @@ function carries(memory: Memory, marker: string): boolean {
 function recordKeys(client: Memco): Minted[] {
   const keys: Minted[] = []
   const internals = client as unknown as {
-    mintKey(externalId: string, owner: object): Promise<Minted>
+    mintKey(
+      externalId: string,
+      owner: object,
+      ttlMinutes: number
+    ): Promise<Minted>
   }
   const mint = internals.mintKey.bind(client)
-  internals.mintKey = async (externalId, owner) => {
-    const key = await mint(externalId, owner)
+  internals.mintKey = async (externalId, owner, ttlMinutes) => {
+    const key = await mint(externalId, owner, ttlMinutes)
     keys.push(key)
     return key
   }
@@ -323,3 +327,72 @@ test(
     })
   }
 )
+
+test(
+  'a session resumes under a new key for the same user',
+  { skip },
+  async () => {
+    await withAdmin(async admin => {
+      const created = new Created(admin, await rootNetwork(admin))
+      try {
+        const [network, user] = await created.placed()
+        const keys = recordKeys(admin)
+        console.log(`\n[${network.domain}] resuming as ${user.externalId}`)
+
+        let sessionId: string
+        {
+          await using started = await admin.memory.withSession(network.domain, {
+            externalId: user.externalId
+          })
+          sessionId = started.id
+          await started.search('what does resuming a session keep')
+        }
+
+        // The first key ended with its session, so the resumed one is minted
+        // fresh: the service has to accept the stored id under a key it has
+        // never seen that id with.
+        await using resumed = await admin.memory.resumeSession(sessionId, {
+          externalId: user.externalId
+        })
+        const found = await resumed.search('what does resuming a session keep')
+        assert.equal(found.sessionId, sessionId)
+        assert.equal(resumed.domain?.slug, network.domain)
+        assert.equal(keys.length, 2, `${keys.length} keys were minted`)
+        assert.notEqual(keys[0]?.keyId, keys[1]?.keyId)
+      } finally {
+        await created.remove()
+      }
+    })
+  }
+)
+
+test("a user cannot resume another user's session", { skip }, async () => {
+  await withAdmin(async admin => {
+    const created = new Created(admin, await rootNetwork(admin))
+    try {
+      const [network, owner] = await created.placed()
+      const [, other] = await created.placed()
+      console.log(
+        `\n[${network.domain}] ${other.externalId} resuming ${owner.externalId}'s session`
+      )
+
+      let sessionId: string
+      {
+        await using started = await admin.memory.withSession(network.domain, {
+          externalId: owner.externalId
+        })
+        sessionId = started.id
+      }
+
+      // Answered as not found rather than forbidden, so ids cannot be probed.
+      await assert.rejects(
+        admin.memory.resumeSession(sessionId, {
+          externalId: other.externalId
+        }),
+        MemcoNotFoundError
+      )
+    } finally {
+      await created.remove()
+    }
+  })
+})
