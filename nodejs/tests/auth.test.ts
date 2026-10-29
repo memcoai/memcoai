@@ -36,7 +36,10 @@ test('the scheme is spelled with a capital B and a trailing space', () => {
 test('the metadata one call sends holds exactly one credential', () => {
   const sent = metadata('real-token')
   assert.deepEqual(sent.get(AUTH_HEADER), ['Bearer real-token'])
-  assert.deepEqual(sent.toHttp2Headers()[AUTH_HEADER], ['Bearer real-token'])
+  // grpc-js gives a single value as a string from 1.14.6, as an array before.
+  assert.deepEqual([sent.toHttp2Headers()[AUTH_HEADER]].flat(), [
+    'Bearer real-token'
+  ])
 })
 
 test('a credential grpc-js would quote back is refused without being quoted', () => {
