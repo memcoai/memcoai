@@ -108,6 +108,7 @@ type recorder struct {
 	received  []proto.Message
 	requests  map[string]proto.Message
 	responses map[string]proto.Message
+	answers   map[string]func(proto.Message) (proto.Message, error)
 	failure   *Failure
 	transient map[string][]Failure
 	delays    map[string]time.Duration
@@ -119,6 +120,7 @@ func newRecorder(j *journal) recorder {
 		journal:   j,
 		requests:  map[string]proto.Message{},
 		responses: map[string]proto.Message{},
+		answers:   map[string]func(proto.Message) (proto.Message, error){},
 		transient: map[string][]Failure{},
 		delays:    map[string]time.Duration{},
 		holds:     map[string]*Hold{},
@@ -170,6 +172,15 @@ func (r *recorder) Respond(method string, response proto.Message) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.responses[method] = response
+}
+
+// Answer stages a function that answers the named method per call, so an
+// answer can depend on state or refuse with a status error. It wins over
+// Respond.
+func (r *recorder) Answer(method string, answer func(proto.Message) (proto.Message, error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.answers[method] = answer
 }
 
 // Fail makes every method answer with f; nil restores normal answers.
@@ -235,10 +246,10 @@ func (r *recorder) record(ctx context.Context, method string, request proto.Mess
 	return delay, hold, nil
 }
 
-func (r *recorder) staged(method string) proto.Message {
+func (r *recorder) staged(method string) (proto.Message, func(proto.Message) (proto.Message, error)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.responses[method]
+	return r.responses[method], r.answers[method]
 }
 
 // wait sleeps for d, or until the call ends.
@@ -273,7 +284,19 @@ func answer[Req, Resp proto.Message](ctx context.Context, r *recorder, method st
 	if failure != nil {
 		return zero, failure
 	}
-	if staged := r.staged(method); staged != nil {
+	staged, answerer := r.staged(method)
+	if answerer != nil {
+		response, err := answerer(request)
+		if err != nil {
+			return zero, err
+		}
+		typed, ok := response.(Resp)
+		if !ok {
+			return zero, status.Errorf(codes.Internal, "testserver: the answer for %s returned %T", method, response)
+		}
+		return proto.Clone(typed).(Resp), nil
+	}
+	if staged != nil {
 		return proto.Clone(staged).(Resp), nil
 	}
 	return fallback(request)

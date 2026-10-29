@@ -20,7 +20,10 @@ from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any
 
+import grpc
+
 from . import _convert, _requests
+from .errors import MemcoAlreadyExistsError
 from .types import (
     CreatedKey,
     DeletedNetwork,
@@ -181,6 +184,80 @@ class NetworkOperations:
             description=description,
         )
         return _convert.to_network(self._call(self._stub.CreateNetwork, request, timeout))
+
+    def create_or_get(
+        self,
+        *,
+        name: str,
+        parent_id: str | None = None,
+        parent_ids: Iterable[str] | None = None,
+        domain: str | None = None,
+        scope: str | None = None,
+        owner: str | None = None,
+        description: str | None = None,
+        timeout: float | None = None,
+    ) -> Network:
+        """Create a memory network, or return the one already holding its name.
+
+        Safe when two callers race to create one network: the loser is handed
+        the winner's. The existing network is returned only if it has the owner
+        asked for (no owner matches a network without one) and, when a domain
+        or a scope is given, that domain and scope; a network that merely
+        shares the name is never adopted. Names are matched exactly, case
+        included.
+
+        Args:
+            name: The network's name.
+            parent_id: Deprecated: use ``parent_ids``, never both. As for
+                :meth:`create`.
+            parent_ids: The networks to create this one under, as for
+                :meth:`create`.
+            domain: The memory domain of a root network. Omitted, your
+                organization's default, and an existing network in any domain
+                matches.
+            scope: ``"internal"`` or ``"customer"``, as for :meth:`create`.
+                Omitted, an existing network of any scope matches.
+            owner: Who the network's knowledge belongs to.
+            description: What the network is for.
+            timeout: Deadline in seconds for each call made, including any wait
+                for a credential. Defaults to the client's.
+
+        Returns:
+            The network as created, or as it already was.
+
+        Raises:
+            MemcoAlreadyExistsError: If the name is held by a network with
+                another owner, domain or scope, or by one that cannot be listed.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> acme = client.networks.create_or_get(
+            ...     name="acme", domain="knowledge", scope="customer", owner="acme"
+            ... )
+        """
+        try:
+            return self.create(
+                name=name,
+                parent_id=parent_id,
+                parent_ids=parent_ids,
+                domain=domain,
+                scope=scope,
+                owner=owner,
+                description=description,
+                timeout=timeout,
+            )
+        except MemcoAlreadyExistsError:
+            pass
+        # Names are unique across domains, so the holder is listed by name alone.
+        seen = page = 0
+        while True:
+            page += 1
+            listing = self.list(name=name, page=page, timeout=timeout)
+            existing, seen = _adoptable(
+                listing, seen, name=name, owner=owner, domain=domain, scope=scope
+            )
+            if existing is not None:
+                return existing
 
     def update(
         self,
@@ -634,6 +711,80 @@ class AsyncNetworkOperations:
         )
         return _convert.to_network(await self._call(self._stub.CreateNetwork, request, timeout))
 
+    async def create_or_get(
+        self,
+        *,
+        name: str,
+        parent_id: str | None = None,
+        parent_ids: Iterable[str] | None = None,
+        domain: str | None = None,
+        scope: str | None = None,
+        owner: str | None = None,
+        description: str | None = None,
+        timeout: float | None = None,
+    ) -> Network:
+        """Create a memory network, or return the one already holding its name.
+
+        Safe when two callers race to create one network: the loser is handed
+        the winner's. The existing network is returned only if it has the owner
+        asked for (no owner matches a network without one) and, when a domain
+        or a scope is given, that domain and scope; a network that merely
+        shares the name is never adopted. Names are matched exactly, case
+        included.
+
+        Args:
+            name: The network's name.
+            parent_id: Deprecated: use ``parent_ids``, never both. As for
+                :meth:`create`.
+            parent_ids: The networks to create this one under, as for
+                :meth:`create`.
+            domain: The memory domain of a root network. Omitted, your
+                organization's default, and an existing network in any domain
+                matches.
+            scope: ``"internal"`` or ``"customer"``, as for :meth:`create`.
+                Omitted, an existing network of any scope matches.
+            owner: Who the network's knowledge belongs to.
+            description: What the network is for.
+            timeout: Deadline in seconds for each call made, including any wait
+                for a credential. Defaults to the client's.
+
+        Returns:
+            The network as created, or as it already was.
+
+        Raises:
+            MemcoAlreadyExistsError: If the name is held by a network with
+                another owner, domain or scope, or by one that cannot be listed.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> acme = await client.networks.create_or_get(
+            ...     name="acme", domain="knowledge", scope="customer", owner="acme"
+            ... )
+        """
+        try:
+            return await self.create(
+                name=name,
+                parent_id=parent_id,
+                parent_ids=parent_ids,
+                domain=domain,
+                scope=scope,
+                owner=owner,
+                description=description,
+                timeout=timeout,
+            )
+        except MemcoAlreadyExistsError:
+            pass
+        # Names are unique across domains, so the holder is listed by name alone.
+        seen = page = 0
+        while True:
+            page += 1
+            listing = await self.list(name=name, page=page, timeout=timeout)
+            existing, seen = _adoptable(
+                listing, seen, name=name, owner=owner, domain=domain, scope=scope
+            )
+            if existing is not None:
+                return existing
+
     async def update(
         self,
         network_id: str,
@@ -1085,6 +1236,47 @@ class UserOperations:
             self._call(self._stub.CreateExternalUser, request, timeout)
         )
 
+    def create_or_get(
+        self,
+        external_id: str,
+        *,
+        roles: Iterable[str],
+        name: str | None = None,
+        email: str | None = None,
+        timeout: float | None = None,
+    ) -> ExternalUser:
+        """Create an external user, or return the one already holding its id.
+
+        Safe when two callers race to create one user: the loser is handed the
+        winner's. The existing user is returned as it is; its roles, name and
+        email are not compared with the arguments or changed.
+
+        Args:
+            external_id: Your id for the user, unique within your organization.
+            roles: The content roles the user holds, as for :meth:`create`.
+            name: The user's name.
+            email: The user's email address.
+            timeout: Deadline in seconds for each call made, including any wait
+                for a credential. Defaults to the client's.
+
+        Returns:
+            The user as created, or as it already was.
+
+        Raises:
+            MemcoInvalidRequestError: If ``external_id`` is blank, or ``roles``
+                is a single string or names no role.
+            MemcoNotFoundError: If the user that held the id was deleted before
+                it could be fetched.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> user = client.users.create_or_get("customer-42", roles=["reader", "creator"])
+        """
+        try:
+            return self.create(external_id, roles=roles, name=name, email=email, timeout=timeout)
+        except MemcoAlreadyExistsError:
+            return self.get(external_id, timeout=timeout)
+
     def update(
         self,
         external_id: str,
@@ -1365,6 +1557,51 @@ class AsyncUserOperations:
             await self._call(self._stub.CreateExternalUser, request, timeout)
         )
 
+    async def create_or_get(
+        self,
+        external_id: str,
+        *,
+        roles: Iterable[str],
+        name: str | None = None,
+        email: str | None = None,
+        timeout: float | None = None,
+    ) -> ExternalUser:
+        """Create an external user, or return the one already holding its id.
+
+        Safe when two callers race to create one user: the loser is handed the
+        winner's. The existing user is returned as it is; its roles, name and
+        email are not compared with the arguments or changed.
+
+        Args:
+            external_id: Your id for the user, unique within your organization.
+            roles: The content roles the user holds, as for :meth:`create`.
+            name: The user's name.
+            email: The user's email address.
+            timeout: Deadline in seconds for each call made, including any wait
+                for a credential. Defaults to the client's.
+
+        Returns:
+            The user as created, or as it already was.
+
+        Raises:
+            MemcoInvalidRequestError: If ``external_id`` is blank, or ``roles``
+                is a single string or names no role.
+            MemcoNotFoundError: If the user that held the id was deleted before
+                it could be fetched.
+            MemcoAPIError: If the service returns an error status.
+
+        Example:
+            >>> user = await client.users.create_or_get(
+            ...     "customer-42", roles=["reader", "creator"]
+            ... )
+        """
+        try:
+            return await self.create(
+                external_id, roles=roles, name=name, email=email, timeout=timeout
+            )
+        except MemcoAlreadyExistsError:
+            return await self.get(external_id, timeout=timeout)
+
     async def update(
         self,
         external_id: str,
@@ -1518,3 +1755,70 @@ class AsyncUserOperations:
         """
         request = _requests.delete_external_user_key_request(external_id, key_id)
         await self._call(self._stub.DeleteExternalUserKey, request, timeout)
+
+
+def _adoptable(
+    listing: NetworkList,
+    seen: int,
+    *,
+    name: str,
+    owner: str | None,
+    domain: str | None,
+    scope: str | None,
+) -> tuple[Network | None, int]:
+    """Read one page of the listing ``create_or_get`` walks for a taken name.
+
+    The service's name filter is a case-insensitive substring match that also
+    lists the matches' relatives, so the exact name is picked out here, on
+    whichever page it falls.
+
+    Args:
+        listing: One page of a listing filtered by ``name``.
+        seen: How many networks the earlier pages held.
+        name: The name asked for, matched exactly, case included.
+        owner: The owner asked for; ``None`` matches a network without one.
+        domain: The domain asked for, or ``None`` to match any.
+        scope: The scope asked for, or ``None`` to match any.
+
+    Returns:
+        The network holding the name, or ``None`` to read the next page; and
+        how many networks the pages read so far held.
+
+    Raises:
+        MemcoAlreadyExistsError: If the network holding the name has another
+            owner, domain or scope, or the listing ends without it.
+    """
+    existing = next((each for each in listing.networks if each.name == name), None)
+    if existing is not None:
+        # The service stores the owner trimmed.
+        if (existing.owner or "") != (owner or "").strip():
+            raise _taken(
+                name,
+                "a network without an owner"
+                if existing.owner is None
+                else f"owner {existing.owner!r}",
+            )
+        if domain and existing.domain != domain:
+            raise _taken(name, f"domain {existing.domain!r}")
+        if scope and existing.scope != scope:
+            raise _taken(name, f"scope {existing.scope!r}")
+        return existing, seen
+    seen += len(listing.networks)
+    if not listing.networks or seen >= listing.total_count:
+        raise _taken(name, "a network that cannot be listed")
+    return None, seen
+
+
+def _taken(name: str, holder: str) -> MemcoAlreadyExistsError:
+    """Build the refusal ``create_or_get`` raises for a name it will not adopt.
+
+    Args:
+        name: The name asked for.
+        holder: What holds it instead.
+
+    Returns:
+        The error, as the service's own refusal of the create would read.
+    """
+    return MemcoAlreadyExistsError(
+        grpc.StatusCode.ALREADY_EXISTS, f"network name {name!r} is held by {holder}"
+    )

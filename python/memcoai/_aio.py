@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from functools import partial
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 
 import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
@@ -389,6 +389,16 @@ class AsyncMemco:
             self._loop = None
             await self._drain()
             await channel.close(grace=None)
+
+    @property
+    def credential_kind(self) -> Literal["token", "api_client"]:
+        """Which credential the client resolved from its arguments and the environment.
+
+        ``"token"`` for an API token, ``"api_client"`` for an API client's
+        ``client_id`` and ``client_secret``. Only an API client can administer
+        networks and users, or open a session acting as one of your users.
+        """
+        return "token" if self._config.client_id is None else "api_client"
 
     async def close(self) -> None:
         """End the keys of impersonated sessions left open, then close the channel.

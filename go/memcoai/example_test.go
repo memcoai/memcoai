@@ -55,6 +55,13 @@ func ExampleClient_Connect() {
 	}
 }
 
+func ExampleClient_CredentialKind() {
+	// Administration and sessions acting as your users need an API client.
+	if client.CredentialKind() != memcoai.CredentialAPIClient {
+		log.Fatal("set MEMCO_CLIENT_ID and MEMCO_CLIENT_SECRET to manage users")
+	}
+}
+
 func ExampleClient_Close() {
 	// Give calls in flight ten seconds to finish.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -424,6 +431,18 @@ func ExampleNetworkOperations_Create() {
 	fmt.Println(acme.ID, acme.Domain) // the domain is taken from the parent
 }
 
+func ExampleNetworkOperations_CreateOrGet() {
+	// Run at every start: the first creates the network, every later one, or
+	// a racing one, gets it back.
+	acme, err := client.Networks.CreateOrGet(ctx, memcoai.CreateNetworkParams{
+		Name: "acme", Domain: "knowledge", Scope: "customer", Owner: "acme",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(acme.ID)
+}
+
 func ExampleNetworkOperations_Update() {
 	name, description := "Acme Corp", "" // an empty description clears it
 	if _, err := client.Networks.Update(ctx, "network-acme", memcoai.UpdateNetworkParams{
@@ -550,6 +569,16 @@ func ExampleUserOperations_Create() {
 		log.Fatal(err)
 	}
 	fmt.Println(user.ID, user.Roles) // a creator reads too
+}
+
+func ExampleUserOperations_CreateOrGet() {
+	user, err := client.Users.CreateOrGet(ctx, "customer-42", memcoai.CreateUserParams{
+		Roles: []string{"reader", "creator"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(user.ID)
 }
 
 func ExampleUserOperations_Update() {

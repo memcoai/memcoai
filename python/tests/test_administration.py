@@ -8,9 +8,12 @@ service's answer in Python's terms is this layer's whole job.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import inspect
+import threading
 import traceback
+from concurrent import futures
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -145,6 +148,11 @@ CASES = [
         Network,
     ),
     Case(
+        Call("networks", "create_or_get", kwargs={"name": "Acme", "owner": "acme"}),
+        admin_pb.CreateNetworkRequest(name="Acme", owner="acme"),
+        Network,
+    ),
+    Case(
         Call("networks", "update", ("network-a",), {"name": "Acme Corp", "scope": "customer"}),
         admin_pb.UpdateNetworkRequest(id="network-a", name="Acme Corp", scope="customer"),
         Network,
@@ -239,6 +247,11 @@ CASES = [
         admin_pb.CreateExternalUserRequest(
             external_id=XID, name="Ada", email="ada@example.com", roles=["reader", "creator"]
         ),
+        ExternalUser,
+    ),
+    Case(
+        Call("users", "create_or_get", (XID,), {"roles": ["reader"]}),
+        admin_pb.CreateExternalUserRequest(external_id=XID, roles=["reader"]),
         ExternalUser,
     ),
     Case(
@@ -936,3 +949,304 @@ def test_an_external_user_outside_a_customer_network_is_a_precondition_not_a_sun
         credentialed.networks.add_member("network-internal", "xuser-a")
     assert not isinstance(caught.value, errors.MemcoSunsetError)
     assert caught.value.message == "external_user_needs_customer_network"
+
+
+# --- create or return ------------------------------------------------------
+
+
+def test_create_or_get_returns_the_user_that_already_exists(credentialed: Memco, harness: Harness):
+    harness.admin.transient_errors["CreateExternalUser"] = [
+        (grpc.StatusCode.ALREADY_EXISTS, "external user already exists")
+    ]
+    user = credentialed.users.create_or_get(XID, roles=["reader"])
+    assert user.id == "xuser-a"
+    assert harness.admin.calls == ["CreateExternalUser", "GetExternalUser"]
+    assert harness.admin.requests["GetExternalUser"] == admin_pb.GetExternalUserRequest(
+        external_id=XID
+    )
+
+
+async def test_async_create_or_get_returns_the_user_that_already_exists(
+    async_credentialed: AsyncMemco, harness: Harness
+):
+    harness.admin.transient_errors["CreateExternalUser"] = [
+        (grpc.StatusCode.ALREADY_EXISTS, "external user already exists")
+    ]
+    user = await async_credentialed.users.create_or_get(XID, roles=["reader"])
+    assert user.id == "xuser-a"
+    assert harness.admin.calls == ["CreateExternalUser", "GetExternalUser"]
+
+
+def test_create_or_get_passes_on_any_other_refusal(credentialed: Memco, harness: Harness):
+    refusal = (grpc.StatusCode.PERMISSION_DENIED, "no")
+    harness.admin.transient_errors["CreateExternalUser"] = [refusal]
+    harness.admin.transient_errors["CreateNetwork"] = [refusal]
+    with pytest.raises(errors.MemcoPermissionError):
+        credentialed.users.create_or_get(XID, roles=["reader"])
+    with pytest.raises(errors.MemcoPermissionError):
+        credentialed.networks.create_or_get(name="Acme")
+    assert harness.admin.calls == ["CreateExternalUser", "CreateNetwork"]
+
+
+TENANT: dict[str, str] = {"name": "eve-tenant", "domain": "knowledge", "owner": "eve-tenant"}
+
+
+def create_tenant(client: Memco) -> Network:
+    """Create, or return, the network the create-or-return tests share."""
+    return client.networks.create_or_get(name="eve-tenant", domain="knowledge", owner="eve-tenant")
+
+
+async def create_tenant_async(client: AsyncMemco) -> Network:
+    """Create, or return, the network the create-or-return tests share."""
+    return await client.networks.create_or_get(
+        name="eve-tenant", domain="knowledge", owner="eve-tenant"
+    )
+
+
+def serve_networks(
+    harness: Harness, existing: list[admin_pb.Network], page_size: int = 100
+) -> None:
+    """Serve CreateNetwork and ListNetworks from ``existing``, as the service does.
+
+    A taken name is refused case-sensitively; the listing matches names
+    case-insensitively, as substrings, ``page_size`` at a time.
+    """
+    networks = list(existing)
+    lock = threading.Lock()
+
+    def create(request: admin_pb.CreateNetworkRequest, context: grpc.ServicerContext) -> Any:
+        with lock:
+            if any(each.name == request.name for each in networks):
+                context.abort(grpc.StatusCode.ALREADY_EXISTS, "memory network name is taken")
+            created = admin_pb.Network(
+                id=f"network-{len(networks) + 1}",
+                name=request.name,
+                domain=request.domain or "knowledge",
+                owner=request.owner,
+            )
+            networks.append(created)
+            return created
+
+    def listing(request: admin_pb.ListNetworksRequest, context: grpc.ServicerContext) -> Any:
+        with lock:
+            matching = [
+                each
+                for each in networks
+                if request.name.lower() in each.name.lower() and request.domain in ("", each.domain)
+            ]
+        page = max(request.page, 1)
+        return admin_pb.ListNetworksResponse(
+            networks=matching[(page - 1) * page_size : page * page_size],
+            total_count=len(matching),
+        )
+
+    harness.admin.responses["CreateNetwork"] = create
+    harness.admin.responses["ListNetworks"] = listing
+
+
+def test_create_or_get_returns_the_network_that_already_exists(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(harness, [admin_pb.Network(id="network-t", **TENANT)])
+    assert create_tenant(credentialed).id == "network-t"
+    assert harness.admin.calls == ["CreateNetwork", "ListNetworks"]
+    assert harness.admin.requests["ListNetworks"] == admin_pb.ListNetworksRequest(
+        name="eve-tenant", page=1
+    )
+
+
+def test_concurrent_create_or_get_calls_return_the_same_network(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(harness, [])
+    with futures.ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.map(lambda _: create_tenant(credentialed), range(2))
+    assert first.id == second.id
+
+
+async def test_async_concurrent_create_or_get_calls_return_the_same_network(
+    async_credentialed: AsyncMemco, harness: Harness
+):
+    serve_networks(harness, [])
+    first, second = await asyncio.gather(
+        create_tenant_async(async_credentialed),
+        create_tenant_async(async_credentialed),
+    )
+    assert first.id == second.id
+
+
+@pytest.mark.parametrize(
+    ("holder", "named"),
+    [
+        (admin_pb.Network(id="network-x", **{**TENANT, "owner": "someone"}), "owner 'someone'"),
+        # Names are unique across domains, so the holder is found by name alone.
+        (admin_pb.Network(id="network-x", **{**TENANT, "domain": "coding"}), "domain 'coding'"),
+        (admin_pb.Network(id="network-x", **TENANT, scope="internal"), "scope 'internal'"),
+        (
+            admin_pb.Network(id="network-x", name="eve-tenant", domain="knowledge"),
+            "a network without an owner",
+        ),
+    ],
+    ids=["another owner", "another domain", "another scope", "no owner"],
+)
+def test_create_or_get_refuses_a_network_it_did_not_create(
+    credentialed: Memco, harness: Harness, holder: admin_pb.Network, named: str
+):
+    serve_networks(harness, [holder])
+    with pytest.raises(errors.MemcoAlreadyExistsError) as caught:
+        credentialed.networks.create_or_get(
+            name="eve-tenant", domain="knowledge", owner="eve-tenant", scope="customer"
+        )
+    assert caught.value.message == f"network name 'eve-tenant' is held by {named}"
+
+
+def test_create_or_get_matches_an_owner_the_service_stored_trimmed(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(harness, [admin_pb.Network(id="network-t", **TENANT)])
+    network = credentialed.networks.create_or_get(
+        name="eve-tenant", domain="knowledge", owner=" eve-tenant "
+    )
+    assert network.id == "network-t"
+
+
+def test_create_or_get_matches_the_scope_given_and_any_scope_when_none_is(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(harness, [admin_pb.Network(id="network-t", **TENANT, scope="customer")])
+    scoped = credentialed.networks.create_or_get(
+        name="eve-tenant", domain="knowledge", owner="eve-tenant", scope="customer"
+    )
+    assert [scoped.id, create_tenant(credentialed).id] == ["network-t", "network-t"]
+
+
+def stage_empty_pages(harness: Harness) -> list[int]:
+    """Refuse the create, then answer every listing with an empty page claiming one match.
+
+    Returns:
+        A one-item list counting the listings made; past three it refuses, so a
+        runaway loop fails rather than hangs.
+    """
+    harness.admin.transient_errors["CreateNetwork"] = [(grpc.StatusCode.ALREADY_EXISTS, "taken")]
+    listings = [0]
+
+    def listing(request: admin_pb.ListNetworksRequest, context: grpc.ServicerContext) -> Any:
+        listings[0] += 1
+        if listings[0] > 3:
+            context.abort(grpc.StatusCode.INTERNAL, "runaway")
+        return admin_pb.ListNetworksResponse(total_count=1)
+
+    harness.admin.responses["ListNetworks"] = listing
+    return listings
+
+
+def test_create_or_get_stops_at_an_empty_page_whatever_the_total_says(
+    credentialed: Memco, harness: Harness
+):
+    listings = stage_empty_pages(harness)
+    with pytest.raises(errors.MemcoAlreadyExistsError):
+        create_tenant(credentialed)
+    assert listings == [1]
+
+
+async def test_async_create_or_get_stops_at_an_empty_page_whatever_the_total_says(
+    async_credentialed: AsyncMemco, harness: Harness
+):
+    listings = stage_empty_pages(harness)
+    with pytest.raises(errors.MemcoAlreadyExistsError):
+        await create_tenant_async(async_credentialed)
+    assert listings == [1]
+
+
+def test_create_or_get_reports_a_user_deleted_before_it_could_be_fetched(
+    credentialed: Memco, harness: Harness
+):
+    taken = (grpc.StatusCode.ALREADY_EXISTS, "taken")
+    harness.admin.transient_errors["CreateExternalUser"] = [taken]
+    harness.admin.transient_errors["GetExternalUser"] = [(grpc.StatusCode.NOT_FOUND, "gone")]
+    with pytest.raises(errors.MemcoNotFoundError):
+        credentialed.users.create_or_get(XID, roles=["reader"])
+
+
+def test_create_or_get_without_a_domain_matches_any_domain(credentialed: Memco, harness: Harness):
+    serve_networks(harness, [admin_pb.Network(id="network-t", **{**TENANT, "domain": "coding"})])
+    network = credentialed.networks.create_or_get(name="eve-tenant", owner="eve-tenant")
+    assert network.id == "network-t"
+    assert harness.admin.requests["ListNetworks"] == admin_pb.ListNetworksRequest(
+        name="eve-tenant", page=1
+    )
+
+
+def test_create_or_get_without_an_owner_matches_only_a_network_without_one(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(harness, [admin_pb.Network(id="network-t", name="plain", domain="knowledge")])
+    assert credentialed.networks.create_or_get(name="plain").id == "network-t"
+    serve_networks(harness, [admin_pb.Network(id="network-x", **TENANT)])
+    with pytest.raises(errors.MemcoAlreadyExistsError):
+        credentialed.networks.create_or_get(name="eve-tenant")
+
+
+def test_create_or_get_returns_the_exact_name_not_a_case_variant_listed_first(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(
+        harness,
+        [
+            admin_pb.Network(id="network-upper", **{**TENANT, "name": "EVE-TENANT"}),
+            admin_pb.Network(id="network-longer", **{**TENANT, "name": "eve-tenant-2"}),
+            admin_pb.Network(id="network-t", **TENANT),
+        ],
+    )
+    assert create_tenant(credentialed).id == "network-t"
+
+
+def test_create_or_get_pages_through_the_listing_to_the_exact_name(
+    credentialed: Memco, harness: Harness
+):
+    serve_networks(
+        harness,
+        [
+            admin_pb.Network(id="network-1", **{**TENANT, "name": "eve-tenant-1"}),
+            admin_pb.Network(id="network-2", **{**TENANT, "name": "eve-tenant-2"}),
+            admin_pb.Network(id="network-t", **TENANT),
+        ],
+        page_size=2,
+    )
+    assert create_tenant(credentialed).id == "network-t"
+    assert [each.page for each in harness.admin.received[1:]] == [1, 2]
+
+
+def test_create_or_get_refuses_when_the_taken_name_cannot_be_listed(
+    credentialed: Memco, harness: Harness
+):
+    # Taken, then deleted before the listing: nothing to return.
+    harness.admin.transient_errors["CreateNetwork"] = [(grpc.StatusCode.ALREADY_EXISTS, "taken")]
+    harness.admin.responses["ListNetworks"] = admin_pb.ListNetworksResponse(total_count=0)
+    with pytest.raises(errors.MemcoAlreadyExistsError):
+        create_tenant(credentialed)
+
+
+async def test_async_create_or_get_pages_through_the_listing_to_the_exact_name(
+    async_credentialed: AsyncMemco, harness: Harness
+):
+    serve_networks(
+        harness,
+        [
+            admin_pb.Network(id="network-1", **{**TENANT, "name": "eve-tenant-1"}),
+            admin_pb.Network(id="network-2", **{**TENANT, "name": "eve-tenant-2"}),
+            admin_pb.Network(id="network-t", **TENANT),
+        ],
+        page_size=2,
+    )
+    assert (await create_tenant_async(async_credentialed)).id == "network-t"
+    assert [each.page for each in harness.admin.received[1:]] == [1, 2]
+
+
+async def test_async_create_or_get_refuses_when_the_taken_name_cannot_be_listed(
+    async_credentialed: AsyncMemco, harness: Harness
+):
+    harness.admin.transient_errors["CreateNetwork"] = [(grpc.StatusCode.ALREADY_EXISTS, "taken")]
+    harness.admin.responses["ListNetworks"] = admin_pb.ListNetworksResponse(total_count=0)
+    with pytest.raises(errors.MemcoAlreadyExistsError):
+        await create_tenant_async(async_credentialed)

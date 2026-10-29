@@ -87,8 +87,9 @@ class _Recorder:
             test counting credentials needs to see.
         requests: The last request message received for each method, so a test
             can assert what actually went on the wire.
-        responses: Method name to canned response. A method with no entry
-            returns its default.
+        responses: Method name to canned response, or to a callable answer
+            taking the request and the context. A method with no entry returns
+            its default.
         error: When set to a ``(code, details)`` pair, every method aborts with
             it instead of responding.
         transient_errors: Method name to a queue of ``(code, details)`` pairs,
@@ -164,10 +165,13 @@ class _Recorder:
             request: The request message received.
 
         Returns:
-            The response message.
+            The response message. A staged callable is an answer, called per
+            call with the request and the context, so it can depend on state
+            or abort.
         """
         self._arrive(name, context, request)
-        return self.responses.get(name, default)
+        staged = self.responses.get(name, default)
+        return staged(request, context) if callable(staged) else staged
 
 
 class FakeMemoryService(_Recorder, pbg.MemoryServiceServicer):
