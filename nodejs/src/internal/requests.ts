@@ -705,7 +705,6 @@ export interface CreateNetworkOptions {
   parentId?: string | null
   parentIds?: Iterable<string> | null
   domain?: string | null
-  region?: string | null
   scope?: string | null
   owner?: string | null
   description?: string | null
@@ -730,7 +729,9 @@ export function createNetworkRequest(
     parentId: options.parentId ?? '',
     parentIds,
     domain: options.domain ?? '',
-    region: options.region ?? '',
+    // Deprecated and ignored: Memco runs in one region. Sent empty because the
+    // generated message still declares it.
+    region: '',
     scope: options.scope ?? '',
     owner: options.owner ?? '',
     description: options.description ?? ''
@@ -914,7 +915,8 @@ export function addNetworkGroupRequest(
 ): pb.admin.AddNetworkGroupRequest {
   validate.checkIdx(networkId, 'network_id')
   validate.checkIdx(groupId, 'group_id')
-  return built(() => ({ id: networkId, groupId }))
+  // No role limit: an empty list keeps whatever limit the group already has.
+  return built(() => ({ id: networkId, groupId, limitAssignableRoles: [] }))
 }
 
 /**

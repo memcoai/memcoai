@@ -647,7 +647,6 @@ def create_network_request(
     parent_id: str | None,
     parent_ids: Iterable[str] | None,
     domain: str | None,
-    region: str | None,
     scope: str | None,
     owner: str | None,
     description: str | None,
@@ -663,7 +662,6 @@ def create_network_request(
         parent_ids: The networks to create this one under. Consumed exactly
             once.
         domain: The memory domain of a root network.
-        region: The network's data residency.
         scope: The network's scope.
         owner: Who the network's knowledge belongs to.
         description: What the network is for.
@@ -682,7 +680,6 @@ def create_network_request(
             parent_id=parent_id,
             parent_ids=parents,
             domain=domain,
-            region=region,
             scope=scope,
             owner=owner,
             description=description,

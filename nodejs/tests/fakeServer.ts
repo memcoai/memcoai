@@ -82,10 +82,11 @@ export interface Arrival {
  */
 export type Answer = (request: never, metadata: Metadata) => unknown
 
-/** The ten methods the memory service publishes, in their grpc-js spelling. */
+/** The methods the memory service publishes, in their grpc-js spelling. */
 export type MemoryMethod =
   | 'listDomains'
   | 'startSession'
+  | 'getSession'
   | 'search'
   | 'getMemory'
   | 'createMemory'
@@ -111,6 +112,7 @@ export type AdminMethod = keyof typeof pb.admin.AdminServiceService
 const ALL_TOOLS = [
   'list_domains',
   'start_session',
+  'get_session',
   'search',
   'get_memory',
   'create_memory',
@@ -336,6 +338,12 @@ export class FakeMemoryService extends Recorder<MemoryMethod> {
       startSession: this.on('startSession', () =>
         pb.StartSessionResponse.fromPartial({ sessionId: 'session-a' })
       ),
+      getSession: this.on('getSession', (request: pb.GetSessionRequest) =>
+        pb.GetSessionResponse.fromPartial({
+          sessionId: request.sessionId,
+          domain: 'coding'
+        })
+      ),
       search: this.on('search', () =>
         pb.SearchResponse.fromPartial({ sessionId: 'session-a' })
       ),
@@ -414,7 +422,6 @@ export const NETWORK = pb.admin.Network.fromPartial({
   parentId: 'network-root',
   parentIds: ['network-root'],
   domain: 'coding',
-  region: 'global',
   scope: 'customer',
   owner: 'acme',
   description: "Acme's support knowledge"
@@ -515,7 +522,6 @@ export class FakeAdminService extends Recorder<AdminMethod> {
             parentId: request.parentId,
             parentIds: request.parentIds,
             domain: request.domain || 'coding',
-            region: request.region || 'global',
             scope: request.scope,
             owner: request.owner,
             description: request.description
@@ -571,7 +577,10 @@ export class FakeAdminService extends Recorder<AdminMethod> {
       addNetworkGroup: this.on(
         'addNetworkGroup',
         (request: pb.admin.AddNetworkGroupRequest) =>
-          a.AddNetworkGroupResponse.fromPartial(request)
+          a.AddNetworkGroupResponse.fromPartial({
+            id: request.id,
+            groupId: request.groupId
+          })
       ),
       removeNetworkGroup: this.on(
         'removeNetworkGroup',

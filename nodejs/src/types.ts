@@ -826,8 +826,6 @@ export interface Network {
   readonly parentIds: readonly string[]
   /** The memory domain the network belongs to. */
   readonly domain: string
-  /** The network's data residency. `global` replicates everywhere. */
-  readonly region: string
   /**
    * `internal` or `customer`, or `null` where the organization does not use
    * scopes. An external user can be placed only in a customer network.

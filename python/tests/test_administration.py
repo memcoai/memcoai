@@ -129,7 +129,6 @@ CASES = [
                 "name": "Acme",
                 "parent_ids": ["network-root", "network-shared"],
                 "domain": "coding",
-                "region": "eu",
                 "scope": "customer",
                 "owner": "acme",
                 "description": "Acme's support knowledge",
@@ -139,7 +138,6 @@ CASES = [
             name="Acme",
             parent_ids=["network-root", "network-shared"],
             domain="coding",
-            region="eu",
             scope="customer",
             owner="acme",
             description="Acme's support knowledge",
@@ -398,9 +396,7 @@ def test_every_result_type_is_an_immutable_public_value(result_type: type):
 
 def test_a_network_reads_its_absent_fields_as_none(credentialed: Memco, harness: Harness):
     harness.admin.responses["ListNetworks"] = admin_pb.ListNetworksResponse(
-        networks=[
-            admin_pb.Network(id="network-root", name="Root", domain="coding", region="global")
-        ],
+        networks=[admin_pb.Network(id="network-root", name="Root", domain="coding")],
         total_count=7,
     )
     assert credentialed.networks.list() == NetworkList(
@@ -411,7 +407,6 @@ def test_a_network_reads_its_absent_fields_as_none(credentialed: Memco, harness:
                 parent_id=None,
                 parent_ids=(),
                 domain="coding",
-                region="global",
                 scope=None,
                 owner=None,
                 description="",
@@ -440,7 +435,6 @@ def test_a_network_reads_every_field_it_carries(credentialed: Memco, harness: Ha
         parent_id="network-root",
         parent_ids=("network-root", "network-shared"),
         domain="coding",
-        region="eu",
         scope="customer",
         owner="acme",
         description="Acme's support knowledge",

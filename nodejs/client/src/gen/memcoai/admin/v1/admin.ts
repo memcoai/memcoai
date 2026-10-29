@@ -37,7 +37,11 @@ export interface Network {
   parentId: string;
   /** domain is the memory domain the network's tree belongs to. */
   domain: string;
-  /** region is the network's data residency; "global" replicates everywhere. */
+  /**
+   * region is always "eu": Memco runs in one region. Kept for older clients.
+   *
+   * @deprecated
+   */
   region: string;
   /** scope is "internal" or "customer", where the organization uses it. */
   scope: string;
@@ -90,7 +94,11 @@ export interface CreateNetworkRequest {
    * must not name one.
    */
   domain: string;
-  /** region is the data residency; empty takes the organization's default. */
+  /**
+   * region is ignored: Memco runs in one region. Kept for older clients.
+   *
+   * @deprecated
+   */
   region: string;
   scope: string;
   owner: string;
@@ -219,6 +227,16 @@ export interface Group {
    */
   memoryNetworkId: string;
   memberCount: number;
+  /**
+   * memory_network_ids is every network the group is bound to; a group limited
+   * to moderation may be bound to several in one domain.
+   */
+  memoryNetworkIds: string[];
+  /**
+   * limit_assignable_roles is empty when the group gives every role its members
+   * hold, or ["content_moderator"] when it gives moderation only.
+   */
+  limitAssignableRoles: string[];
 }
 
 /** ListGroupsRequest pages through the organization's groups. */
@@ -253,6 +271,13 @@ export interface ListGroupMembersResponse {
 export interface AddNetworkGroupRequest {
   id: string;
   groupId: string;
+  /**
+   * limit_assignable_roles ["content_moderator"] limits the group to moderation
+   * and adds the network beside its others; empty keeps the group's limit. The
+   * limit is the group's on every network it is bound to, and changes only while
+   * the group is bound to this network alone.
+   */
+  limitAssignableRoles: string[];
 }
 
 /** AddNetworkGroupResponse is the acknowledgement of an assignment. */
@@ -2121,7 +2146,7 @@ export const RemoveNetworkMemberResponse: MessageFns<RemoveNetworkMemberResponse
 };
 
 function createBaseGroup(): Group {
-  return { id: "", name: "", memoryNetworkId: "", memberCount: 0 };
+  return { id: "", name: "", memoryNetworkId: "", memberCount: 0, memoryNetworkIds: [], limitAssignableRoles: [] };
 }
 
 export const Group: MessageFns<Group> = {
@@ -2137,6 +2162,12 @@ export const Group: MessageFns<Group> = {
     }
     if (message.memberCount !== 0) {
       writer.uint32(32).int64(message.memberCount);
+    }
+    for (const v of message.memoryNetworkIds) {
+      writer.uint32(42).string(v!);
+    }
+    for (const v of message.limitAssignableRoles) {
+      writer.uint32(50).string(v!);
     }
     return writer;
   },
@@ -2180,6 +2211,22 @@ export const Group: MessageFns<Group> = {
           message.memberCount = longToNumber(reader.int64());
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.memoryNetworkIds.push(reader.string());
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.limitAssignableRoles.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2195,6 +2242,12 @@ export const Group: MessageFns<Group> = {
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       memoryNetworkId: isSet(object.memoryNetworkId) ? globalThis.String(object.memoryNetworkId) : "",
       memberCount: isSet(object.memberCount) ? globalThis.Number(object.memberCount) : 0,
+      memoryNetworkIds: globalThis.Array.isArray(object?.memoryNetworkIds)
+        ? object.memoryNetworkIds.map((e: any) => globalThis.String(e))
+        : [],
+      limitAssignableRoles: globalThis.Array.isArray(object?.limitAssignableRoles)
+        ? object.limitAssignableRoles.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -2212,6 +2265,12 @@ export const Group: MessageFns<Group> = {
     if (message.memberCount !== 0) {
       obj.memberCount = Math.round(message.memberCount);
     }
+    if (message.memoryNetworkIds?.length) {
+      obj.memoryNetworkIds = message.memoryNetworkIds;
+    }
+    if (message.limitAssignableRoles?.length) {
+      obj.limitAssignableRoles = message.limitAssignableRoles;
+    }
     return obj;
   },
 
@@ -2224,6 +2283,8 @@ export const Group: MessageFns<Group> = {
     message.name = object.name ?? "";
     message.memoryNetworkId = object.memoryNetworkId ?? "";
     message.memberCount = object.memberCount ?? 0;
+    message.memoryNetworkIds = object.memoryNetworkIds?.map((e) => e) || [];
+    message.limitAssignableRoles = object.limitAssignableRoles?.map((e) => e) || [];
     return message;
   },
 };
@@ -2547,7 +2608,7 @@ export const ListGroupMembersResponse: MessageFns<ListGroupMembersResponse> = {
 };
 
 function createBaseAddNetworkGroupRequest(): AddNetworkGroupRequest {
-  return { id: "", groupId: "" };
+  return { id: "", groupId: "", limitAssignableRoles: [] };
 }
 
 export const AddNetworkGroupRequest: MessageFns<AddNetworkGroupRequest> = {
@@ -2557,6 +2618,9 @@ export const AddNetworkGroupRequest: MessageFns<AddNetworkGroupRequest> = {
     }
     if (message.groupId !== "") {
       writer.uint32(18).string(message.groupId);
+    }
+    for (const v of message.limitAssignableRoles) {
+      writer.uint32(26).string(v!);
     }
     return writer;
   },
@@ -2584,6 +2648,14 @@ export const AddNetworkGroupRequest: MessageFns<AddNetworkGroupRequest> = {
           message.groupId = reader.string();
           continue;
         }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.limitAssignableRoles.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2597,6 +2669,9 @@ export const AddNetworkGroupRequest: MessageFns<AddNetworkGroupRequest> = {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       groupId: isSet(object.groupId) ? globalThis.String(object.groupId) : "",
+      limitAssignableRoles: globalThis.Array.isArray(object?.limitAssignableRoles)
+        ? object.limitAssignableRoles.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -2608,6 +2683,9 @@ export const AddNetworkGroupRequest: MessageFns<AddNetworkGroupRequest> = {
     if (message.groupId !== "") {
       obj.groupId = message.groupId;
     }
+    if (message.limitAssignableRoles?.length) {
+      obj.limitAssignableRoles = message.limitAssignableRoles;
+    }
     return obj;
   },
 
@@ -2618,6 +2696,7 @@ export const AddNetworkGroupRequest: MessageFns<AddNetworkGroupRequest> = {
     const message = createBaseAddNetworkGroupRequest();
     message.id = object.id ?? "";
     message.groupId = object.groupId ?? "";
+    message.limitAssignableRoles = object.limitAssignableRoles?.map((e) => e) || [];
     return message;
   },
 };

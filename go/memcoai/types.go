@@ -346,8 +346,6 @@ type Network struct {
 	ParentIDs []string
 	// Domain is the memory domain the network belongs to.
 	Domain string
-	// Region is where the network's data resides.
-	Region string
 	// Scope is "internal" or "customer", or empty where the organization
 	// uses no scopes.
 	Scope string

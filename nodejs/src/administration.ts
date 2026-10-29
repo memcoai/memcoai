@@ -100,11 +100,6 @@ export interface CreateNetworkOptions extends TimeoutOptions {
    */
   domain?: string
   /**
-   * The network's data residency. Omitted, your organization's default.
-   * `global` replicates everywhere.
-   */
-  region?: string
-  /**
    * `internal` or `customer`, where your organization uses scopes. An external
    * user can be placed only in a customer network.
    */
