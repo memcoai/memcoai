@@ -429,27 +429,47 @@ class NetworkOperations:
         request = _requests.list_group_members_request(group_id)
         return _convert.to_group_members(self._call(self._stub.ListGroupMembers, request, timeout))
 
-    def add_group(self, network_id: str, group_id: str, *, timeout: float | None = None) -> None:
+    def add_group(
+        self,
+        network_id: str,
+        group_id: str,
+        *,
+        limit_assignable_roles: Iterable[str] | None = None,
+        timeout: float | None = None,
+    ) -> None:
         """Assign an identity-provider group to a network, placing its members there.
 
         A group holds one network per memory domain, so this replaces the
-        group's network in this network's domain. Available to enterprise
-        organizations only.
+        group's network in this network's domain. A group limited to
+        moderation instead keeps its others, and may be bound to several
+        networks in one domain. Available to enterprise organizations only.
 
         Args:
             network_id: The network to assign the group to.
             group_id: The group to assign.
+            limit_assignable_roles: The roles the group may give its members on
+                every network it is bound to: ``["content_moderator"]`` gives
+                moderation only, and adds this network beside the group's
+                others. Omitted or empty, the group's limit stays as it is. The
+                limit changes only while the group is bound to this network
+                alone.
             timeout: Deadline in seconds for the whole call, including any wait
                 for a credential. Defaults to the client's.
 
         Raises:
-            MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank.
+            MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank,
+                or ``limit_assignable_roles`` is a single string.
             MemcoAPIError: If the service returns an error status.
 
         Example:
             >>> client.networks.add_group("network-support", "group-a")
+            >>> client.networks.add_group(
+            ...     "network-review",
+            ...     "group-moderators",
+            ...     limit_assignable_roles=["content_moderator"],
+            ... )
         """
-        request = _requests.add_network_group_request(network_id, group_id)
+        request = _requests.add_network_group_request(network_id, group_id, limit_assignable_roles)
         self._call(self._stub.AddNetworkGroup, request, timeout)
 
     def remove_group(self, network_id: str, group_id: str, *, timeout: float | None = None) -> None:
@@ -871,28 +891,46 @@ class AsyncNetworkOperations:
         )
 
     async def add_group(
-        self, network_id: str, group_id: str, *, timeout: float | None = None
+        self,
+        network_id: str,
+        group_id: str,
+        *,
+        limit_assignable_roles: Iterable[str] | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Assign an identity-provider group to a network, placing its members there.
 
         A group holds one network per memory domain, so this replaces the
-        group's network in this network's domain. Available to enterprise
-        organizations only.
+        group's network in this network's domain. A group limited to
+        moderation instead keeps its others, and may be bound to several
+        networks in one domain. Available to enterprise organizations only.
 
         Args:
             network_id: The network to assign the group to.
             group_id: The group to assign.
+            limit_assignable_roles: The roles the group may give its members on
+                every network it is bound to: ``["content_moderator"]`` gives
+                moderation only, and adds this network beside the group's
+                others. Omitted or empty, the group's limit stays as it is. The
+                limit changes only while the group is bound to this network
+                alone.
             timeout: Deadline in seconds for the whole call, including any wait
                 for a credential. Defaults to the client's.
 
         Raises:
-            MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank.
+            MemcoInvalidRequestError: If ``network_id`` or ``group_id`` is blank,
+                or ``limit_assignable_roles`` is a single string.
             MemcoAPIError: If the service returns an error status.
 
         Example:
             >>> await client.networks.add_group("network-support", "group-a")
+            >>> await client.networks.add_group(
+            ...     "network-review",
+            ...     "group-moderators",
+            ...     limit_assignable_roles=["content_moderator"],
+            ... )
         """
-        request = _requests.add_network_group_request(network_id, group_id)
+        request = _requests.add_network_group_request(network_id, group_id, limit_assignable_roles)
         await self._call(self._stub.AddNetworkGroup, request, timeout)
 
     async def remove_group(

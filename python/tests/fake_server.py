@@ -289,7 +289,14 @@ _NETWORK = admin_pb.Network(
     description="Acme's support knowledge",
 )
 _MEMBER = admin_pb.Member(user_id="user-a", email="ada@example.com", name="Ada")
-_GROUP = admin_pb.Group(id="group-a", name="Support", memory_network_id="network-a", member_count=2)
+_GROUP = admin_pb.Group(
+    id="group-a",
+    name="Support",
+    memory_network_id="network-a",
+    member_count=2,
+    memory_network_ids=["network-a", "network-b"],
+    limit_assignable_roles=["content_moderator"],
+)
 _EXTERNAL_USER = admin_pb.ExternalUser(
     id="xuser-a",
     external_id="customer-42",

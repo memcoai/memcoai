@@ -906,17 +906,24 @@ export function listGroupMembersRequest(
  *
  * @param networkId The network to assign the group to.
  * @param groupId The group to assign.
+ * @param limitAssignableRoles The roles the group is limited to. Omitted or
+ *   empty, the group keeps the limit it has. Consumed once.
  * @returns The request message.
- * @throws A `MemcoInvalidRequestError` if the network or the group is blank.
+ * @throws A `MemcoInvalidRequestError` if the network or the group is blank,
+ *   or the roles are a single string.
  */
 export function addNetworkGroupRequest(
   networkId: string,
-  groupId: string
+  groupId: string,
+  limitAssignableRoles?: Iterable<string> | null
 ): pb.admin.AddNetworkGroupRequest {
   validate.checkIdx(networkId, 'network_id')
   validate.checkIdx(groupId, 'group_id')
-  // No role limit: an empty list keeps whatever limit the group already has.
-  return built(() => ({ id: networkId, groupId, limitAssignableRoles: [] }))
+  const roles = validate.checkStrings(
+    limitAssignableRoles,
+    'limit_assignable_roles'
+  )
+  return built(() => ({ id: networkId, groupId, limitAssignableRoles: roles }))
 }
 
 /**

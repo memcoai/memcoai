@@ -122,7 +122,7 @@ func TestGroupsAreRefusedOutsideAnEnterprise(t *testing.T) {
 		t.Skip("groups are available here, and this suite changes only what it creates")
 	}
 	t.Log("groups are refused: this is not an enterprise organisation")
-	expect[*memcoai.PermissionError](t, admin.Networks.AddGroup(t.Context(), network.ID, "group-that-is-never-reached"))
+	expect[*memcoai.PermissionError](t, admin.Networks.AddGroup(t.Context(), network.ID, "group-that-is-never-reached", memcoai.AddGroupParams{}))
 }
 
 func TestAnExternalUserIsCreatedFoundChangedAndDeleted(t *testing.T) {

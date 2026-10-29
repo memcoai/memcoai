@@ -113,6 +113,16 @@ type AddMemberParams struct {
 	Force bool
 }
 
+// AddGroupParams qualify [NetworkOperations.AddGroup].
+type AddGroupParams struct {
+	// LimitAssignableRoles are the roles the group may give its members on
+	// every network it is bound to: ["content_moderator"] gives moderation
+	// only, and adds this network beside the group's others. Empty, the
+	// group's limit stays as it is. The limit changes only while the group is
+	// bound to this network alone.
+	LimitAssignableRoles []string
+}
+
 // ListGroupsParams narrow [NetworkOperations.ListGroups]. Every field is
 // optional, and those given must all match.
 type ListGroupsParams struct {
@@ -349,20 +359,23 @@ func (n *NetworkOperations) ListGroupMembers(ctx context.Context, groupID string
 
 // AddGroup assigns an identity-provider group to a network, placing its
 // members there. A group holds one network per memory domain, so this
-// replaces the group's network in this network's domain.
+// replaces the group's network in this network's domain. A group limited to
+// moderation instead keeps its others, and may be bound to several networks
+// in one domain.
 //
 // Parameters:
 //   - ctx: bounds the call. Without a deadline, [Options.Timeout] applies; if
 //     ctx has already ended, nothing is sent.
 //   - networkID: the network to assign the group to.
 //   - groupID: the group to assign.
+//   - p: the roles the group is limited to; the zero value keeps its limit.
 //
 // Errors: [*InvalidRequestError] when networkID or groupID is blank (nothing
 // is sent); [*PermissionError] outside an enterprise organization;
 // [*NotFoundError]; [*ConfigError] when the client is closed.
-func (n *NetworkOperations) AddGroup(ctx context.Context, networkID, groupID string) error {
+func (n *NetworkOperations) AddGroup(ctx context.Context, networkID, groupID string, p AddGroupParams) error {
 	_, err := administer(ctx, n.client, "AddNetworkGroup", &adminv1.AddNetworkGroupRequest{
-		Id: networkID, GroupId: groupID,
+		Id: networkID, GroupId: groupID, LimitAssignableRoles: slices.Clone(p.LimitAssignableRoles),
 	}, n.rpc.AddNetworkGroup)
 	return err
 }

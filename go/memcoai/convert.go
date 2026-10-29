@@ -243,6 +243,7 @@ func toGroupList(m *adminv1.ListGroupsResponse) *GroupList {
 	for _, group := range m.GetGroups() {
 		list.Groups = append(list.Groups, Group{
 			ID: group.GetId(), Name: group.GetName(), MemoryNetworkID: group.GetMemoryNetworkId(), MemberCount: group.GetMemberCount(),
+			MemoryNetworkIDs: slices.Clone(group.GetMemoryNetworkIds()), LimitAssignableRoles: slices.Clone(group.GetLimitAssignableRoles()),
 		})
 	}
 	return list

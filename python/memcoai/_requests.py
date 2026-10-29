@@ -869,23 +869,32 @@ def list_group_members_request(group_id: str) -> _admin_pb.ListGroupMembersReque
     return _built(lambda: _admin_pb.ListGroupMembersRequest(id=group_id))
 
 
-def add_network_group_request(network_id: str, group_id: str) -> _admin_pb.AddNetworkGroupRequest:
+def add_network_group_request(
+    network_id: str, group_id: str, limit_assignable_roles: Iterable[str] | None = None
+) -> _admin_pb.AddNetworkGroupRequest:
     """Validate and build an ``AddNetworkGroup`` request.
 
     Args:
         network_id: The network to assign the group to.
         group_id: The group to assign.
+        limit_assignable_roles: The roles the group is limited to. Omitted or
+            empty, the group keeps the limit it has. Consumed once.
 
     Returns:
         The request message.
 
     Raises:
-        MemcoInvalidRequestError: If the network or the group is blank, or a
-            value cannot be sent.
+        MemcoInvalidRequestError: If the network or the group is blank, the
+            roles are a single string, or a value cannot be sent.
     """
     _validate.check_idx(network_id, "network_id")
     _validate.check_idx(group_id, "group_id")
-    return _built(lambda: _admin_pb.AddNetworkGroupRequest(id=network_id, group_id=group_id))
+    roles = _validate.check_strings(limit_assignable_roles, "limit_assignable_roles")
+    return _built(
+        lambda: _admin_pb.AddNetworkGroupRequest(
+            id=network_id, group_id=group_id, limit_assignable_roles=roles
+        )
+    )
 
 
 def remove_network_group_request(
