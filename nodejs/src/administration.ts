@@ -20,6 +20,9 @@
  * into one options object, required fields included.
  */
 
+import { status } from '@grpc/grpc-js'
+
+import { MemcoAlreadyExistsError } from './errors.js'
 import * as convert from './internal/convert.js'
 import type * as pb from './internal/gen.js'
 import * as requests from './internal/requests.js'
@@ -351,6 +354,73 @@ export class NetworkOperations {
       'CreateNetwork'
     )
     return convert.toNetwork(response)
+  }
+
+  /**
+   * Create a memory network, or return the one already holding its name.
+   *
+   * Safe when two callers race to create one network: the loser is handed
+   * the winner's. The existing network is returned only if it has the owner
+   * asked for (no owner matches a network without one) and, when a domain or
+   * a scope is given, that domain and scope; a network that merely shares the
+   * name is never adopted. Names are matched exactly, case included.
+   *
+   * @param options The network's name, where it goes, and a deadline for each
+   *   call made.
+   * @returns The network as created, or as it already was.
+   * @throws MemcoAlreadyExistsError If the name is held by a network with
+   *   another owner, domain or scope, or by one that cannot be listed.
+   *
+   * @example
+   * ```ts
+   * const acme = await client.networks.createOrGet({
+   *   name: 'acme',
+   *   domain: 'knowledge',
+   *   scope: 'customer',
+   *   owner: 'acme'
+   * })
+   * ```
+   */
+  async createOrGet(options: CreateNetworkOptions): Promise<Network> {
+    try {
+      return await this.create(options)
+    } catch (error) {
+      if (!(error instanceof MemcoAlreadyExistsError)) {
+        throw error
+      }
+    }
+    const { name, domain, scope, owner, timeout } = options
+    // Names are unique across domains, so the holder is listed by name alone.
+    // The service's name filter is a case-insensitive substring match that
+    // also lists the matches' relatives, so the exact name is found here, on
+    // whichever page it falls.
+    let seen = 0
+    for (let page = 1; ; page++) {
+      const listing = await this.list({ name, page, timeout })
+      const existing = listing.networks.find(each => each.name === name)
+      if (existing !== undefined) {
+        // The service stores the owner trimmed.
+        if ((existing.owner ?? '') !== (owner ?? '').trim()) {
+          throw taken(
+            name,
+            existing.owner === null
+              ? 'a network without an owner'
+              : `owner ${JSON.stringify(existing.owner)}`
+          )
+        }
+        if (domain && existing.domain !== domain) {
+          throw taken(name, `domain ${JSON.stringify(existing.domain)}`)
+        }
+        if (scope && existing.scope !== scope) {
+          throw taken(name, `scope ${JSON.stringify(existing.scope)}`)
+        }
+        return existing
+      }
+      seen += listing.networks.length
+      if (listing.networks.length === 0 || seen >= listing.totalCount) {
+        throw taken(name, 'a network that cannot be listed')
+      }
+    }
   }
 
   /**
@@ -743,6 +813,43 @@ export class UserOperations {
   }
 
   /**
+   * Create an external user, or return the one already holding its id.
+   *
+   * Safe when two callers race to create one user: the loser is handed the
+   * winner's. The existing user is returned as it is; its roles, name and
+   * email are not compared with `options` or changed.
+   *
+   * @param externalId Your id for the user, unique within your organization.
+   * @param options The user's roles, name and email, and a deadline for each
+   *   call made.
+   * @returns The user as created, or as it already was.
+   * @throws MemcoInvalidRequestError If `externalId` is blank, or `roles` is a
+   *   single string or names no role.
+   * @throws MemcoNotFoundError If the user that held the id was deleted before
+   *   it could be fetched.
+   *
+   * @example
+   * ```ts
+   * const user = await client.users.createOrGet('customer-42', {
+   *   roles: ['reader', 'creator']
+   * })
+   * ```
+   */
+  async createOrGet(
+    externalId: string,
+    options: CreateUserOptions
+  ): Promise<ExternalUser> {
+    try {
+      return await this.create(externalId, options)
+    } catch (error) {
+      if (!(error instanceof MemcoAlreadyExistsError)) {
+        throw error
+      }
+    }
+    return await this.get(externalId, { timeout: options.timeout })
+  }
+
+  /**
    * Change an external user's name, email or roles.
    *
    * @param externalId Your id for the user to change.
@@ -881,4 +988,19 @@ export class UserOperations {
       'DeleteExternalUserKey'
     )
   }
+}
+
+/**
+ * The refusal {@link NetworkOperations.createOrGet} raises for a name it will
+ * not adopt.
+ *
+ * @param name The name asked for.
+ * @param holder What holds it instead.
+ * @returns The error, as the service's own refusal of the create would read.
+ */
+function taken(name: string, holder: string): MemcoAlreadyExistsError {
+  return new MemcoAlreadyExistsError(
+    status.ALREADY_EXISTS,
+    `network name ${JSON.stringify(name)} is held by ${holder}`
+  )
 }

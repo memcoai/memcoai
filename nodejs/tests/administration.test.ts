@@ -19,6 +19,8 @@ import {
   MemcoExternalUserNeedsCustomerNetworkError,
   MemcoInternalError,
   MemcoInvalidRequestError,
+  MemcoNotFoundError,
+  MemcoPermissionError,
   MemcoPreconditionFailedError,
   MemcoUserAlreadyAssignedNetworkError
 } from '../src/errors.js'
@@ -26,6 +28,7 @@ import * as pb from '../src/internal/gen.js'
 import { CreatedKey } from '../src/types.js'
 import {
   KEY_VALUE,
+  Refusal,
   withHarness,
   type AdminMethod,
   type Harness
@@ -853,5 +856,339 @@ test('a customer-network refusal names the scope it needs, and is no sunset', as
         return true
       }
     )
+  })
+})
+
+// --- create or return ----------------------------------------------------
+
+test('users.createOrGet creates a user that does not exist yet', async () => {
+  await withClient(async (memco, harness) => {
+    const user = await memco.users.createOrGet('customer-42', {
+      roles: ['reader']
+    })
+    assert.equal(user.externalId, 'customer-42')
+    assert.deepEqual(harness.admin.calls, ['createExternalUser'])
+  })
+})
+
+test('users.createOrGet returns the user that already exists', async () => {
+  await withClient(async (memco, harness) => {
+    harness.admin.transientErrors.set('createExternalUser', [
+      { code: status.ALREADY_EXISTS, details: 'external user already exists' }
+    ])
+    const user = await memco.users.createOrGet('customer-42', {
+      roles: ['reader']
+    })
+    assert.equal(user.id, 'xuser-a')
+    assert.deepEqual(harness.admin.calls, [
+      'createExternalUser',
+      'getExternalUser'
+    ])
+    assert.deepEqual(
+      harness.admin.requests.get('getExternalUser'),
+      a.GetExternalUserRequest.fromPartial({ externalId: 'customer-42' })
+    )
+  })
+})
+
+test('users.createOrGet reports a user deleted before it could be fetched', async () => {
+  await withClient(async (memco, harness) => {
+    harness.admin.transientErrors.set('createExternalUser', [
+      { code: status.ALREADY_EXISTS, details: 'taken' }
+    ])
+    harness.admin.transientErrors.set('getExternalUser', [
+      { code: status.NOT_FOUND, details: 'gone' }
+    ])
+    await assert.rejects(
+      memco.users.createOrGet('customer-42', { roles: ['reader'] }),
+      MemcoNotFoundError
+    )
+  })
+})
+
+test('users.createOrGet passes on any other refusal of the create', async () => {
+  await withClient(async (memco, harness) => {
+    harness.admin.transientErrors.set('createExternalUser', [
+      { code: status.PERMISSION_DENIED, details: 'no' }
+    ])
+    await assert.rejects(
+      memco.users.createOrGet('customer-42', { roles: ['reader'] }),
+      MemcoPermissionError
+    )
+    assert.deepEqual(harness.admin.calls, ['createExternalUser'])
+  })
+})
+
+/**
+ * Serve CreateNetwork and ListNetworks from a list of networks, as the
+ * service does: a taken name is refused, case-sensitively, and the listing
+ * matches names case-insensitively, as substrings, `pageSize` at a time.
+ */
+function serveNetworks(
+  harness: Harness,
+  existing: Partial<pb.admin.Network>[],
+  pageSize = 100
+): void {
+  const networks = existing.map(each => a.Network.fromPartial(each))
+  harness.admin.responses.set(
+    'createNetwork',
+    (request: pb.admin.CreateNetworkRequest) => {
+      if (networks.some(each => each.name === request.name)) {
+        throw new Refusal({
+          code: status.ALREADY_EXISTS,
+          details: 'memory network name is already taken in this organization'
+        })
+      }
+      const created = a.Network.fromPartial({
+        id: `network-${networks.length + 1}`,
+        name: request.name,
+        domain: request.domain || 'knowledge',
+        owner: request.owner,
+        scope: request.scope
+      })
+      networks.push(created)
+      return created
+    }
+  )
+  harness.admin.responses.set(
+    'listNetworks',
+    (request: pb.admin.ListNetworksRequest) => {
+      const matching = networks.filter(
+        each =>
+          each.name.toLowerCase().includes(request.name.toLowerCase()) &&
+          (request.domain === '' || each.domain === request.domain)
+      )
+      const page = Math.max(request.page, 1)
+      return a.ListNetworksResponse.fromPartial({
+        networks: matching.slice((page - 1) * pageSize, page * pageSize),
+        totalCount: matching.length
+      })
+    }
+  )
+}
+
+const TENANT = { name: 'eve-tenant', domain: 'knowledge', owner: 'eve-tenant' }
+
+test('networks.createOrGet creates a network that does not exist yet', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [])
+    const network = await memco.networks.createOrGet(TENANT)
+    assert.equal(network.name, 'eve-tenant')
+    assert.deepEqual(harness.admin.calls, ['createNetwork'])
+  })
+})
+
+test('networks.createOrGet returns the network that already exists', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-t', ...TENANT }])
+    const network = await memco.networks.createOrGet(TENANT)
+    assert.equal(network.id, 'network-t')
+    assert.deepEqual(harness.admin.calls, ['createNetwork', 'listNetworks'])
+    assert.deepEqual(
+      harness.admin.requests.get('listNetworks'),
+      a.ListNetworksRequest.fromPartial({ name: 'eve-tenant', page: 1 })
+    )
+  })
+})
+
+test('two concurrent networks.createOrGet calls return the same network', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [])
+    const [first, second] = await Promise.all([
+      memco.networks.createOrGet(TENANT),
+      memco.networks.createOrGet(TENANT)
+    ])
+    assert.equal(first.id, second.id)
+  })
+})
+
+test('networks.createOrGet refuses a network with another owner', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-x', ...TENANT, owner: 'someone' }])
+    await assert.rejects(
+      memco.networks.createOrGet(TENANT),
+      (error: unknown) =>
+        error instanceof MemcoAlreadyExistsError &&
+        error.message.includes('eve-tenant') &&
+        error.message.includes('owner')
+    )
+  })
+})
+
+test('networks.createOrGet refuses a network in another domain, naming it', async () => {
+  await withClient(async (memco, harness) => {
+    // Names are unique across domains, so the holder is found by name alone.
+    serveNetworks(harness, [{ id: 'network-x', ...TENANT, domain: 'coding' }])
+    await assert.rejects(
+      memco.networks.createOrGet(TENANT),
+      (error: unknown) =>
+        error instanceof MemcoAlreadyExistsError &&
+        error.message.includes('domain "coding"')
+    )
+  })
+})
+
+test('networks.createOrGet refuses a network of another scope', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-x', ...TENANT, scope: 'internal' }])
+    await assert.rejects(
+      memco.networks.createOrGet({ ...TENANT, scope: 'customer' }),
+      (error: unknown) =>
+        error instanceof MemcoAlreadyExistsError &&
+        error.message.includes('scope "internal"')
+    )
+  })
+})
+
+test('networks.createOrGet matches the scope given, and any scope when none is', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-t', ...TENANT, scope: 'customer' }])
+    const scoped = await memco.networks.createOrGet({
+      ...TENANT,
+      scope: 'customer'
+    })
+    const unscoped = await memco.networks.createOrGet(TENANT)
+    assert.deepEqual([scoped.id, unscoped.id], ['network-t', 'network-t'])
+  })
+})
+
+test('networks.createOrGet names a holder without an owner as such', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-x', name: 'eve-tenant' }])
+    await assert.rejects(
+      memco.networks.createOrGet(TENANT),
+      (error: unknown) =>
+        error instanceof MemcoAlreadyExistsError &&
+        error.message.endsWith('is held by a network without an owner')
+    )
+  })
+})
+
+test('networks.createOrGet without a domain matches a network in any domain', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-t', ...TENANT, domain: 'coding' }])
+    const { domain: _, ...withoutDomain } = TENANT
+    const network = await memco.networks.createOrGet(withoutDomain)
+    assert.equal(network.id, 'network-t')
+    assert.deepEqual(
+      harness.admin.requests.get('listNetworks'),
+      a.ListNetworksRequest.fromPartial({ name: 'eve-tenant', page: 1 })
+    )
+  })
+})
+
+test('networks.createOrGet stops at an empty page, whatever the total says', async () => {
+  await withClient(async (memco, harness) => {
+    harness.admin.transientErrors.set('createNetwork', [
+      { code: status.ALREADY_EXISTS, details: 'taken' }
+    ])
+    let listings = 0
+    harness.admin.responses.set('listNetworks', () => {
+      listings += 1
+      if (listings > 3) {
+        throw new Refusal({ code: status.INTERNAL, details: 'runaway' })
+      }
+      return a.ListNetworksResponse.fromPartial({ networks: [], totalCount: 1 })
+    })
+    await assert.rejects(
+      memco.networks.createOrGet(TENANT),
+      MemcoAlreadyExistsError
+    )
+    assert.equal(listings, 1)
+  })
+})
+
+test('networks.createOrGet without an owner matches only a network without one', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [
+      { id: 'network-t', name: 'plain', domain: 'knowledge' }
+    ])
+    const network = await memco.networks.createOrGet({ name: 'plain' })
+    assert.equal(network.id, 'network-t')
+
+    serveNetworks(harness, [{ id: 'network-x', ...TENANT }])
+    await assert.rejects(
+      memco.networks.createOrGet({ name: 'eve-tenant' }),
+      MemcoAlreadyExistsError
+    )
+  })
+})
+
+test('networks.createOrGet matches an owner the service stored trimmed', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [{ id: 'network-t', ...TENANT }])
+    const network = await memco.networks.createOrGet({
+      ...TENANT,
+      owner: ' eve-tenant '
+    })
+    assert.equal(network.id, 'network-t')
+  })
+})
+
+test('networks.createOrGet returns the exact name, not a case variant listed first', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(harness, [
+      {
+        id: 'network-upper',
+        ...TENANT,
+        name: 'EVE-TENANT',
+        owner: 'EVE-TENANT'
+      },
+      { id: 'network-longer', ...TENANT, name: 'eve-tenant-2' },
+      { id: 'network-t', ...TENANT }
+    ])
+    const network = await memco.networks.createOrGet(TENANT)
+    assert.equal(network.id, 'network-t')
+  })
+})
+
+test('networks.createOrGet pages through the listing to the exact name', async () => {
+  await withClient(async (memco, harness) => {
+    serveNetworks(
+      harness,
+      [
+        { id: 'network-1', ...TENANT, name: 'eve-tenant-1' },
+        { id: 'network-2', ...TENANT, name: 'eve-tenant-2' },
+        { id: 'network-t', ...TENANT }
+      ],
+      2
+    )
+    const network = await memco.networks.createOrGet(TENANT)
+    assert.equal(network.id, 'network-t')
+    assert.deepEqual(
+      (harness.admin.received as { page?: number }[])
+        .slice(1)
+        .map(each => each.page),
+      [1, 2]
+    )
+  })
+})
+
+test('networks.createOrGet refuses when the taken name is not in the listing', async () => {
+  await withClient(async (memco, harness) => {
+    // Taken, then deleted before the listing: nothing to return.
+    harness.admin.transientErrors.set('createNetwork', [
+      { code: status.ALREADY_EXISTS, details: 'taken' }
+    ])
+    harness.admin.responses.set('listNetworks', () =>
+      a.ListNetworksResponse.fromPartial({ networks: [], totalCount: 0 })
+    )
+    await assert.rejects(
+      memco.networks.createOrGet(TENANT),
+      MemcoAlreadyExistsError
+    )
+  })
+})
+
+test('networks.createOrGet passes on any other refusal of the create', async () => {
+  await withClient(async (memco, harness) => {
+    harness.admin.transientErrors.set('createNetwork', [
+      { code: status.PERMISSION_DENIED, details: 'no' }
+    ])
+    await assert.rejects(
+      memco.networks.createOrGet(TENANT),
+      MemcoPermissionError
+    )
+    assert.deepEqual(harness.admin.calls, ['createNetwork'])
   })
 })

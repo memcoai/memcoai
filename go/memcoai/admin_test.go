@@ -9,10 +9,13 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	adminv1 "github.com/memcoai/memcoai/go/internal/client/memcoai/admin/v1"
@@ -447,4 +450,280 @@ func TestEveryMethodReturnsTheServicesRefusalTyped(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateOrGetCreatesAUserThatDoesNotExistYet(t *testing.T) {
+	f := credentialed(t)
+	user, err := f.client.Users.CreateOrGet(ctx, "customer-7", CreateUserParams{Roles: []string{"reader"}})
+	if err != nil || user.ExternalID != "customer-7" {
+		t.Fatalf("got %+v, %v", user, err)
+	}
+	if calls := f.server.Admin.Calls(); !slices.Equal(calls, []string{"CreateExternalUser"}) {
+		t.Fatalf("sent %v", calls)
+	}
+}
+
+func TestCreateOrGetReturnsTheUserThatAlreadyExists(t *testing.T) {
+	f := credentialed(t)
+	f.server.Admin.FailNext("CreateExternalUser", testserver.Failure{Code: codes.AlreadyExists, Details: "external_id taken"})
+	user, err := f.client.Users.CreateOrGet(ctx, "customer-7", CreateUserParams{Roles: []string{"reader"}})
+	if err != nil || user.ID != "xuser-a" {
+		t.Fatalf("got %+v, %v", user, err)
+	}
+	if calls := f.server.Admin.Calls(); !slices.Equal(calls, []string{"CreateExternalUser", "GetExternalUser"}) {
+		t.Fatalf("sent %v", calls)
+	}
+	if got := f.server.Admin.Request("GetExternalUser"); !proto.Equal(got, &adminv1.GetExternalUserRequest{ExternalId: "customer-7"}) {
+		t.Fatalf("sent %v", got)
+	}
+}
+
+func TestCreateOrGetPassesOnAnyOtherRefusal(t *testing.T) {
+	f := credentialed(t)
+	denied := testserver.Failure{Code: codes.PermissionDenied, Details: "no"}
+	f.server.Admin.FailNext("CreateExternalUser", denied)
+	f.server.Admin.FailNext("CreateNetwork", denied)
+	_, err := f.client.Users.CreateOrGet(ctx, "customer-7", CreateUserParams{Roles: []string{"reader"}})
+	_ = as[*PermissionError](t, err)
+	_, err = f.client.Networks.CreateOrGet(ctx, tenant)
+	_ = as[*PermissionError](t, err)
+	if calls := f.server.Admin.Calls(); !slices.Equal(calls, []string{"CreateExternalUser", "CreateNetwork"}) {
+		t.Fatalf("sent %v", calls)
+	}
+}
+
+var tenant = CreateNetworkParams{Name: "eve-tenant", Domain: "knowledge", Owner: "eve-tenant"}
+
+// serveNetworks answers CreateNetwork and ListNetworks from networks, as the
+// service does: a taken name is refused, case-sensitively, and the listing
+// matches names case-insensitively, as substrings, pageSize at a time.
+func serveNetworks(f *fixture, pageSize int, networks ...*adminv1.Network) {
+	var mu sync.Mutex
+	f.server.Admin.Answer("CreateNetwork", func(m proto.Message) (proto.Message, error) {
+		r := m.(*adminv1.CreateNetworkRequest)
+		mu.Lock()
+		defer mu.Unlock()
+		for _, each := range networks {
+			if each.GetName() == r.GetName() {
+				return nil, status.Error(codes.AlreadyExists, "memory network name is taken")
+			}
+		}
+		created := &adminv1.Network{
+			Id: fmt.Sprintf("network-%d", len(networks)+1), Name: r.GetName(), Domain: r.GetDomain(), Owner: r.GetOwner(),
+		}
+		networks = append(networks, created)
+		return created, nil
+	})
+	f.server.Admin.Answer("ListNetworks", func(m proto.Message) (proto.Message, error) {
+		r := m.(*adminv1.ListNetworksRequest)
+		mu.Lock()
+		defer mu.Unlock()
+		var matching []*adminv1.Network
+		for _, each := range networks {
+			if strings.Contains(strings.ToLower(each.GetName()), strings.ToLower(r.GetName())) &&
+				(r.GetDomain() == "" || each.GetDomain() == r.GetDomain()) {
+				matching = append(matching, each)
+			}
+		}
+		page := max(int(r.GetPage()), 1)
+		from, to := min((page-1)*pageSize, len(matching)), min(page*pageSize, len(matching))
+		return &adminv1.ListNetworksResponse{Networks: matching[from:to], TotalCount: int64(len(matching))}, nil
+	})
+}
+
+func network(id string, edit func(*adminv1.Network)) *adminv1.Network {
+	n := &adminv1.Network{Id: id, Name: tenant.Name, Domain: tenant.Domain, Owner: tenant.Owner}
+	if edit != nil {
+		edit(n)
+	}
+	return n
+}
+
+func TestCreateOrGetCreatesANetworkThatDoesNotExistYet(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100)
+	got, err := f.client.Networks.CreateOrGet(ctx, tenant)
+	if err != nil || got.Name != "eve-tenant" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if calls := f.server.Admin.Calls(); !slices.Equal(calls, []string{"CreateNetwork"}) {
+		t.Fatalf("sent %v", calls)
+	}
+}
+
+func TestCreateOrGetReturnsTheNetworkThatAlreadyExists(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100, network("network-t", nil))
+	got, err := f.client.Networks.CreateOrGet(ctx, tenant)
+	if err != nil || got.ID != "network-t" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	want := &adminv1.ListNetworksRequest{Name: "eve-tenant", Page: 1}
+	if sent := f.server.Admin.Request("ListNetworks"); !proto.Equal(sent, want) {
+		t.Fatalf("sent %v", sent)
+	}
+}
+
+func TestConcurrentCreateOrGetCallsReturnTheSameNetwork(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100)
+	var wg sync.WaitGroup
+	ids := make([]string, 2)
+	for i := range ids {
+		wg.Go(func() {
+			got, err := f.client.Networks.CreateOrGet(ctx, tenant)
+			if err != nil {
+				t.Errorf("call %d: %v", i, err)
+				return
+			}
+			ids[i] = got.ID
+		})
+	}
+	wg.Wait()
+	if ids[0] == "" || ids[0] != ids[1] {
+		t.Fatalf("got %v", ids)
+	}
+}
+
+func TestCreateOrGetRefusesANetworkItDidNotCreate(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		holder *adminv1.Network
+		named  string
+	}{
+		{"another owner", network("network-x", func(n *adminv1.Network) { n.Owner = "someone" }), `owner "someone"`},
+		// Names are unique across domains, so the holder is found by name alone.
+		{"another domain", network("network-x", func(n *adminv1.Network) { n.Domain = "coding" }), `domain "coding"`},
+		{"another scope", network("network-x", func(n *adminv1.Network) { n.Scope = "internal" }), `scope "internal"`},
+		{"no owner", network("network-x", func(n *adminv1.Network) { n.Owner = "" }), "a network without an owner"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := credentialed(t)
+			serveNetworks(f, 100, c.holder)
+			p := tenant
+			p.Scope = "customer"
+			_, err := f.client.Networks.CreateOrGet(ctx, p)
+			got := as[*AlreadyExistsError](t, err)
+			if want := `network name "eve-tenant" is held by ` + c.named; got.Detail != want {
+				t.Fatalf("got %q, want %q", got.Detail, want)
+			}
+		})
+	}
+}
+
+func TestCreateOrGetMatchesAnOwnerTheServiceStoredTrimmed(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100, network("network-t", nil))
+	p := tenant
+	p.Owner = " eve-tenant "
+	if got, err := f.client.Networks.CreateOrGet(ctx, p); err != nil || got.ID != "network-t" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}
+
+func TestCreateOrGetMatchesTheScopeGivenAndAnyScopeWhenNoneIs(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100, network("network-t", func(n *adminv1.Network) { n.Scope = "customer" }))
+	scoped := tenant
+	scoped.Scope = "customer"
+	for _, p := range []CreateNetworkParams{scoped, tenant} {
+		if got, err := f.client.Networks.CreateOrGet(ctx, p); err != nil || got.ID != "network-t" {
+			t.Fatalf("scope %q: got %+v, %v", p.Scope, got, err)
+		}
+	}
+}
+
+func TestCreateOrGetStopsAtAnEmptyPageWhateverTheTotalSays(t *testing.T) {
+	f := credentialed(t)
+	f.server.Admin.FailNext("CreateNetwork", testserver.Failure{Code: codes.AlreadyExists, Details: "taken"})
+	var listings atomic.Int32
+	f.server.Admin.Answer("ListNetworks", func(proto.Message) (proto.Message, error) {
+		if listings.Add(1) > 3 {
+			return nil, status.Error(codes.Internal, "runaway")
+		}
+		return &adminv1.ListNetworksResponse{TotalCount: 1}, nil
+	})
+	_, err := f.client.Networks.CreateOrGet(ctx, tenant)
+	_ = as[*AlreadyExistsError](t, err)
+	if n := listings.Load(); n != 1 {
+		t.Fatalf("listed %d times", n)
+	}
+}
+
+func TestCreateOrGetReportsAUserDeletedBeforeItCouldBeFetched(t *testing.T) {
+	f := credentialed(t)
+	f.server.Admin.FailNext("CreateExternalUser", testserver.Failure{Code: codes.AlreadyExists, Details: "taken"})
+	f.server.Admin.FailNext("GetExternalUser", testserver.Failure{Code: codes.NotFound, Details: "gone"})
+	_, err := f.client.Users.CreateOrGet(ctx, "customer-7", CreateUserParams{Roles: []string{"reader"}})
+	_ = as[*NotFoundError](t, err)
+}
+
+func TestAnAnswerOfTheWrongTypeFailsTheCallNotTheServer(t *testing.T) {
+	f := credentialed(t)
+	f.server.Admin.Answer("ListNetworks", func(proto.Message) (proto.Message, error) { return nil, nil })
+	_, err := f.client.Networks.List(ctx, ListNetworksParams{})
+	_ = as[*InternalError](t, err)
+}
+
+func TestCreateOrGetWithoutADomainMatchesAnyDomain(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100, network("network-t", func(n *adminv1.Network) { n.Domain = "coding" }))
+	got, err := f.client.Networks.CreateOrGet(ctx, CreateNetworkParams{Name: tenant.Name, Owner: tenant.Owner})
+	if err != nil || got.ID != "network-t" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if sent := f.server.Admin.Request("ListNetworks"); !proto.Equal(sent, &adminv1.ListNetworksRequest{Name: "eve-tenant", Page: 1}) {
+		t.Fatalf("sent %v", sent)
+	}
+}
+
+func TestCreateOrGetWithoutAnOwnerMatchesOnlyANetworkWithoutOne(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100, &adminv1.Network{Id: "network-t", Name: "plain", Domain: "knowledge"})
+	if got, err := f.client.Networks.CreateOrGet(ctx, CreateNetworkParams{Name: "plain"}); err != nil || got.ID != "network-t" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	serveNetworks(f, 100, network("network-x", nil))
+	_, err := f.client.Networks.CreateOrGet(ctx, CreateNetworkParams{Name: tenant.Name})
+	_ = as[*AlreadyExistsError](t, err)
+}
+
+func TestCreateOrGetReturnsTheExactNameNotACaseVariantListedFirst(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 100,
+		network("network-upper", func(n *adminv1.Network) { n.Name = "EVE-TENANT" }),
+		network("network-longer", func(n *adminv1.Network) { n.Name = "eve-tenant-2" }),
+		network("network-t", nil),
+	)
+	if got, err := f.client.Networks.CreateOrGet(ctx, tenant); err != nil || got.ID != "network-t" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}
+
+func TestCreateOrGetPagesThroughTheListingToTheExactName(t *testing.T) {
+	f := credentialed(t)
+	serveNetworks(f, 2,
+		network("network-1", func(n *adminv1.Network) { n.Name = "eve-tenant-1" }),
+		network("network-2", func(n *adminv1.Network) { n.Name = "eve-tenant-2" }),
+		network("network-t", nil),
+	)
+	if got, err := f.client.Networks.CreateOrGet(ctx, tenant); err != nil || got.ID != "network-t" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	var pages []int32
+	for _, m := range f.server.Admin.Received()[1:] {
+		pages = append(pages, m.(*adminv1.ListNetworksRequest).GetPage())
+	}
+	if !slices.Equal(pages, []int32{1, 2}) {
+		t.Fatalf("pages %v", pages)
+	}
+}
+
+func TestCreateOrGetRefusesWhenTheTakenNameCannotBeListed(t *testing.T) {
+	f := credentialed(t)
+	// Taken, then deleted before the listing: nothing to return.
+	f.server.Admin.FailNext("CreateNetwork", testserver.Failure{Code: codes.AlreadyExists, Details: "taken"})
+	f.server.Admin.Respond("ListNetworks", &adminv1.ListNetworksResponse{})
+	_, err := f.client.Networks.CreateOrGet(ctx, tenant)
+	_ = as[*AlreadyExistsError](t, err)
 }

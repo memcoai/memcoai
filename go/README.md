@@ -377,14 +377,15 @@ if err != nil {
 _, err = client.Networks.AddMember(ctx, acme.ID, user.ID, memcoai.AddMemberParams{})
 ```
 
-| Method                                                               | Purpose                                                                    |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `Networks.List`                                                      | One page of networks, filtered by name, scope, owner, domain, parent or id |
-| `Networks.Create`, `Update`, `Delete`                                | Manage a network; deleting one takes everything placed in it               |
-| `Networks.ListMembers`, `AddMember`, `RemoveMember`                  | Who is placed in a network                                                 |
-| `Networks.ListGroups`, `ListGroupMembers`, `AddGroup`, `RemoveGroup` | Identity-provider groups, for enterprise organizations                     |
-| `Users.List`, `Get`, `Create`, `Update`, `Delete`                    | Manage external users                                                      |
-| `Users.ListKeys`, `CreateKey`, `DeleteKey`                           | An external user's API keys                                                |
+| Method                                                               | Purpose                                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `Networks.List`                                                      | One page of networks, filtered by name, scope, owner, domain, parent or id      |
+| `Networks.Create`, `Update`, `Delete`                                | Manage a network; deleting one takes everything placed in it                    |
+| `Networks.ListMembers`, `AddMember`, `RemoveMember`                  | Who is placed in a network                                                      |
+| `Networks.ListGroups`, `ListGroupMembers`, `AddGroup`, `RemoveGroup` | Identity-provider groups, for enterprise organizations                          |
+| `Users.List`, `Get`, `Create`, `Update`, `Delete`                    | Manage external users                                                           |
+| `Users.ListKeys`, `CreateKey`, `DeleteKey`                           | An external user's API keys                                                     |
+| `Networks.CreateOrGet`, `Users.CreateOrGet`                          | Create, or return what already holds the name or id; safe when two callers race |
 
 An external user has no sign-in of its own, never holds `admin`, and can be
 placed only in a customer network. Every `client.Users` method names the user by

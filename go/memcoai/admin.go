@@ -2,11 +2,15 @@ package memcoai
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/memcoai/memcoai/go/internal/admin"
@@ -187,6 +191,72 @@ func (n *NetworkOperations) Create(ctx context.Context, p CreateNetworkParams) (
 	}
 	network := toNetwork(response)
 	return &network, nil
+}
+
+// CreateOrGet creates a memory network, or returns the one already holding
+// its name. It is safe when two callers race to create one network: the loser
+// is handed the winner's.
+//
+// The existing network is returned only if it has p.Owner (an empty owner
+// matches a network without one) and, when p.Domain or p.Scope is given, that
+// domain and scope; a network that merely shares the name is never adopted.
+// Names are matched exactly, case included.
+//
+// Parameters:
+//   - ctx: bounds every call made. Without a deadline, [Options.Timeout]
+//     applies to each; if ctx has already ended, nothing is sent.
+//   - p: the network to create, as for [NetworkOperations.Create].
+//
+// It returns the network as created, or as it already was.
+//
+// Errors: [*AlreadyExistsError] when the name is held by a network with
+// another owner, domain or scope, or by one that cannot be listed; otherwise
+// as for [NetworkOperations.Create].
+func (n *NetworkOperations) CreateOrGet(ctx context.Context, p CreateNetworkParams) (*Network, error) {
+	created, err := n.Create(ctx, p)
+	var taken *AlreadyExistsError
+	if !errors.As(err, &taken) {
+		return created, err
+	}
+	// Names are unique across domains, so the holder is listed by name alone.
+	// The service's name filter is a case-insensitive substring match that
+	// also lists the matches' relatives, so the exact name is found here, on
+	// whichever page it falls.
+	var seen int64
+	for page := int32(1); ; page++ {
+		listing, err := n.List(ctx, ListNetworksParams{Name: p.Name, Page: page})
+		if err != nil {
+			return nil, err
+		}
+		for _, existing := range listing.Networks {
+			if existing.Name != p.Name {
+				continue
+			}
+			// The service stores the owner trimmed.
+			owner := strings.TrimSpace(p.Owner)
+			switch {
+			case existing.Owner != owner && existing.Owner == "":
+				return nil, heldBy(p.Name, "a network without an owner")
+			case existing.Owner != owner:
+				return nil, heldBy(p.Name, fmt.Sprintf("owner %q", existing.Owner))
+			case p.Domain != "" && existing.Domain != p.Domain:
+				return nil, heldBy(p.Name, fmt.Sprintf("domain %q", existing.Domain))
+			case p.Scope != "" && existing.Scope != p.Scope:
+				return nil, heldBy(p.Name, fmt.Sprintf("scope %q", existing.Scope))
+			}
+			return &existing, nil
+		}
+		seen += int64(len(listing.Networks))
+		if len(listing.Networks) == 0 || seen >= listing.TotalCount {
+			return nil, heldBy(p.Name, "a network that cannot be listed")
+		}
+	}
+}
+
+// heldBy is the refusal [NetworkOperations.CreateOrGet] returns for a name it
+// will not adopt, as the service's own refusal of the create would read.
+func heldBy(name, holder string) error {
+	return &AlreadyExistsError{APIError{Code: codes.AlreadyExists, Detail: fmt.Sprintf("network name %q is held by %s", name, holder)}}
 }
 
 // Update changes a network's name, parent, scope, owner or description. Only
@@ -522,6 +592,31 @@ func (u *UserOperations) Create(ctx context.Context, externalID string, p Create
 	}
 	user := toExternalUser(response)
 	return &user, nil
+}
+
+// CreateOrGet creates an external user, or returns the one already holding
+// externalID. It is safe when two callers race to create one user: the loser
+// is handed the winner's. The existing user is returned as it is; its roles,
+// name and email are not compared with p or changed.
+//
+// Parameters:
+//   - ctx: bounds every call made. Without a deadline, [Options.Timeout]
+//     applies to each; if ctx has already ended, nothing is sent.
+//   - externalID: your id for the user, unique within your organization.
+//   - p: the user's roles, at least one, and optionally a name and an email.
+//
+// It returns the user as created, or as it already was.
+//
+// Errors: as for [UserOperations.Create], except that an existing user is
+// returned rather than an [*AlreadyExistsError]; [*NotFoundError] when the
+// user that held externalID was deleted before it could be fetched.
+func (u *UserOperations) CreateOrGet(ctx context.Context, externalID string, p CreateUserParams) (*ExternalUser, error) {
+	created, err := u.Create(ctx, externalID, p)
+	var taken *AlreadyExistsError
+	if !errors.As(err, &taken) {
+		return created, err
+	}
+	return u.Get(ctx, externalID)
 }
 
 // Update changes an external user's name, email or roles. Only the fields

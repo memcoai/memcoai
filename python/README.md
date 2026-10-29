@@ -375,6 +375,7 @@ with Memco(client_id="...", client_secret="...") as client:
 | `networks.list_groups(...)`, `list_group_members(...)`, `add_group(...)`, `remove_group(...)` | Identity-provider groups, for enterprise organizations |
 | `users.list(...)`, `get(...)`, `create(...)`, `update(...)`, `delete(...)` | Manage external users |
 | `users.list_keys(...)`, `create_key(...)`, `delete_key(...)` | An external user's API keys |
+| `networks.create_or_get(...)`, `users.create_or_get(...)` | Create, or return what already holds the name or id; safe when two callers race |
 
 An external user has no sign-in of its own, never holds `admin`, and can be
 placed only in a customer network. Every `client.users` method names the user by

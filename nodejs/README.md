@@ -359,14 +359,15 @@ const user = await client.users.create('customer-42', {
 await client.networks.addMember(acme.id, { userId: user.id })
 ```
 
-| Method                                                                                   | Purpose                                                                    |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `networks.list(options)`                                                                 | One page of networks, filtered by name, scope, owner, domain, parent or id |
-| `networks.create(options)`, `update(id, options)`, `delete(id)`                          | Manage a network; deleting one takes everything placed in it               |
-| `networks.listMembers(id)`, `addMember(id, options)`, `removeMember(...)`                | Who is placed in a network                                                 |
-| `networks.listGroups(...)`, `listGroupMembers(...)`, `addGroup(...)`, `removeGroup(...)` | Identity-provider groups, for enterprise organizations                     |
-| `users.list(options)`, `get(externalId)`, `create(...)`, `update(...)`, `delete(...)`    | Manage external users                                                      |
-| `users.listKeys(externalId)`, `createKey(...)`, `deleteKey(...)`                         | An external user's API keys                                                |
+| Method                                                                                   | Purpose                                                                         |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `networks.list(options)`                                                                 | One page of networks, filtered by name, scope, owner, domain, parent or id      |
+| `networks.create(options)`, `update(id, options)`, `delete(id)`                          | Manage a network; deleting one takes everything placed in it                    |
+| `networks.listMembers(id)`, `addMember(id, options)`, `removeMember(...)`                | Who is placed in a network                                                      |
+| `networks.listGroups(...)`, `listGroupMembers(...)`, `addGroup(...)`, `removeGroup(...)` | Identity-provider groups, for enterprise organizations                          |
+| `users.list(options)`, `get(externalId)`, `create(...)`, `update(...)`, `delete(...)`    | Manage external users                                                           |
+| `users.listKeys(externalId)`, `createKey(...)`, `deleteKey(...)`                         | An external user's API keys                                                     |
+| `networks.createOrGet(options)`, `users.createOrGet(...)`                                | Create, or return what already holds the name or id; safe when two callers race |
 
 As everywhere in this SDK, at most the first argument is positional — the
 network, group or user a method acts on — and everything else, required or
