@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   docs:
-    name: Docs
+    name: Docs (Node.js)
     runs-on: ubuntu-latest
     defaults:
       run:
