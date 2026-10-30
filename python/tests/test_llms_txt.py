@@ -503,6 +503,21 @@ def test_the_generators_own_apparatus_is_excused_by_name_and_by_directory(script
     assert script.unreachable(reference) == []
 
 
+@pytest.mark.parametrize("name", ["media/example.ts", "media/example.tsx", "example.mts"])
+def test_typescript_the_site_would_type_check_is_reported(script, reference, name):
+    # A README linking a local example has TypeDoc copy the file into media/,
+    # and the documentation site type-checks every TypeScript file it serves,
+    # where the example's own imports resolve to nothing. 0.3.0 shipped
+    # media/resume_session.ts and the site's build failed on it.
+    write(reference.html, {name: "import { Memco } from '../src/index.js'\n"})
+    assert script.compiled(reference.html) == [name]
+
+
+def test_what_the_generators_publish_is_not_typescript(script, reference):
+    write(reference.html, {"assets/main.js": "", "_sources/index.rst.txt": "", "LICENSE": ""})
+    assert script.compiled(reference.html) == []
+
+
 def test_a_link_that_reaches_nothing_is_reported_before_anything_is_written(script, reference):
     # The page map being right about which pages exist does not make a link
     # inside a page right about where it pointed, and a dangling link is a

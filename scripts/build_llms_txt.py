@@ -814,6 +814,25 @@ def unreachable(reference: Reference) -> list[str]:
     )
 
 
+TYPESCRIPT = frozenset({".ts", ".tsx", ".mts", ".cts"})
+"""Suffixes the documentation site type-checks wherever it finds them.
+
+Its Next.js build compiles every TypeScript file under ``public/``, the
+reference included. TypeDoc copies any local file a README links into
+``media/``, so a README linking ``examples/resume_session.ts`` published it,
+and the example's ``../src/index.js`` import failed the site's build.
+"""
+
+
+def compiled(html: Path) -> list[str]:
+    """List published files the documentation site would type-check."""
+    return sorted(
+        path.relative_to(html).as_posix()
+        for path in html.rglob("*")
+        if path.suffix in TYPESCRIPT and path.is_file()
+    )
+
+
 def broken(html: Path, files: dict[str, str]) -> list[str]:
     """List links in the files about to be published that reach nothing.
 
@@ -878,6 +897,14 @@ def main() -> int:
     )
     if absent:
         fail(f"{len(absent)} page(s) listed in llms.txt were never published: " + ", ".join(absent))
+
+    typescript = compiled(reference.html)
+    if typescript:
+        fail(
+            f"{len(typescript)} TypeScript file(s) in the {language} reference would fail the "
+            "documentation site's type check; link them by URL rather than by path: "
+            + ", ".join(typescript)
+        )
 
     canonical = f"{DOCS_SITE}/{language}/latest/"
     pages = markdown_pages(reference)

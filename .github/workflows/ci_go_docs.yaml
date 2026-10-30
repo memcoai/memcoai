@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   docs:
-    name: Docs
+    name: Docs (Go)
     runs-on: ubuntu-latest
     defaults:
       run:

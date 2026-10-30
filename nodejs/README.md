@@ -329,7 +329,7 @@ Resuming starts nothing. The service looks the session up first, so an id that
 is unknown or not the caller's fails with `MemcoNotFoundError` there rather than
 at the first search. A resumed session carries no opening instructions; they
 were given when it started. See
-[`examples/resume_session.ts`](examples/resume_session.ts).
+[`examples/resume_session.ts`](https://github.com/memcoai/memcoai/blob/main/nodejs/examples/resume_session.ts).
 
 ## Networks and users
 

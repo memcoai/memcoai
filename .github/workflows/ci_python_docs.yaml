@@ -22,7 +22,7 @@ env:
 
 jobs:
   docs:
-    name: Docs
+    name: Docs (Python)
     runs-on: ubuntu-latest
     defaults:
       run:
