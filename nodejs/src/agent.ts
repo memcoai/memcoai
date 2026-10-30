@@ -20,9 +20,10 @@
  * ```
  *
  * Each tool is bound to the session it was built from, so nothing a model sends
- * can change which session a call is recorded under. What a model sends is
- * untrusted: arguments are checked against the same shapes the schema was built
- * from, and a bad one is reported the way a bad request is.
+ * can change which session a call is recorded under: a session or domain it
+ * names is dropped unread. What a model sends is untrusted: arguments are checked
+ * against the same shapes the schema was built from, and a bad one is reported
+ * the way a bad request is.
  *
  * ## Where the descriptions and schemas come from
  *
@@ -111,6 +112,15 @@ export const AGENT_RECOVERABLE = [
  * caller's deadline, not something a model has any basis to set.
  */
 export const BOUND = ['timeout', 'source', 'sessionId', 'domain'] as const
+
+/**
+ * What a model may send for the session and domain, in the spellings seen.
+ *
+ * Dropped rather than refused. The service's guidance tells a model to name its
+ * session, and a refusal only costs it a turn to learn what the scope already
+ * settled. None of these is ever read, so none can redirect a call.
+ */
+const SESSION_ARGUMENTS = new Set(['session_id', 'sessionId', 'domain'])
 
 /**
  * One JSON Schema fragment.
@@ -753,7 +763,7 @@ function argumentsFor(
 ): Record<string, unknown> {
   const declared = new Set(operation.arguments.map(one => one.name))
   const undeclared = Object.keys(args)
-    .filter(name => !declared.has(name))
+    .filter(name => !declared.has(name) && !SESSION_ARGUMENTS.has(name))
     .sort()
   if (undeclared.length > 0) {
     // Quoted for the same reason the invented-tool-name message is: these are

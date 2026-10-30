@@ -160,7 +160,8 @@ the session has already answered both, and `Briefing` says so, so a model is
 never handed a tool whose answer it already has.
 
 `source` is bound rather than exposed, so a model cannot claim a human wrote its
-content; `session_id` and `domain` are bound because the session supplies them.
+content; `session_id` and `domain` are bound because the session supplies them,
+so a tool ignores either if a model sends it.
 
 The descriptions and parameter copy come from `tools.json`, the same manifest
 the hosted MCP server publishes, compiled into the module by

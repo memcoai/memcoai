@@ -167,7 +167,7 @@ Results come back most-relevant-first and are bounded, so a search returns what 
   },
   share_feedback: {
     description: `Rate the relevance and correctness of search results. Only you can tell whether a result was useful in answering the query, and these ratings shape which results are shown next.
-Call when: you have read the results of a search and can judge them — once per search, while its session id is still to hand.
+Call when: you have read the results of a search and can judge them, while its session id is still to hand. Relevance is clear on reading a result; correctness may only be clear once you know the outcome, so the same idx can be rated again with correct then. The first correctness verdict on a result of a search is the one that counts.
 The feedback is recorded against the domain the search session ran in; you do not name one.`,
     parameters: {
       feedback: `(Required) A list of ratings, one per result you want to rate. Up to 10 ratings can be included in each call.`,
@@ -216,7 +216,7 @@ export const ENTRY_COPY = {
   },
   FeedbackRating: {
     comment: `An optional comment on the result, at most 5000 characters.`,
-    correct: `Set to true if the result's content was accurate, false if not. Leave it out when you cannot judge it.`,
+    correct: `Set to true if the result's content was accurate, false if not. Leave it out when you cannot judge it yet, and rate the result again once you can.`,
     idx: `(Required) The idx of the result to rate, copied exactly as it appears in the search response; it cannot be constructed by hand. Use an insight's idx for a specific insight, or a memory's own idx to apply the rating to every insight under it.`,
     relevant: `Set to true if the result was a good match for the query.`
   }

@@ -3,40 +3,26 @@
 from __future__ import annotations
 
 import json
-from importlib.metadata import version
 from typing import Any
 
 import grpc
 from grpc_health.v1 import health_pb2
 
 from ._config import ClientConfig
+from ._version import VERSION
 from .memory.v1 import memory_pb2
 
 __all__ = ["RETRYABLE_METHODS", "USER_AGENT", "build_async_channel", "build_channel"]
 
 
-def _user_agent() -> str:
-    """Build the identifier this client sends on every call.
-
-    The product token is deliberately a single stable ``memco-python/<version>``:
-    the service matches deprecation rules against it, and it feeds client
-    tracking that expects that shape. A client sending no recognisable token can
-    never be told its build is out of date. gRPC appends its own runtime token
-    rather than replacing this, so the transport stays identified too.
-
-    Returns:
-        A user-agent fragment such as ``memco-python/0.1.0``.
-    """
-    # Read from the installed metadata rather than from memcoai.__version__:
-    # memcoai/__init__.py imports this module, so reaching back into the package
-    # here would be circular. Both read the same source, so they cannot drift.
-    return f"memco-python/{version('memcoai')}"
-
-
-USER_AGENT = _user_agent()
+USER_AGENT = f"memco-python/{VERSION}"
 """Sent as the primary user agent on every channel.
 
-Computed once so the synchronous and asynchronous builders cannot disagree.
+The product token is deliberately a single stable ``memco-python/<version>``: the
+service matches deprecation rules against it, and it feeds client tracking that
+expects that shape. A client sending no recognisable token can never be told its
+build is out of date. gRPC appends its own runtime token rather than replacing
+this, so the transport stays identified too.
 """
 
 _MEMORY_SERVICE = memory_pb2.DESCRIPTOR.services_by_name["MemoryService"].full_name

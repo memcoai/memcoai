@@ -75,7 +75,8 @@ jobs:
           from memcoai.memory.v1 import memory_pb2 as pb
 
           assert pb.DESCRIPTOR.name == "memcoai/memory/v1/memory.proto"
-          assert mc.provenance().server_commit, "provenance descriptor missing from the wheel"
+          assert mc.provenance().server_commit, "the compiled provenance did not load"
+          assert (resources.files("memcoai") / "SDK_PROVENANCE.yaml").is_file(), "descriptor did not ship"
           assert (resources.files("memcoai") / "py.typed").is_file(), "py.typed did not ship"
           print("wheel is whole:", len(mc.__all__), "public symbols")
           PY

@@ -768,20 +768,42 @@ test('a null optional argument is the same as leaving it out', async () => {
   })
 })
 
-test('a model cannot name the session or the domain the caller bound', async () => {
-  // The scope re-applies its own session last, so a leak here would still be
-  // overridden — but a model must not get as far as being able to try.
-  await withToolset(async (_toolset, by) => {
-    for (const smuggled of [
-      { query: 'q', sessionId: 'session-theirs' },
-      { query: 'q', domain: 'somewhere-else' },
-      { query: 'q', timeout: 900 }
-    ]) {
-      assert.match(
-        await by.memco_search!.call(smuggled),
-        /unknown argument\(s\)/
-      )
+test('a session or domain a model names is ignored, and cannot redirect the call', async () => {
+  await withToolset(async (_toolset, by, harness) => {
+    const smuggled = {
+      session_id: 'session-theirs',
+      sessionId: 'session-theirs',
+      domain: 'somewhere-else'
     }
+    assert.ok(
+      !(await by.memco_search!.call({ query: 'q', ...smuggled })).startsWith(
+        'invalid request'
+      )
+    )
+    const search = harness.memory.requests.get('search') as pb.SearchRequest
+    assert.equal(search.sessionId, 'session-a')
+    assert.equal(search.domain, '')
+
+    await by.memco_create_memory!.call({
+      query: 'q',
+      title: 't',
+      content: 'c',
+      ...smuggled
+    })
+    const write = harness.memory.requests.get(
+      'createMemory'
+    ) as pb.CreateMemoryRequest
+    assert.equal(write.sessionId, 'session-a')
+    assert.equal(write.domain, '')
+  })
+})
+
+test('a model cannot set the deadline the caller bound', async () => {
+  await withToolset(async (_toolset, by) => {
+    assert.match(
+      await by.memco_search!.call({ query: 'q', timeout: 900 }),
+      /unknown argument\(s\): "timeout"/
+    )
   })
 })
 

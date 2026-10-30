@@ -54,23 +54,22 @@ jobs:
       # package as whole when half of its consumers cannot load it.
       #
       # `Memco` is not imported here: the client is still landing, and this job
-      # has to prove the packaging rather than the surface. `provenance` is the
-      # export that reads a data file out of the installed tree, so it fails if
-      # `files` ever stops shipping client/SDK_PROVENANCE.yaml.
+      # has to prove the packaging rather than the surface. `provenance` is an
+      # export that runs, so a load that only resolved would not pass.
       - name: Both entry points load
         working-directory: /tmp/verify
         run: |
           node --input-type=module - <<'JS'
           import { provenance } from '@memco/memcoai'
           if (!provenance().serverCommit) {
-            throw new Error('the provenance descriptor did not reach the tarball')
+            throw new Error('the compiled provenance did not load')
           }
           console.log('esm ok:', provenance().serverCommit)
           JS
           node --input-type=commonjs - <<'JS'
           const { provenance } = require('@memco/memcoai')
           if (!provenance().serverCommit) {
-            throw new Error('the provenance descriptor did not reach the tarball')
+            throw new Error('the compiled provenance did not load')
           }
           console.log('cjs ok:', provenance().serverCommit)
           JS

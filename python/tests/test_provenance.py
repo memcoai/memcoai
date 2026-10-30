@@ -2,20 +2,66 @@
 
 import hashlib
 import pathlib
+import shutil
+import subprocess
+import sys
 
 import pytest
 
 from memcoai._provenance import parse, provenance
+from memcoai._provenance_text import TEXT
+from memcoai._version import VERSION
 from memcoai.errors import MemcoConfigError
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
-def test_provenance_is_readable_from_the_installed_package():
+def test_provenance_reports_the_commit_and_the_contracts():
     p = provenance()
     assert p.server_commit
     assert p.protos
     assert "memcoai/memory/v1/memory.proto" in {proto.path for proto in p.protos}
+
+
+def test_the_compiled_descriptor_is_the_one_the_export_wrote():
+    assert (REPO / "python" / "memcoai" / "SDK_PROVENANCE.yaml").read_text("utf-8") == TEXT
+
+
+def test_the_package_answers_without_its_metadata_or_data_files(tmp_path):
+    # A frozen application may ship neither, and failing at import takes it down.
+    package = tmp_path / "memcoai"
+    shutil.copytree(REPO / "python" / "memcoai", package)
+    (package / "SDK_PROVENANCE.yaml").unlink()
+    script = """
+import importlib.metadata
+
+from_name = importlib.metadata.Distribution.from_name.__func__
+
+
+def no_metadata(cls, name):
+    if name == "memcoai":
+        raise importlib.metadata.PackageNotFoundError(name)
+    return from_name(cls, name)
+
+
+importlib.metadata.Distribution.from_name = classmethod(no_metadata)
+import memcoai
+
+print(memcoai.__file__, memcoai.__version__, memcoai.provenance().server_commit)
+"""
+    run = subprocess.run(  # noqa: S603 - the interpreter and script are ours
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.split() == [
+        str(package / "__init__.py"),
+        VERSION,
+        provenance().server_commit,
+    ]
 
 
 def test_provenance_is_cached():

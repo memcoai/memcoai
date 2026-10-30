@@ -26,7 +26,6 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 
 import { status } from '@grpc/grpc-js'
 import type { ClientTool } from '@langchain/core/tools'
@@ -43,12 +42,10 @@ import {
 import { Memco } from '../src/client.js'
 import { MemcoAuthenticationError } from '../src/errors.js'
 import { withHarness, type Harness } from './fakeServer.js'
+import { packageRoot } from './packageFiles.js'
 
-// Three levels up from the compiled `<outDir>/tests/`, for the reason
-// tests/examples.test.ts sets out at the same walk.
-const here = fileURLToPath(new URL('.', import.meta.url))
 const SOURCE = readFileSync(
-  join(here, '..', '..', '..', 'examples', 'langchain_agent.ts'),
+  join(packageRoot, 'examples', 'langchain_agent.ts'),
   'utf8'
 )
 

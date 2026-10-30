@@ -13,8 +13,8 @@ match the expected shape raises rather than being silently tolerated.
 from __future__ import annotations
 
 import functools
-from importlib import resources
 
+from ._provenance_text import TEXT
 from .errors import MemcoConfigError
 from .types import ProtoRecord, Provenance
 
@@ -231,23 +231,16 @@ def _read_protos(lines: list[tuple[int, str]], start: int) -> list[ProtoRecord]:
 def provenance() -> Provenance:
     """Read the provenance of the installed generated client.
 
-    The result is cached, so repeated calls do not re-read the file.
+    The descriptor is compiled in, and the result is cached.
 
     Returns:
         The provenance recorded when this package was built.
 
     Raises:
-        MemcoConfigError: If the descriptor is missing from the installed
-            package or does not match the expected shape.
+        MemcoConfigError: If the descriptor does not match the expected shape.
 
     Example:
         >>> provenance().server_commit  # the commit this wheel was built from
         '762721a87ab0...'
     """
-    try:
-        text = (resources.files("memcoai") / RESOURCE).read_text(encoding="utf-8")
-    except (FileNotFoundError, ModuleNotFoundError) as exc:
-        raise MemcoConfigError(
-            f"{RESOURCE} is missing from the installed memcoai package; the wheel was built wrongly"
-        ) from exc
-    return parse(text)
+    return parse(TEXT)

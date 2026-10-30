@@ -72,9 +72,7 @@ logger instead. No credential is ever written to a record.
 
 from __future__ import annotations
 
-from importlib.metadata import version as _metadata_version
-
-from . import administration, agent, errors, operations, types
+from . import _version, administration, agent, errors, operations, types
 from ._aio import AsyncMemco
 from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
 from ._deprecation import MemcoDeprecationWarning
@@ -88,9 +86,7 @@ from ._validate import NEW_MEMORY
 # may be during the very first client construction — already goes somewhere.
 _configure_logging()
 
-# Read from the installed metadata so there is one source of truth: a release
-# that bumps pyproject.toml cannot leave this behind.
-__version__ = _metadata_version("memcoai")
+__version__ = _version.VERSION
 
 __all__ = [
     "DEFAULT_HOST",

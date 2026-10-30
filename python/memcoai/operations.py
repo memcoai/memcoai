@@ -557,8 +557,10 @@ class MemoryOperations:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
         was useful in answering the query, and these ratings shape which results are shown next.
 
-        Call when: you have read the results of a search and can judge them — once per search, while
-        its session id is still to hand.
+        Call when: you have read the results of a search and can judge them, while its session id is
+        still to hand. Relevance is clear on reading a result; correctness may only be clear once
+        you know the outcome, so the same idx can be rated again with correct then. The first
+        correctness verdict on a result of a search is the one that counts.
 
         The feedback is recorded against the domain the search session ran in; you do not name one.
 
@@ -1245,8 +1247,10 @@ class AsyncMemoryOperations:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
         was useful in answering the query, and these ratings shape which results are shown next.
 
-        Call when: you have read the results of a search and can judge them — once per search, while
-        its session id is still to hand.
+        Call when: you have read the results of a search and can judge them, while its session id is
+        still to hand. Relevance is clear on reading a result; correctness may only be clear once
+        you know the outcome, so the same idx can be rated again with correct then. The first
+        correctness verdict on a result of a search is the one that counts.
 
         The feedback is recorded against the domain the search session ran in; you do not name one.
 
@@ -1752,8 +1756,10 @@ class Session:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
         was useful in answering the query, and these ratings shape which results are shown next.
 
-        Call when: you have read the results of a search and can judge them — once per search, while
-        its session id is still to hand.
+        Call when: you have read the results of a search and can judge them, while its session id is
+        still to hand. Relevance is clear on reading a result; correctness may only be clear once
+        you know the outcome, so the same idx can be rated again with correct then. The first
+        correctness verdict on a result of a search is the one that counts.
 
         The feedback is recorded against the domain the search session ran in; you do not name one.
 
@@ -2259,8 +2265,10 @@ class AsyncSession:
         """Rate the relevance and correctness of search results. Only you can tell whether a result
         was useful in answering the query, and these ratings shape which results are shown next.
 
-        Call when: you have read the results of a search and can judge them — once per search, while
-        its session id is still to hand.
+        Call when: you have read the results of a search and can judge them, while its session id is
+        still to hand. Relevance is clear on reading a result; correctness may only be clear once
+        you know the outcome, so the same idx can be rated again with correct then. The first
+        correctness verdict on a result of a search is the one that counts.
 
         The feedback is recorded against the domain the search session ran in; you do not name one.
 

@@ -644,7 +644,7 @@ class FeedbackRating:
             or a memory's own idx to apply the rating to every insight under it.
         relevant: Set to true if the result was a good match for the query.
         correct: Set to true if the result's content was accurate, false if not. Leave it out when
-            you cannot judge it.
+            you cannot judge it yet, and rate the result again once you can.
         comment: An optional comment on the result, at most 5000 characters.
 
     Example:

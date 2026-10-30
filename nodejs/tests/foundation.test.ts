@@ -6,9 +6,20 @@
  */
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { pathToFileURL } from 'node:url'
 
 import { ChannelCredentials, Metadata, status } from '@grpc/grpc-js'
 
@@ -22,27 +33,17 @@ import {
   SunsetKind,
   fromServiceError
 } from '../src/errors.js'
+import { VERSION } from '../src/gen/version.js'
+import { USER_AGENT } from '../src/internal/channel.js'
 import * as pb from '../src/internal/gen.js'
 import { parse, provenance } from '../src/internal/provenance.js'
-import {
-  PROVENANCE_FILE,
-  TOOLS_FILE,
-  packageRoot
-} from '../src/internal/resources.js'
 import {
   STATUS_DETAILS_KEY,
   encodeStatusDetails,
   errorDetails
 } from '../src/internal/wire.js'
 import { withHarness } from './fakeServer.js'
-
-test('both packaged resources resolve from the compiled tree', () => {
-  // Pins the invariant that every outDir sits exactly two segments deep, which
-  // is what lets one walk in resources.ts serve dist/esm, dist/cjs and build/js
-  // alike. Changing an outDir's depth breaks all three at once.
-  assert.ok(readFileSync(PROVENANCE_FILE, 'utf8').length > 0)
-  assert.ok(readFileSync(TOOLS_FILE, 'utf8').length > 0)
-})
+import { packageRoot } from './packageFiles.js'
 
 test('the packaged licence matches the repository root', () => {
   // The tarball needs its own copy — `files` cannot reach outside the package
@@ -66,6 +67,70 @@ test('the declared dependencies are the ones the export asks for', () => {
     readFileSync(join(packageRoot, 'client', 'dependencies.json'), 'utf8')
   )
   assert.deepEqual(manifest.dependencies, declared.dependencies)
+})
+
+test('the compiled version is the one package.json declares', () => {
+  const manifest = JSON.parse(
+    readFileSync(join(packageRoot, 'package.json'), 'utf8')
+  )
+  assert.equal(VERSION, manifest.version)
+  assert.equal(USER_AGENT, `memco-node/${manifest.version}`)
+})
+
+test('the compiled provenance is the descriptor the export wrote', () => {
+  assert.deepEqual(
+    provenance(),
+    parse(
+      readFileSync(join(packageRoot, 'client', 'SDK_PROVENANCE.yaml'), 'utf8')
+    )
+  )
+})
+
+test('nothing in the package asks where it is running or reads a file', () => {
+  // A bundler moves this code and may empty `import.meta`, so either would
+  // break an application that bundles the SDK.
+  const source = join(packageRoot, 'src')
+  const offenders = (readdirSync(source, { recursive: true }) as string[])
+    .filter(name => /\.[cm]?[jt]s$/.test(name))
+    .filter(name =>
+      /['"](?:node:)?fs(?:\/promises)?['"]|import\.meta|__dirname|__filename/.test(
+        readFileSync(join(source, name), 'utf8')
+      )
+    )
+  assert.deepEqual(offenders, [])
+})
+
+test('the package loads and answers with none of its files beside it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'memco-bundled-'))
+  try {
+    const out = join(root, 'out', 'js')
+    cpSync(join(packageRoot, 'build', 'js', 'src'), join(out, 'src'), {
+      recursive: true
+    })
+    cpSync(join(packageRoot, 'build', 'js', 'client'), join(out, 'client'), {
+      recursive: true
+    })
+    writeFileSync(join(out, 'package.json'), '{"type":"module"}\n')
+    symlinkSync(join(packageRoot, 'node_modules'), join(root, 'node_modules'))
+
+    const entry = pathToFileURL(join(out, 'src', 'index.js')).href
+    const loaded = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `const sdk = await import(${JSON.stringify(entry)})
+         console.log(sdk.provenance().serverCommit)`
+      ],
+      // Without the coverage variable: the copy's source maps name .ts files that
+      // are not beside it, which would fail the coverage report of this run.
+      { encoding: 'utf8', env: { ...process.env, NODE_V8_COVERAGE: undefined } }
+    )
+    assert.equal(loaded.status, 0, loaded.stderr)
+    assert.equal(loaded.stdout.trim(), provenance().serverCommit)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('provenance reports the contract the generated client was built from', () => {
