@@ -19,9 +19,10 @@ it into a framework is the only work left::
                 tool.name, tool.description, tool.parameters, tool.call
 
 Each tool is bound to the session it was built from, so nothing a model sends
-can change which session a call is recorded under. What a model sends is
-untrusted: arguments are validated against the same types the schema was built
-from, and a bad one is reported the way a bad request is.
+can change which session a call is recorded under: a session or domain it names
+is dropped unread. What a model sends is untrusted: arguments are validated
+against the same types the schema was built from, and a bad one is reported the
+way a bad request is.
 
 ``examples/langchain_agent.py`` is the whole of the LangChain wiring.
 """
@@ -115,6 +116,14 @@ _BOUND = frozenset({"self", "timeout", "source"})
 a model offered the choice could claim the content came from a person — the same
 misattribution the contract already refuses for the operator source. The SDK's
 default says agent, which is what is true here.
+"""
+
+_SESSION_ARGUMENTS = frozenset({"session_id", "sessionId", "domain"})
+"""What a model may send for the session and domain, in the spellings seen.
+
+Dropped rather than refused. The service's guidance tells a model to name its
+session, and a refusal only costs it a turn to learn what the scope already
+settled. None of these is ever read, so none can redirect a call.
 """
 
 _SCALARS: dict[Any, dict[str, Any]] = {
@@ -1210,6 +1219,7 @@ def _arguments(
     checked here rather than trusted: a framework handed a plain JSON Schema
     may not enforce it, and an operation called without one raises a TypeError
     that would escape as a crash instead of reaching the model as a correction.
+    A session or domain the model named is dropped unread.
 
     Args:
         annotations: The parameter annotations, by name.
@@ -1224,11 +1234,14 @@ def _arguments(
             argument's shape is wrong, or one names a parameter the operation
             does not take.
     """
+    sent = {name: value for name, value in sent.items() if name not in _SESSION_ARGUMENTS}
     unknown = sorted(set(sent) - set(annotations))
     if unknown:
         raise MemcoInvalidRequestError(
             grpc.StatusCode.INVALID_ARGUMENT,
-            f"unknown argument(s): {', '.join(unknown)}",
+            # Quoted because these are keys the model wrote, returning in the text it
+            # reads next: unescaped, a newline in one would shape that sentence.
+            f"unknown argument(s): {', '.join(json.dumps(name) for name in unknown)}",
         )
     missing = [name for name in required if sent.get(name) is None]
     if missing:

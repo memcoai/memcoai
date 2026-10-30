@@ -260,7 +260,7 @@ func TestArgumentsAreCheckedLikeAModelWillSendThem(t *testing.T) {
 		op, args, want string
 	}{
 		{"search", `{"query": "q", "source": "user"}`, `unknown argument(s): "source"`},
-		{"search", `{"query": "q", "session_id": "s", "domain": "d", "timeout": 3}`, `unknown argument(s): "domain", "session_id", "timeout"`},
+		{"search", `{"query": "q", "session_id": "s", "sessionId": "s", "domain": "d", "timeout": 3}`, `unknown argument(s): "timeout"`},
 		{"search", `{"query": "q", "evil\nkey": 1}`, `unknown argument(s): "evil\nkey"`},
 		// Sorted by name before quoting: quoted, "a!" sorts before "a".
 		{"search", `{"query": "q", "a!": 1, "a": 1}`, `unknown argument(s): "a", "a!"`},

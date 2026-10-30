@@ -25,6 +25,7 @@ import importlib.util
 import inspect
 import json
 import re
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -32,6 +33,7 @@ from typing import Any
 import pytest
 
 from memcoai import Memco, agent, types
+from memcoai._version import VERSION
 from memcoai.memory.v1 import memory_pb2 as pb
 
 MANIFEST = Path(__file__).resolve().parents[1] / "memcoai" / "memory" / "tools.json"
@@ -267,7 +269,12 @@ def sync_tool_docs() -> ModuleType:
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # It imports its neighbour, which running it as a script would make reachable.
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
     return module
 
 
@@ -738,3 +745,45 @@ def test_the_go_target_refuses_a_field_it_neither_writes_nor_names(published):
 def test_the_committed_go_module_is_what_the_generator_writes(manifest):
     script = sync_tool_docs()
     assert script.go_tool_copy_module(manifest) == script.GO_COPY.read_text(encoding="utf-8")
+
+
+def test_the_compiled_version_is_the_one_pyproject_declares():
+    script = sync_tool_docs()
+    assert script.project_table(script.PYTHON_PROJECT)["version"] == VERSION
+
+
+@pytest.mark.parametrize(
+    ("renderer", "constant", "text"),
+    [
+        ("python_version_module", "PYTHON_PROJECT", '[project]\nname = "m"\n'),
+        ("version_module", "NODE_PACKAGE", '{"name": "m"}\n'),
+    ],
+)
+def test_a_project_with_no_version_is_refused(
+    monkeypatch, tmp_path, renderer: str, constant: str, text: str
+):
+    script = sync_tool_docs()
+    project = tmp_path / "project"
+    project.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(script, constant, project)
+    with pytest.raises(script.Drift, match="declares no version"):
+        getattr(script, renderer)()
+
+
+@pytest.mark.parametrize(
+    ("renderer", "constant", "text"),
+    [
+        ("python_provenance_module", "PYTHON_DESCRIPTOR", "commit: a\\b\n"),
+        ("provenance_module", "NODE_DESCRIPTOR", "commit: `a`\n"),
+        ("provenance_module", "NODE_DESCRIPTOR", "commit: ${a}\n"),
+    ],
+)
+def test_a_descriptor_the_module_would_alter_is_refused(
+    monkeypatch, tmp_path, renderer: str, constant: str, text: str
+):
+    script = sync_tool_docs()
+    descriptor = tmp_path / "SDK_PROVENANCE.yaml"
+    descriptor.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(script, constant, descriptor)
+    with pytest.raises(script.Drift):
+        getattr(script, renderer)()

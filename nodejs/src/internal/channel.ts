@@ -3,9 +3,6 @@
  * may safely be replayed on.
  */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import {
   Channel,
   ChannelCredentials,
@@ -19,25 +16,14 @@ import {
   type ServiceError
 } from '@grpc/grpc-js'
 
+import { VERSION } from '../gen/version.js'
 import type { ClientConfig } from './config.js'
 import * as pb from './gen.js'
-import { packageRoot } from './resources.js'
 import {
   HealthService,
   type HealthCheckRequest,
   type HealthCheckResponse
 } from './wire.js'
-
-function readVersion(): string {
-  // The installed package.json is the one place the version is written down.
-  // Reaching back into src/index.ts for a constant would be circular —
-  // index.ts is what pulls this module in — and would leave two copies to
-  // drift apart.
-  const manifest = JSON.parse(
-    readFileSync(join(packageRoot, 'package.json'), 'utf8')
-  ) as { version: string }
-  return manifest.version
-}
 
 /**
  * Sent as the primary user agent on every channel.
@@ -48,7 +34,7 @@ function readVersion(): string {
  * told its build is out of date. gRPC appends its own runtime token rather than
  * replacing this, so the transport stays identified too.
  */
-export const USER_AGENT = `memco-node/${readVersion()}`
+export const USER_AGENT = `memco-node/${VERSION}`
 
 /** Full name of the memory service, taken from the generated client. */
 export const MEMORY_SERVICE = pb.MemoryServiceClient.serviceName

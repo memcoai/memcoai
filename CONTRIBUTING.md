@@ -80,6 +80,10 @@ reviewable in a diff rather than loaded from a data file:
 | Node.js | `nodejs/src/gen/toolCopy.ts` — TypeScript keeps no doc comments at run time, so the copy is compiled in |
 | Go | `go/internal/memory/toolcopy_gen.go` — Go keeps no doc comments at run time either, so the copy is compiled in |
 
+The same script compiles each SDK's version and provenance descriptor into
+Node.js and Python, so every contract export has to be followed by
+`make tool-docs`.
+
 Regenerating is a maintainer step, but it concerns you in one way:
 `make tool-docs-check` and a pre-commit hook fail if any of those has drifted
 from the manifest, so hand-editing the generated copy will not pass.
@@ -173,7 +177,10 @@ pre-commit install
 
 The Python SDK is in [`python/`](python/) and is published to PyPI as
 [`memcoai`](https://pypi.org/project/memcoai/). A `python-v<version>` tag
-releases it.
+releases it. The version lives in `pyproject.toml`, and `memcoai/_version.py` is
+generated from it, as `memcoai/_provenance_text.py` is from the export's
+descriptor: after changing either source, run `make tool-docs`, or
+`make tool-docs-check` fails.
 
 ## Prerequisites
 
@@ -236,6 +243,7 @@ python/
     administration.py the namespaces reached as client.networks and client.users
     _sync.py _aio.py  the clients
     _*.py             internals: config, auth, channel, conversion, validation
+    _version.py _provenance_text.py   GENERATED — do not edit
     memory/           GENERATED — do not edit
     admin/ auth/      GENERATED — do not edit
   tests/              the test suite
@@ -244,7 +252,8 @@ python/
 ```
 
 Anything under `memcoai/memory/`, `memcoai/admin/` or `memcoai/auth/` comes from
-the service contracts. Everything else in `memcoai/` is hand-written,
+the service contracts, and `_version.py` and `_provenance_text.py` from
+`scripts/sync_tool_docs.py`. Everything else in `memcoai/` is hand-written,
 `__init__.py` included.
 
 ## Tests
@@ -365,7 +374,10 @@ signatures genuinely are `Any`. Say why in the comment.
 
 The Node.js SDK is in [`nodejs/`](nodejs/) and is published to npm as
 [`@memco/memcoai`](https://www.npmjs.com/package/@memco/memcoai). A
-`nodejs-v<version>` tag releases it.
+`nodejs-v<version>` tag releases it. The version lives in `package.json`, and
+`nodejs/src/gen/version.ts` is generated from it, as `nodejs/src/gen/provenance.ts`
+is from the export's descriptor: after changing either source, run
+`make tool-docs`, or `make tool-docs-check` fails.
 
 ## Prerequisites
 
@@ -428,8 +440,8 @@ nodejs/
     types.ts          the result types every operation returns
     errors.ts         the exception hierarchy
     administration.ts the namespaces reached as client.networks and client.users
-    internal/         internals: wire conversion, resources, provenance
-    gen/              GENERATED — the service's tool copy
+    internal/         internals: wire conversion, provenance
+    gen/              GENERATED — the service's tool copy, the version, the provenance
   client/             GENERATED — do not edit
   tests/              the test suite
   docs/               TypeDoc's output; nothing in it is hand-written

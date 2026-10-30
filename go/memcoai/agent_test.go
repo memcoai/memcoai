@@ -193,19 +193,35 @@ func TestEnrichFetchAndRevertReachTheWire(t *testing.T) {
 	}
 }
 
+func TestASessionOrDomainAModelNamesIsIgnored(t *testing.T) {
+	f := connected(t)
+	tools := toolset(t, f)
+	const smuggled = `"session_id": "session-theirs", "sessionId": "theirs", "domain": "somewhere-else"`
+
+	if got := called(t, tools, "memco_search", `{"query": "q", `+smuggled+`}`); strings.HasPrefix(got, "invalid request") {
+		t.Fatalf("search %q", got)
+	}
+	if sent := sentAs[*memoryv1.SearchRequest](t, f, "Search"); sent.GetSessionId() != "session-a" || sent.GetDomain() != "" {
+		t.Fatalf("search sent %v", sent)
+	}
+	called(t, tools, "memco_create_memory", `{"query": "q", "title": "t", "content": "c", `+smuggled+`}`)
+	if sent := sentAs[*memoryv1.CreateMemoryRequest](t, f, "CreateMemory"); sent.GetSessionId() != "session-a" || sent.GetDomain() != "" {
+		t.Fatalf("write sent %v", sent)
+	}
+}
+
 func TestWhatAModelGotWrongComesBackAsText(t *testing.T) {
 	f := connected(t)
 	tools := toolset(t, f)
 	cases := map[string][2]string{
-		"missing":       {`{}`, "invalid request: missing required argument(s): query"},
-		"wrong type":    {`{"query": 3}`, "invalid request: query must be a string, not number"},
-		"bound session": {`{"query": "q", "session_id": "other"}`, `invalid request: unknown argument(s): "session_id"`},
-		"blank":         {`{"query": " "}`, "invalid request: query must not be empty"},
-		"not json":      {`not json at all`, "invalid request: arguments are not valid JSON: "},
-		"a string":      {`"just a string"`, "invalid request: arguments must be an object, not string"},
-		"a list":        {`[1, 2]`, "invalid request: arguments must be an object, not array"},
-		"null":          {`null`, "invalid request: arguments must be an object, not null"},
-		"a number":      {`42`, "invalid request: arguments must be an object, not number"},
+		"missing":    {`{}`, "invalid request: missing required argument(s): query"},
+		"wrong type": {`{"query": 3}`, "invalid request: query must be a string, not number"},
+		"blank":      {`{"query": " "}`, "invalid request: query must not be empty"},
+		"not json":   {`not json at all`, "invalid request: arguments are not valid JSON: "},
+		"a string":   {`"just a string"`, "invalid request: arguments must be an object, not string"},
+		"a list":     {`[1, 2]`, "invalid request: arguments must be an object, not array"},
+		"null":       {`null`, "invalid request: arguments must be an object, not null"},
+		"a number":   {`42`, "invalid request: arguments must be an object, not number"},
 	}
 	for name, c := range cases {
 		if got := called(t, tools, "memco_search", c[0]); !strings.HasPrefix(got, c[1]) {

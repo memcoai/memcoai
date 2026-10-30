@@ -13,6 +13,7 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import {
@@ -24,7 +25,7 @@ import {
   TOOL_PREFIX,
   type ToolCopy
 } from '../src/gen/toolCopy.js'
-import { TOOLS_FILE } from '../src/internal/resources.js'
+import { packageRoot } from './packageFiles.js'
 
 /** One tool as the manifest publishes it, in the part this suite reads. */
 interface Published {
@@ -33,7 +34,9 @@ interface Published {
   readonly parameters: Readonly<Record<string, string>>
 }
 
-const document = JSON.parse(readFileSync(TOOLS_FILE, 'utf8')) as {
+const document = JSON.parse(
+  readFileSync(join(packageRoot, 'client', 'src', 'gen', 'tools.json'), 'utf8')
+) as {
   tools: Published[]
 }
 const published = new Map(document.tools.map(tool => [tool.name, tool]))

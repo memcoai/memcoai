@@ -23,14 +23,13 @@ import {
   LEGACY_TOKEN_ENV,
   TOKEN_ENV
 } from '../src/internal/config.js'
+import { packageRoot } from './packageFiles.js'
 
-// This file compiles to `<outDir>/tests/`, and every outDir is two segments
-// deep — see the walk in src/internal/resources.ts, which relies on the same
-// thing. So the package root is three levels up, and the compiled examples sit
-// one level up, beside this directory.
+// This file compiles to `<outDir>/tests/`, so the compiled examples sit one
+// level up, beside this directory.
 const here = fileURLToPath(new URL('.', import.meta.url))
 const COMPILED = join(here, '..', 'examples')
-const SOURCES = join(here, '..', '..', '..', 'examples')
+const SOURCES = join(packageRoot, 'examples')
 
 // Listed from the TypeScript sources rather than from the build: those are what
 // a reader copies, and a stale .js left in build/ must not invent an example.

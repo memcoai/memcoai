@@ -147,11 +147,12 @@ domain are bound, so there is no `list_domains` or `start_session` tool
 either — `agent.briefing()` says so, since the service's copy mentions both.
 
 Every tool is bound to the session it was built from, so nothing a model sends
-can change which session a call is recorded under, and arguments are validated
-before anything is sent. A malformed request, an invented tool name, and a
-handle that resolves to nothing all come back as text the model can act on —
-`agent.AGENT_RECOVERABLE` is where that line is drawn. Everything else, a
-rejected credential above all, is raised: no wording a model reads will fix it.
+can change which session a call is recorded under: a session or domain it names
+is ignored. Arguments are validated before anything is sent. A malformed
+request, an invented tool name, and a handle that resolves to nothing all come
+back as text the model can act on — `agent.AGENT_RECOVERABLE` is where that line
+is drawn. Everything else, a rejected credential above all, is raised: no wording
+a model reads will fix it.
 
 [`examples/langchain_agent.py`](https://github.com/memcoai/memcoai/blob/main/python/examples/langchain_agent.py)
 is a complete agent in eighty lines, and defines no helpers of its own.

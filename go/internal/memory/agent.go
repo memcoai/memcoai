@@ -71,6 +71,10 @@ var (
 	feedbackShape = Shape{Kind: ObjectsShape, Fields: feedbackFields, Entry: "FeedbackRating"}
 )
 
+// sessionArguments are dropped, not refused: a refusal costs a model a turn, and
+// none is ever read.
+var sessionArguments = []string{"session_id", "sessionId", "domain"}
+
 // Operations are the offered operations, in the order a task uses them.
 // Written out rather than derived: whatever is here reaches an untrusted model.
 var Operations = []Operation{
@@ -179,10 +183,14 @@ func jsonType(value any) string {
 
 // Arguments checks what a model sent against op and converts it: strings,
 // booleans, []string, and []map[string]any holding only declared fields. A
-// null optional argument or field is the same as leaving it out.
+// null optional argument or field is the same as leaving it out, and a session
+// or domain the model named is ignored.
 func Arguments(op Operation, raw map[string]any) (map[string]any, error) {
 	var undeclared []string
 	for name := range raw {
+		if slices.Contains(sessionArguments, name) {
+			continue
+		}
 		if !slices.ContainsFunc(op.Arguments, func(a Argument) bool { return a.Name == name }) {
 			undeclared = append(undeclared, name)
 		}

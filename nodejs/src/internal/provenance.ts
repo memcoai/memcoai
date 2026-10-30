@@ -12,11 +12,9 @@
  * `protoc` and `protobuf` each appear more than once.
  */
 
-import { readFileSync } from 'node:fs'
-
 import { MemcoConfigError } from '../errors.js'
+import { PROVENANCE } from '../gen/provenance.js'
 import type { Provenance, ProtoRecord } from '../types.js'
-import { PROVENANCE_FILE } from './resources.js'
 
 const RESOURCE = 'SDK_PROVENANCE.yaml'
 
@@ -246,12 +244,12 @@ let cached: Provenance | undefined
  * That is CI's job, and it runs against the contract itself, which an installed
  * package does not carry.
  *
- * The descriptor is read once and the result reused.
+ * The descriptor is compiled in, parsed once and the result reused.
  *
  * @returns The server commit the export was cut from, and the contract files
  *   it was generated from.
- * @throws {@link MemcoConfigError} if the descriptor is absent from the
- *   installed package, or is not in the shape the export writes.
+ * @throws {@link MemcoConfigError} if the descriptor is not in the shape the
+ *   export writes.
  *
  * @example
  * ```ts
@@ -262,17 +260,6 @@ let cached: Provenance | undefined
  * ```
  */
 export function provenance(): Provenance {
-  if (cached === undefined) {
-    let text: string
-    try {
-      text = readFileSync(PROVENANCE_FILE, 'utf8')
-    } catch {
-      throw new MemcoConfigError(
-        `${RESOURCE} is missing from the installed @memco/memcoai package; ` +
-          'the tarball was built wrongly'
-      )
-    }
-    cached = parse(text)
-  }
+  cached ??= parse(PROVENANCE)
   return cached
 }

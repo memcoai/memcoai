@@ -38,5 +38,6 @@ jobs:
       # The tool copy an SDK hands a model is generated from the manifest: the
       # docstrings memcoai.agent reads, nodejs/src/gen/toolCopy.ts and
       # go/internal/memory/toolcopy_gen.go. Drift here hands a model copy the
-      # service did not write.
+      # service did not write. Node's and Python's version and provenance are
+      # generated too, and drift there ships a user agent or a record that is wrong.
       - run: python scripts/sync_tool_docs.py --check

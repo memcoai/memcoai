@@ -4,10 +4,6 @@
   // outright — ts-proto emits `export enum DataSource`, which is not erasable
   // syntax — so the suite runs over JavaScript, not over .ts.
   //
-  // outDir is `build/js` because it is two segments deep, exactly like dist/esm
-  // and dist/cjs, so the walk in src/internal/resources.ts reaches the package
-  // root identically in all three builds.
-  //
   // The suite is invoked with an explicit glob — `node --test
   // 'build/js/tests/**/*.test.js'` — not with a directory. On Node 24 a
   // directory argument is loaded as a module rather than searched, and fails

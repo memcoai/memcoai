@@ -78,10 +78,10 @@ clean:  ## Remove build and cache artefacts
 provenance:  ## Verify every generated client matches the contract it claims
 	python3 scripts/verify_provenance.py
 
-tool-docs:  ## Write the service's tool copy into the SDK docstrings
+tool-docs:  ## Write the tool copy, versions and provenance into the SDKs
 	python3 scripts/sync_tool_docs.py
 
-tool-docs-check:  ## Verify the docstrings still carry the manifest's copy
+tool-docs-check:  ## Verify the tool copy, versions and provenance are in step
 	python3 scripts/sync_tool_docs.py --check
 
 check: lint typecheck test provenance tool-docs-check docs  ## Everything CI runs
