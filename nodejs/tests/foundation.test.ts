@@ -122,7 +122,9 @@ test('the package loads and answers with none of its files beside it', () => {
         `const sdk = await import(${JSON.stringify(entry)})
          console.log(sdk.provenance().serverCommit)`
       ],
-      { encoding: 'utf8' }
+      // Without the coverage variable: the copy's source maps name .ts files that
+      // are not beside it, which would fail the coverage report of this run.
+      { encoding: 'utf8', env: { ...process.env, NODE_V8_COVERAGE: undefined } }
     )
     assert.equal(loaded.status, 0, loaded.stderr)
     assert.equal(loaded.stdout.trim(), provenance().serverCommit)
