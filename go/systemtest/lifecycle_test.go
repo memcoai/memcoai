@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -68,10 +67,11 @@ type note struct{ query, title, content string }
 // probe is the memory this run writes: true, substantive, and free of
 // identifiers of the run.
 //
-// The run marker lives in the query and nowhere else. The query becomes the
-// memory's intent, which comes back on every search result, so the test can
-// still recognise its own memory while the insight the service evaluates is
-// pure prose. The service's quality gate refuses content dominated by
+// The run marker lives in the query and nowhere else, where it labels the run
+// for anyone reading the domain; the service does not return it. The test
+// recognises its memory by the insight's title instead, which belongs to this
+// SDK and this subject alone, while the insight the service evaluates is pure
+// prose. The service's quality gate refuses content dominated by
 // identifiers, and anything it reads as a report of work rather than durable
 // knowledge; a refused write is accepted and then never becomes searchable,
 // which surfaces here only as a search that never finds it. So the body says
@@ -158,7 +158,7 @@ func lifecycle(t *testing.T, domain string) {
 	outstanding = append(outstanding, write.OperationID)
 	t.Logf("created, operation %s", write.OperationID)
 
-	memory, insight := searchUntilFound(t, client, session.ID, written.query, nonce, written.title)
+	memory, insight := searchUntilFound(t, client, session.ID, written.query, written.title)
 	t.Logf("found as %s, insight %s", memory.Idx, insight.Idx)
 
 	feedback, err := client.Memory.ShareFeedback(ctx, session.ID, []memcoai.FeedbackRating{
@@ -196,7 +196,8 @@ func lifecycle(t *testing.T, domain string) {
 		t.Fatal("the enrichment was accepted without an operation id")
 	}
 	outstanding = append(outstanding, enrichment.OperationID)
-	added := searchUntilTitled(t, client, written.query, domain, nonce, addition.title)
+	ours := []string{written.title, addition.title}
+	added := searchUntilTitled(t, client, written.query, domain, ours, addition.title)
 	t.Logf("enriched, insight %s", added.Idx)
 
 	undoAddition, err := client.Memory.RevertMemory(ctx, enrichment.OperationID)
@@ -208,7 +209,7 @@ func lifecycle(t *testing.T, domain string) {
 	}
 	// The outcome is what the service reported; this is what it did. The
 	// memory the addition joined is still there, with its original insight.
-	searchUntilTitled(t, client, written.query, domain, nonce, written.title)
+	searchUntilTitled(t, client, written.query, domain, ours, written.title)
 
 	// Removing the original insight takes its memory with it: it is the last
 	// one the memory holds.
@@ -225,7 +226,7 @@ func lifecycle(t *testing.T, domain string) {
 	}
 	t.Log("reverted")
 
-	searchUntilAbsent(t, client, written.query, domain, nonce)
+	searchUntilAbsent(t, client, written.query, domain, ours)
 	getUntilGone(t, client, memory.Idx)
 	t.Log("gone")
 }
@@ -239,11 +240,14 @@ func insightTitled(memory memcoai.Memory, title string) (memcoai.Insight, bool) 
 	return memcoai.Insight{}, false
 }
 
-// isOurs reports whether this run wrote memory. The marker is in the intent
-// because it cannot be in the insight: the query passed to CreateMemory
-// becomes the memory's intent, and intents come back on every search result.
-func isOurs(memory memcoai.Memory, nonce string) bool {
-	return slices.ContainsFunc(memory.Intents, func(intent string) bool { return strings.Contains(intent, nonce) })
+// isOurs reports whether memory holds an insight this run wrote, by title.
+// The titles are this SDK's alone, and the CI job keeps one run per language
+// in flight, so a match is this run's write; the revert proves it, since its
+// outcome would be MERGED, not MEMORY_REMOVED, had the write joined a memory
+// someone else left behind. Every title the run wrote is accepted, since a
+// search may sample either insight of the enriched memory.
+func isOurs(memory memcoai.Memory, titles []string) bool {
+	return slices.ContainsFunc(memory.Insights, func(insight memcoai.Insight) bool { return slices.Contains(titles, insight.Title) })
 }
 
 // resolved returns memory with its insights, fetching them if the search
@@ -264,7 +268,7 @@ func resolved(ctx context.Context, client *memcoai.Client, memory memcoai.Memory
 // searchUntilFound polls the search until this run's memory comes back. Every
 // returned memory is examined: the probe is brand new and competing with
 // whatever else the domain holds, so its rank is not something to assume.
-func searchUntilFound(t *testing.T, client *memcoai.Client, sessionID, query, nonce, title string) (memcoai.Memory, memcoai.Insight) {
+func searchUntilFound(t *testing.T, client *memcoai.Client, sessionID, query, title string) (memcoai.Memory, memcoai.Insight) {
 	t.Helper()
 	var memory memcoai.Memory
 	var insight memcoai.Insight
@@ -280,9 +284,6 @@ func searchUntilFound(t *testing.T, client *memcoai.Client, sessionID, query, no
 			if err != nil {
 				return false, err
 			}
-			if !isOurs(resolvedMemory, nonce) {
-				continue
-			}
 			if found, ok := insightTitled(resolvedMemory, title); ok {
 				memory, insight = resolvedMemory, found
 				return true, nil
@@ -291,11 +292,9 @@ func searchUntilFound(t *testing.T, client *memcoai.Client, sessionID, query, no
 		return false, nil
 	}, func() string {
 		return fmt.Sprintf("the memory never became searchable within %s (last search returned %d memories, "+
-			"none whose intent names %s). Three things can cause this. The write may have been rejected "+
-			"downstream by the quality gate, in which case it never becomes searchable at all. Ingestion "+
-			"may simply be slower than the budget. Or the service may not carry a newly created memory's "+
-			"own query in its intents, which is the assumption this suite rests on to recognise its own "+
-			"memory without an identifier in the insight.", ingestTimeout, seen, nonce)
+			"none holding an insight titled %q). Two things can cause this. The write may have been "+
+			"rejected downstream by the quality gate, in which case it never becomes searchable at all. "+
+			"Or ingestion may simply be slower than the budget.", ingestTimeout, seen, title)
 	})
 	return memory, insight
 }
@@ -307,7 +306,7 @@ func searchUntilFound(t *testing.T, client *memcoai.Client, sessionID, query, no
 // search that issued it and resolves to that snapshot, so an insight added
 // afterwards never appears through it. And no session, because within one a
 // memory already returned comes back as a bare reference with no insights.
-func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain, nonce, title string) memcoai.Insight {
+func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain string, ours []string, title string) memcoai.Insight {
 	t.Helper()
 	var insight memcoai.Insight
 	poll(t, ingestTimeout, "waiting for the enrichment to be ingested", func(ctx context.Context) (bool, error) {
@@ -316,7 +315,7 @@ func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain, nonc
 			return false, err
 		}
 		for _, candidate := range result.Memories {
-			if !isOurs(candidate, nonce) {
+			if !isOurs(candidate, ours) {
 				continue
 			}
 			if found, ok := insightTitled(candidate, title); ok {
@@ -335,14 +334,14 @@ func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain, nonc
 
 // searchUntilAbsent polls a session-less search until this run's memory is no
 // longer returned.
-func searchUntilAbsent(t *testing.T, client *memcoai.Client, query, domain, nonce string) {
+func searchUntilAbsent(t *testing.T, client *memcoai.Client, query, domain string, ours []string) {
 	t.Helper()
 	poll(t, removalTimeout, "waiting for the removal to take effect", func(ctx context.Context) (bool, error) {
 		result, err := client.Memory.Search(ctx, query, memcoai.SearchParams{Domain: domain})
 		if err != nil {
 			return false, err
 		}
-		return !slices.ContainsFunc(result.Memories, func(m memcoai.Memory) bool { return isOurs(m, nonce) }), nil
+		return !slices.ContainsFunc(result.Memories, func(m memcoai.Memory) bool { return isOurs(m, ours) }), nil
 	}, func() string {
 		return fmt.Sprintf("the memory was still returned by search %s after a revert reported MEMORY_REMOVED", removalTimeout)
 	})

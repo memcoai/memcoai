@@ -71,10 +71,11 @@ function nonceFor(domain: string): string {
 /**
  * The memory this run writes: true, substantive, and free of identifiers.
  *
- * The run marker lives in the query and nowhere else. The query becomes the
- * memory's intent, which comes back on every search result, so the test can
- * still recognise its own memory — while the insight the service evaluates is
- * pure prose.
+ * The run marker lives in the query and nowhere else, where it labels the run
+ * for anyone reading the domain; the service does not return it. The test
+ * recognises its memory by the insight's title instead, which belongs to this
+ * SDK and this subject alone, while the insight the service evaluates is pure
+ * prose.
  *
  * Two quality-gate rules have already rejected versions of this, and a
  * rejection is invisible from here: the write is accepted, the memory never
@@ -146,14 +147,16 @@ function insightTitled(memory: Memory, title: string): Insight | undefined {
 }
 
 /**
- * Whether this memory was written by this run.
+ * Whether this memory holds an insight this run wrote, by title.
  *
- * The marker is in the intent because it cannot be in the insight: the query
- * passed to createMemory becomes the memory's intent, and intents come back on
- * every search result.
+ * The titles are this SDK's alone, and the CI job keeps one run per language in
+ * flight, so a match is this run's write. The revert below proves it: its
+ * outcome would be MERGED, not MEMORY_REMOVED, had the write joined a memory
+ * someone else left behind. Every title the run wrote is accepted, since a
+ * search may sample either insight of the enriched memory.
  */
-function isOurs(memory: Memory, nonce: string): boolean {
-  return memory.intents.some(intent => intent.includes(nonce))
+function isOurs(memory: Memory, titles: readonly string[]): boolean {
+  return memory.insights.some(insight => titles.includes(insight.title))
 }
 
 /**
@@ -181,7 +184,6 @@ async function searchUntilFound(
   client: Memco,
   sessionId: string,
   query: string,
-  nonce: string,
   title: string
 ): Promise<[Memory, Insight]> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
@@ -192,7 +194,6 @@ async function searchUntilFound(
     seen = result.memories.length
     for (const candidate of result.memories) {
       const memory = await resolved(client, candidate)
-      if (!isOurs(memory, nonce)) continue
       const insight = insightTitled(memory, title)
       if (insight !== undefined) return [memory, insight]
     }
@@ -203,12 +204,10 @@ async function searchUntilFound(
   }
   return assert.fail(
     `the memory never became searchable within ${INGEST_TIMEOUT_MS / 1000}s ` +
-      `(last search returned ${seen} memories, none whose intent names ${nonce}). ` +
-      'Three things can cause this. The write may have been rejected downstream by ' +
-      'the quality gate, in which case it never becomes searchable at all. Ingestion ' +
-      'may simply be slower than the budget. Or the service may not carry a newly ' +
-      "created memory's own query in its intents, which is the assumption this suite " +
-      'rests on to recognise its own memory without an identifier in the insight.'
+      `(last search returned ${seen} memories, none holding an insight titled ` +
+      `${JSON.stringify(title)}). Two things can cause this. The write may have been ` +
+      'rejected downstream by the quality gate, in which case it never becomes ' +
+      'searchable at all. Or ingestion may simply be slower than the budget.'
   )
 }
 
@@ -228,7 +227,7 @@ async function searchUntilTitled(
   client: Memco,
   query: string,
   domain: string,
-  nonce: string,
+  ours: readonly string[],
   title: string
 ): Promise<Insight> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
@@ -236,7 +235,7 @@ async function searchUntilTitled(
   while (Date.now() < deadline) {
     for (const candidate of (await client.memory.search(query, { domain }))
       .memories) {
-      if (!isOurs(candidate, nonce)) continue
+      if (!isOurs(candidate, ours)) continue
       const found = insightTitled(candidate, title)
       if (found !== undefined) return found
     }
@@ -255,14 +254,14 @@ async function searchUntilAbsent(
   client: Memco,
   query: string,
   domain: string,
-  nonce: string
+  ours: readonly string[]
 ): Promise<void> {
   const deadline = Date.now() + REMOVAL_TIMEOUT_MS
   const waits = pollWaits()
   while (Date.now() < deadline) {
     const found = (
       await client.memory.search(query, { domain })
-    ).memories.filter(m => isOurs(m, nonce))
+    ).memories.filter(m => isOurs(m, ours))
     if (found.length === 0) return
     console.log('  waiting for the removal to take effect')
     await sleep(waits.next().value)
@@ -328,7 +327,6 @@ async function lifecycle(domain: string): Promise<void> {
         client,
         session.id,
         fields.query,
-        nonce,
         fields.title
       )
       console.log(`  found as ${memory.idx}, insight ${insight.idx}`)
@@ -363,7 +361,7 @@ async function lifecycle(domain: string): Promise<void> {
         client,
         fields.query,
         domain,
-        nonce,
+        [fields.title, extra.title],
         extra.title
       )
       console.log(`  enriched, insight ${added.idx}`)
@@ -383,7 +381,7 @@ async function lifecycle(domain: string): Promise<void> {
         client,
         fields.query,
         domain,
-        nonce,
+        [fields.title, extra.title],
         fields.title
       )
       assert.equal(
@@ -406,7 +404,10 @@ async function lifecycle(domain: string): Promise<void> {
       )
       console.log('  reverted')
 
-      await searchUntilAbsent(client, fields.query, domain, nonce)
+      await searchUntilAbsent(client, fields.query, domain, [
+        fields.title,
+        extra.title
+      ])
       await getUntilGone(client, memory.idx)
       console.log('  gone')
     } finally {
