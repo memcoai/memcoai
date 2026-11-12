@@ -237,6 +237,24 @@ both described below.
 `Connect` is safe to call again after a failure; the connection is kept, so a
 retry is cheap rather than a fresh handshake.
 
+### Building an integration
+
+A package that calls Memco on its users' behalf, such as a framework's memory
+provider, names itself so the service can tell its traffic apart:
+
+```go
+client, err := memcoai.NewClient(memcoai.Options{
+	Integration: memcoai.Integration{Name: "memco-eve", Version: "0.2.0"},
+})
+```
+
+Every call's user agent then starts `memco-go/<sdk version> memco-eve/0.2.0`,
+with the SDK's own token still first. The name and the version are each 1 to 64
+letters, digits, `.`, `_` or `-`, and the version may also carry `+` for build
+metadata; anything else, or setting only one of them, is a `*ConfigError`. No
+environment variable sets it, since it identifies the calling code rather than
+the deployment, and an application calling Memco directly leaves it unset.
+
 ### Against a local development server
 
 A local server usually serves plaintext, so point the client at it and turn TLS

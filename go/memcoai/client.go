@@ -100,6 +100,32 @@ type Options struct {
 	// Logger receives this client's log records instead of the SDK's own
 	// logger. Its handler decides which levels it keeps.
 	Logger *slog.Logger
+	// Integration names the software calling the SDK on a developer's
+	// behalf, such as a framework's memory provider. It is announced to the
+	// service after the SDK's own user-agent token, so the integration's
+	// traffic can be told apart. The zero value announces none. Set by
+	// integrations, not applications; no environment variable sets it.
+	Integration Integration
+}
+
+// Integration names the software calling the SDK, announced to the service
+// in the user agent after the SDK's own token.
+//
+// Name and Version are each 1 to 64 letters, digits, '.', '_' or '-'; Version
+// may also carry '+', for build metadata. Setting only one of them, or either
+// to anything else, makes [NewClient] return a [*ConfigError].
+//
+// For example, a memory provider passes its package's name and version:
+//
+//	client, err := memcoai.NewClient(memcoai.Options{
+//		Integration: memcoai.Integration{Name: "memco-eve", Version: "0.2.0"},
+//	})
+//	// Every call's user agent starts "memco-go/<sdk version> memco-eve/0.2.0".
+type Integration struct {
+	// Name is the integration's product name, such as "memco-eve".
+	Name string
+	// Version is the integration's own version, such as "0.2.0".
+	Version string
 }
 
 // shown is Options with the credentials redacted, and none of its methods.
@@ -197,7 +223,8 @@ func (c *Client) CredentialKind() CredentialKind {
 // It returns a client that must be closed with [Client.Close].
 //
 // Errors: [*ConfigError] when no credential is found, a setting is blank or
-// malformed, the timeout is negative, or the log level is not one.
+// malformed, the timeout is negative, the log level is not one, or the
+// integration is half set or malformed.
 func NewClient(opts Options) (*Client, error) {
 	if opts.LogLevel != "" {
 		if err := logging.SetLevel(opts.LogLevel); err != nil {
@@ -209,19 +236,25 @@ func NewClient(opts Options) (*Client, error) {
 		log = logging.Default()
 	}
 	cfg, err := config.Resolve(config.Input{
-		Token:         opts.Token,
-		ClientID:      opts.ClientID,
-		ClientSecret:  opts.ClientSecret,
-		TokenLifetime: opts.TokenLifetime,
-		Host:          opts.Host,
-		Plaintext:     opts.Plaintext,
-		TLS:           opts.TLS,
-		Timeout:       opts.Timeout,
+		Token:              opts.Token,
+		ClientID:           opts.ClientID,
+		ClientSecret:       opts.ClientSecret,
+		TokenLifetime:      opts.TokenLifetime,
+		Host:               opts.Host,
+		Plaintext:          opts.Plaintext,
+		TLS:                opts.TLS,
+		Timeout:            opts.Timeout,
+		IntegrationName:    opts.Integration.Name,
+		IntegrationVersion: opts.Integration.Version,
 	}, os.Getenv, logging.Named(log, "config"))
 	if err != nil {
 		return nil, public(err)
 	}
-	conn, err := transport.Dial(cfg, "memco-go/"+Version, memory.Service)
+	userAgent := "memco-go/" + Version
+	if cfg.Integration != "" {
+		userAgent += " " + cfg.Integration
+	}
+	conn, err := transport.Dial(cfg, userAgent, memory.Service)
 	if err != nil {
 		return nil, public(err)
 	}

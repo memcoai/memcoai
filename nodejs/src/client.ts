@@ -205,8 +205,8 @@ export class Memco {
    *   passed beside client credentials, if only half of the client pair is
    *   available, if `tokenLifetime` is given without client credentials or is
    *   not a positive whole number, if the host is blank or carries an invalid
-   *   port, if `MEMCO_API_TLS` is neither `true` nor `false`, or if the timeout
-   *   is not positive.
+   *   port, if `MEMCO_API_TLS` is neither `true` nor `false`, if the timeout
+   *   is not positive, or if a part of the integration is malformed.
    */
   constructor(options: MemcoOptions = {}) {
     if (options.logLevel !== undefined) {

@@ -15,12 +15,12 @@ import { ChannelCredentials, status, type ServiceError } from '@grpc/grpc-js'
 
 import { MemcoUnavailableError, fromServiceError } from '../src/errors.js'
 import {
-  CHANNEL_OPTIONS,
   HEALTH_SERVICE,
   MEMORY_SERVICE,
   RETRYABLE_METHODS,
   USER_AGENT,
-  buildTransport
+  buildTransport,
+  channelOptions
 } from '../src/internal/channel.js'
 import { resolve } from '../src/internal/config.js'
 import * as pb from '../src/internal/gen.js'
@@ -31,6 +31,10 @@ import {
 import { withHarness } from './fakeServer.js'
 
 const BLIP = { code: status.UNAVAILABLE, details: 'try again' }
+
+const CHANNEL_OPTIONS = channelOptions(null)
+
+const EVE = { name: 'memco-eve', version: '0.2.0' }
 
 /** Await a unary call made in grpc-js's callback style. */
 function unary<Res>(
@@ -320,7 +324,33 @@ test('the user agent reaches the server on a real call', () => {
       transport.close()
     }
     const sent = String(harness.memory.metadata[0]['user-agent'])
-    assert.ok(sent.startsWith(USER_AGENT), sent)
+    assert.ok(sent.startsWith(`${USER_AGENT} grpc-node-js/`), sent)
+  })
+})
+
+test('the integration reaches the server after the SDK token', () => {
+  return withHarness(async harness => {
+    const transport = buildTransport(
+      resolve({
+        token: 't',
+        host: harness.address,
+        tls: false,
+        integration: EVE,
+        env: {}
+      })
+    )
+    try {
+      await unary<pb.ListDomainsResponse>(callback => {
+        transport.memory.listDomains({}, callback)
+      })
+    } finally {
+      transport.close()
+    }
+    const sent = String(harness.memory.metadata[0]['user-agent'])
+    assert.ok(
+      sent.startsWith(`${USER_AGENT} memco-eve/0.2.0 grpc-node-js/`),
+      sent
+    )
   })
 })
 

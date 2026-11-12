@@ -35,7 +35,7 @@ GOMARKDOC = $(GO) run github.com/princjef/gomarkdoc/cmd/gomarkdoc@v1.1.0
 # The floor go.mod declares and every line since: the lines CI's matrix covers.
 # Named in full because GOTOOLCHAIN takes nothing shorter; go fetches one that
 # is missing.
-GO_TOOLCHAINS := go1.25.13 go1.26.8 go1.27.0
+GO_TOOLCHAINS := go1.25.13 go1.26.8 go1.27.4
 
 # Statements, over the hand-written packages only: the generated client is the
 # export's to test, and internal/testserver exists to be tested against. The

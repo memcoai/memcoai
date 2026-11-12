@@ -220,6 +220,24 @@ both described below.
 `AsyncMemco` cannot do any of this in `__init__` — it runs both on `connect()`,
 which `async with` calls for you.
 
+### Building an integration
+
+A package that calls Memco on its users' behalf, such as a framework's memory
+provider, names itself so the service can tell its traffic apart:
+
+```python
+from memcoai import Integration, Memco
+
+client = Memco(integration=Integration(name="memco-eve", version="0.2.0"))
+```
+
+Every call's user agent then starts `memco-python/<sdk version> memco-eve/0.2.0`,
+with the SDK's own token still first. The name and the version are each 1 to 64
+letters, digits, `.`, `_` or `-`, and the version may also carry `+` for build
+metadata; anything else raises `MemcoConfigError`. No environment variable sets
+it, since it identifies the calling code rather than the deployment, and an
+application calling Memco directly leaves it unset.
+
 ### Against a local development server
 
 A local server usually serves plaintext, so point the client at it and turn TLS

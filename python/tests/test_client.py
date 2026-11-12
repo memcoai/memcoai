@@ -12,7 +12,7 @@ import pytest
 from grpc_health.v1 import health_pb2
 
 import memcoai
-from memcoai import AsyncMemco, Memco, errors, types
+from memcoai import AsyncMemco, Integration, Memco, errors, types
 from memcoai.memory.v1 import memory_pb2 as pb
 
 from .conftest import TOKEN
@@ -371,6 +371,17 @@ def test_the_user_agent_names_the_sdk_and_its_version(client: Memco, harness: Ha
     # A single stable product token: the service matches deprecation rules
     # against it, so a second term could break that match.
     assert sent.startswith(f"memco-python/{memcoai.__version__} ")
+
+
+def test_an_integration_is_sent_after_the_sdk_token(harness: Harness):
+    integration = Integration(name="memco-eve", version="0.2.0")
+    with Memco(token=TOKEN, host=harness.address, tls=False, integration=integration):
+        pass
+    assert harness.memory.metadata, "the construction check made no call"
+    for metadata in harness.memory.metadata:
+        assert metadata["user-agent"].startswith(
+            f"memco-python/{memcoai.__version__} memco-eve/0.2.0 grpc-python/"
+        )
 
 
 def test_the_user_agent_prepends_rather_than_replaces(client: Memco, harness: Harness):

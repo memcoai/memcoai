@@ -62,6 +62,23 @@ export const CLIENT_SECRET_ENV = 'MEMCO_CLIENT_SECRET'
 const MAX_WIRE_SECONDS = 2 ** 31 - 1
 
 /**
+ * The software calling the SDK on a developer's behalf, such as a framework's
+ * memory provider.
+ */
+export interface Integration {
+  /** The integration's product name, such as `memco-eve`. */
+  name: string
+  /** The integration's own version, such as `0.2.0`. */
+  version: string
+}
+
+/** What an integration's name may be: one product-token word, capped. */
+const INTEGRATION_NAME = /^[A-Za-z0-9._-]{1,64}$/
+
+/** What its version may be: the same, plus `+` for build metadata. */
+const INTEGRATION_VERSION = /^[A-Za-z0-9._+-]{1,64}$/
+
+/**
  * An environment to read settings from.
  *
  * Shaped like `process.env`, so a caller can pass that, a filtered copy of it,
@@ -83,6 +100,8 @@ export interface ConfigSummary {
   clientId: string | null
   /** The lifetime asked for on each issued token, or `null` for the default. */
   tokenLifetime: number | null
+  /** The integration announced after the SDK, or `null` for none. */
+  integration: Integration | null
 }
 
 /**
@@ -143,6 +162,9 @@ export class ClientConfig {
   /** Default per-call deadline in seconds. */
   readonly timeout: number
 
+  /** The integration announced after the SDK, or `null` for none. */
+  readonly integration: Integration | null
+
   /**
    * @param token The credential, hidden from every rendering of this object.
    * @param host Hostname without a port, and without IPv6 brackets.
@@ -152,6 +174,7 @@ export class ClientConfig {
    * @param clientId The API client's id, or `null` for a token.
    * @param clientSecret The API client's secret, hidden like the token.
    * @param tokenLifetime The lifetime to ask for on each issued token.
+   * @param integration The integration announced after the SDK.
    */
   constructor(
     token: string,
@@ -161,7 +184,8 @@ export class ClientConfig {
     timeout: number,
     clientId: string | null = null,
     clientSecret: string | null = null,
-    tokenLifetime: number | null = null
+    tokenLifetime: number | null = null,
+    integration: Integration | null = null
   ) {
     this.host = host
     this.port = port
@@ -169,6 +193,7 @@ export class ClientConfig {
     this.timeout = timeout
     this.clientId = clientId
     this.tokenLifetime = tokenLifetime
+    this.integration = integration
     for (const [name, value] of [
       ['token', token],
       ['clientSecret', clientSecret]
@@ -207,7 +232,8 @@ export class ClientConfig {
       tls: this.tls,
       timeout: this.timeout,
       clientId: this.clientId,
-      tokenLifetime: this.tokenLifetime
+      tokenLifetime: this.tokenLifetime,
+      integration: this.integration
     }
   }
 
@@ -582,6 +608,14 @@ export interface ResolveOptions {
   /** Default per-call deadline in seconds. */
   timeout?: number
   /**
+   * The integration calling the SDK, announced to the service after the SDK's
+   * own user-agent token so its traffic can be told apart. Each part is 1 to
+   * 64 letters, digits, `.`, `_` or `-`, and the version may also carry `+`.
+   * Set by integrations, not by applications; no environment variable sets
+   * it.
+   */
+  integration?: Integration
+  /**
    * Environment to read from. Defaults to `process.env`; supplying one is
    * mainly useful in tests.
    */
@@ -604,8 +638,8 @@ export interface ResolveOptions {
  *   beside client credentials, if only half of the client pair is available or
  *   a value is blank, if `tokenLifetime` is given without client credentials
  *   or is not a positive whole number, if the host is blank or carries an
- *   invalid port, if `MEMCO_API_TLS` is neither `true` nor `false`, or if the
- *   timeout is not positive.
+ *   invalid port, if `MEMCO_API_TLS` is neither `true` nor `false`, if the
+ *   timeout is not positive, or if a part of the integration is malformed.
  *
  * @example
  * ```ts
@@ -622,6 +656,7 @@ export function resolve(options: ResolveOptions = {}): ClientConfig {
     clientId,
     clientSecret,
     tokenLifetime,
+    integration,
     env = process.env
   } = options
 
@@ -631,6 +666,27 @@ export function resolve(options: ResolveOptions = {}): ClientConfig {
   checkFinite(timeout)
   if (timeout <= 0) {
     throw new MemcoConfigError(`timeout must be positive, got ${timeout}`)
+  }
+
+  // Each part is read once and the copy is what is checked and sent, so a
+  // getter cannot hand the check one value and the channel another.
+  let announced: Integration | null = null
+  if (integration != null) {
+    if (typeof integration !== 'object') {
+      throw new MemcoConfigError(
+        `integration must be an Integration, got ${typeof integration}`
+      )
+    }
+    // Typed as unknown: a plain-JS caller can pass anything here.
+    const { name, version }: { name: unknown; version: unknown } = integration
+    checkIntegrationPart('name', name, INTEGRATION_NAME, "'.', '_' or '-'")
+    checkIntegrationPart(
+      'version',
+      version,
+      INTEGRATION_VERSION,
+      "'.', '_', '+' or '-'"
+    )
+    announced = { name, version }
   }
 
   const client = resolveClient(token, clientId, clientSecret, env)
@@ -677,7 +733,8 @@ export function resolve(options: ResolveOptions = {}): ClientConfig {
     timeout,
     client?.[0] ?? null,
     client?.[1] ?? null,
-    tokenLifetime ?? null
+    tokenLifetime ?? null,
+    announced
   )
   log.debug(
     'endpoint %s tls=%s (host from %s, tls from %s)',
@@ -695,6 +752,20 @@ export function resolve(options: ResolveOptions = {}): ClientConfig {
         : 'the default'
   )
   return config
+}
+
+/** Refuse a part of an integration its pattern does not match. */
+function checkIntegrationPart(
+  part: string,
+  value: unknown,
+  pattern: RegExp,
+  allowed: string
+): asserts value is string {
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    throw new MemcoConfigError(
+      `integration ${part} must be 1 to 64 letters, digits, ${allowed}, got ${typeof value === 'string' ? JSON.stringify(value) : typeof value}`
+    )
+  }
 }
 
 /**

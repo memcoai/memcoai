@@ -21,8 +21,9 @@ USER_AGENT = f"memco-python/{VERSION}"
 The product token is deliberately a single stable ``memco-python/<version>``: the
 service matches deprecation rules against it, and it feeds client tracking that
 expects that shape. A client sending no recognisable token can never be told its
-build is out of date. gRPC appends its own runtime token rather than replacing
-this, so the transport stays identified too.
+build is out of date. An integration's token, when one is set, follows it, and
+gRPC appends its own runtime token after both rather than replacing them, so the
+transport stays identified too.
 """
 
 _MEMORY_SERVICE = memory_pb2.DESCRIPTOR.services_by_name["MemoryService"].full_name
@@ -96,8 +97,7 @@ _SERVICE_CONFIG = {
     ]
 }
 
-_OPTIONS = [
-    ("grpc.primary_user_agent", USER_AGENT),
+_SHARED_OPTIONS = [
     ("grpc.enable_retries", 1),
     # `service_config`, not `default_service_config`. The default is the option
     # that reads as correct here — it yields to a policy the service publishes
@@ -118,6 +118,17 @@ _OPTIONS = [
 ]
 
 
+def _options(config: ClientConfig) -> list[tuple[str, Any]]:
+    """The channel options, with the user agent announcing any integration."""
+    integration = config.integration
+    user_agent = (
+        USER_AGENT
+        if integration is None
+        else f"{USER_AGENT} {integration.name}/{integration.version}"
+    )
+    return [("grpc.primary_user_agent", user_agent), *_SHARED_OPTIONS]
+
+
 def build_channel(config: ClientConfig) -> grpc.Channel:
     """Open a synchronous channel.
 
@@ -131,8 +142,10 @@ def build_channel(config: ClientConfig) -> grpc.Channel:
         A channel to the configured endpoint.
     """
     if config.tls:
-        return grpc.secure_channel(config.target, grpc.ssl_channel_credentials(), options=_OPTIONS)
-    return grpc.insecure_channel(config.target, options=_OPTIONS)
+        return grpc.secure_channel(
+            config.target, grpc.ssl_channel_credentials(), options=_options(config)
+        )
+    return grpc.insecure_channel(config.target, options=_options(config))
 
 
 def build_async_channel(config: ClientConfig) -> Any:
@@ -149,6 +162,6 @@ def build_async_channel(config: ClientConfig) -> Any:
     """
     if config.tls:
         return grpc.aio.secure_channel(
-            config.target, grpc.ssl_channel_credentials(), options=_OPTIONS
+            config.target, grpc.ssl_channel_credentials(), options=_options(config)
         )
-    return grpc.aio.insecure_channel(config.target, options=_OPTIONS)
+    return grpc.aio.insecure_channel(config.target, options=_options(config))

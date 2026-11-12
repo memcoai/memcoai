@@ -10,7 +10,7 @@ import pytest
 from grpc_health.v1 import health_pb2
 
 import memcoai
-from memcoai import AsyncMemco, errors, types
+from memcoai import AsyncMemco, Integration, errors, types
 from memcoai._auth import Minted
 from memcoai.memory.v1 import memory_pb2 as pb
 
@@ -245,6 +245,20 @@ async def test_a_failed_reconnect_returns_once_the_calls_it_waits_for_are_done(
 
 async def test_provenance_is_reachable(async_client: AsyncMemco):
     assert async_client.provenance().server_commit
+
+
+async def test_the_async_client_sends_an_integration_after_the_sdk_token(harness: Harness):
+    integration = Integration(name="memco-eve", version="0.2.0")
+    connected = AsyncMemco(token=TOKEN, host=harness.address, tls=False, integration=integration)
+    try:
+        await connected.connect()
+    finally:
+        await connected.close()
+    assert harness.memory.metadata, "the construction check made no call"
+    for metadata in harness.memory.metadata:
+        assert metadata["user-agent"].startswith(
+            f"memco-python/{memcoai.__version__} memco-eve/0.2.0 grpc-python"
+        )
 
 
 async def test_the_user_agent_is_sent_by_the_async_client(

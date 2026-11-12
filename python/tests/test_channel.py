@@ -14,6 +14,7 @@ from typing import Any
 import grpc
 import pytest
 
+from memcoai import Integration
 from memcoai._channel import RETRYABLE_METHODS, USER_AGENT, build_async_channel, build_channel
 from memcoai._config import resolve
 
@@ -51,6 +52,14 @@ def test_the_async_builder_sends_the_user_agent(captured_options: list[Any], tls
     build_async_channel(resolve(token="t", host="localhost:1", tls=tls, timeout=5.0, env={}))
     assert captured_options, "no channel was constructed"
     assert ("grpc.primary_user_agent", USER_AGENT) in (captured_options[-1] or [])
+
+
+@pytest.mark.parametrize("build", [build_channel, build_async_channel], ids=["sync", "async"])
+def test_an_integration_follows_the_sdk_token(captured_options: list[Any], build: Any):
+    integration = Integration(name="memco-eve", version="0.2.0")
+    build(resolve(token="t", host="localhost:1", tls=False, integration=integration, env={}))
+    options = dict(captured_options[-1] or [])
+    assert options["grpc.primary_user_agent"] == f"{USER_AGENT} memco-eve/0.2.0"
 
 
 def test_the_user_agent_is_a_single_stable_product_token():

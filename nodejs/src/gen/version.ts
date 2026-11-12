@@ -6,4 +6,4 @@
  * edit: `make tool-docs-check` and a pre-commit hook fail on any difference, and
  * the next run puts it back.
  */
-export const VERSION = '0.3.1'
+export const VERSION = '0.4.0'

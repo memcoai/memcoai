@@ -477,3 +477,34 @@ func TestPlaintextBesideTLSIsRefused(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestAnIntegrationIsRenderedAsAProductToken(t *testing.T) {
+	for _, version := range []string{"0.2.0-rc.0", "1.0.0+build.5", "0.2.1.dev3+g1abc"} {
+		t.Run(version, func(t *testing.T) {
+			config, _ := resolved(t, Input{Token: "t", IntegrationName: "memco-eve", IntegrationVersion: version}, nil)
+			if config.Integration != "memco-eve/"+version {
+				t.Fatalf("got %q", config.Integration)
+			}
+		})
+	}
+	if config, _ := resolved(t, Input{Token: "t"}, nil); config.Integration != "" {
+		t.Fatalf("got %q without an integration", config.Integration)
+	}
+}
+
+func TestAMalformedIntegrationIsRefused(t *testing.T) {
+	cases := map[string]Input{
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got "memco+eve"`:                       {IntegrationName: "memco+eve", IntegrationVersion: "1.0.0"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got ""`:                                {IntegrationVersion: "1.0.0"},
+		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got ""`:                        {IntegrationName: "memco-eve"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got "memco eve"`:                       {IntegrationName: "memco eve", IntegrationVersion: "1.0.0"},
+		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got "1.0/0"`:                   {IntegrationName: "memco-eve", IntegrationVersion: "1.0/0"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got "` + strings.Repeat("a", 65) + `"`: {IntegrationName: strings.Repeat("a", 65), IntegrationVersion: "1.0.0"},
+	}
+	for want, in := range cases {
+		in.Token = "t"
+		if got := refusal(t, in, nil); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}

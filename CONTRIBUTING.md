@@ -596,7 +596,7 @@ detector, which needs cgo. Any Go from 1.21 on will do. `go/go.mod` declares
 **go 1.25.0**, the floor grpc-go v1.83.1 forces, and an older installed
 toolchain fetches that one by itself. CI pins **1.26** for its single-version
 jobs and sweeps **1.25** and **1.27**; `make -C go test-all` runs both modules'
-suites on go1.25.13, go1.26.8 and go1.27.0, fetching each on first use.
+suites on go1.25.13, go1.26.8 and go1.27.4, fetching each on first use.
 
 golangci-lint v2.13.2 needs a 1.26 toolchain to build, so `make -C go lint`
 runs it under `LINT_TOOLCHAIN` (default `go1.26.8`). Pass `LINT_TOOLCHAIN=local`

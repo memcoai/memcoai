@@ -19,6 +19,8 @@ so a session left open does not hold a key until it expires.
 .. autoclass:: memcoai.AsyncMemco
    :members:
 
+.. autoclass:: memcoai.Integration
+
 Provenance
 ----------
 

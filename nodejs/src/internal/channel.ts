@@ -17,7 +17,7 @@ import {
 } from '@grpc/grpc-js'
 
 import { VERSION } from '../gen/version.js'
-import type { ClientConfig } from './config.js'
+import type { ClientConfig, Integration } from './config.js'
 import * as pb from './gen.js'
 import {
   HealthService,
@@ -26,13 +26,14 @@ import {
 } from './wire.js'
 
 /**
- * Sent as the primary user agent on every channel.
+ * The SDK's own product token, which leads the user agent on every channel.
  *
- * The product token is deliberately a single stable `memco-node/<version>`: the
+ * The token is deliberately a single stable `memco-node/<version>`: the
  * service matches deprecation rules against it, and it feeds client tracking
  * that expects that shape. A client sending no recognisable token can never be
- * told its build is out of date. gRPC appends its own runtime token rather than
- * replacing this, so the transport stays identified too.
+ * told its build is out of date. An integration's token, when one is set,
+ * follows it, and gRPC appends its own runtime token after both rather than
+ * replacing them, so the transport stays identified too.
  */
 export const USER_AGENT = `memco-node/${VERSION}`
 
@@ -127,15 +128,15 @@ const SERVICE_CONFIG: { methodConfig: MethodConfig[] } = {
 }
 
 /**
- * The options every channel this SDK opens is given, and no others.
+ * The options every channel this SDK opens is given besides its user agent,
+ * and no others.
  *
- * Exported so a test can assert the whole set rather than the presence of one
- * key: the omissions are decisions too. There is no keepalive and no
+ * The omissions are decisions too, which is why a test asserts the whole set
+ * rather than the presence of one key. There is no keepalive and no
  * message-size cap here, because neither is the client's to decide — a limit
  * enforced only on this side is one the service never asked for.
  */
-export const CHANNEL_OPTIONS: ChannelOptions = {
-  'grpc.primary_user_agent': USER_AGENT,
+const SHARED_OPTIONS: ChannelOptions = {
   'grpc.enable_retries': 1,
   // `service_config`, not `default_service_config`. The default is the option
   // that reads as correct here — it yields to a policy the service publishes —
@@ -153,6 +154,24 @@ export const CHANNEL_OPTIONS: ChannelOptions = {
   // through a short outage can sit unusable long after the service returns.
   'grpc.initial_reconnect_backoff_ms': 200,
   'grpc.max_reconnect_backoff_ms': 5000
+}
+
+/**
+ * The options a channel is opened with: the shared set and the user agent.
+ *
+ * @param integration The integration to announce after the SDK, or `null`.
+ * @returns The channel options.
+ */
+export function channelOptions(
+  integration: Integration | null
+): ChannelOptions {
+  return {
+    'grpc.primary_user_agent':
+      integration === null
+        ? USER_AGENT
+        : `${USER_AGENT} ${integration.name}/${integration.version}`,
+    ...SHARED_OPTIONS
+  }
 }
 
 /**
@@ -231,7 +250,11 @@ export function buildTransport(config: ClientConfig): Transport {
       // with a public certificate needs and all this SDK ever dials over TLS.
       ChannelCredentials.createSsl()
     : ChannelCredentials.createInsecure()
-  const channel = new Channel(config.target, credentials, CHANNEL_OPTIONS)
+  const channel = new Channel(
+    config.target,
+    credentials,
+    channelOptions(config.integration)
+  )
   const options: ClientOptions = { channelOverride: channel }
   return {
     // `config.target` and `credentials` are ignored by every constructor —
