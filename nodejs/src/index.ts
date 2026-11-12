@@ -171,5 +171,6 @@ export {
   type Rendered,
   type Tool,
   type ToolParameters,
+  type ToolResult,
   type ToolsOptions
 } from './agent.js'

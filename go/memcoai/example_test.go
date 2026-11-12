@@ -312,21 +312,23 @@ func ExampleSession_Tools() {
 
 func ExampleTool_Call() {
 	search := session.Tools().Tools[0]
-	text, err := search.Call(ctx, json.RawMessage(`{"query": "how are retries decided"}`))
+	result, err := search.Call(ctx, json.RawMessage(`{"query": "how are retries decided"}`))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(text)
+	fmt.Println(result.Content, result.IsError)
 }
 
 func ExampleToolset_Call() {
 	// A model's tool call, as the provider delivered it.
 	name, arguments := "memco_search", json.RawMessage(`{"query": "how does the SDK log"}`)
-	text, err := session.Tools().Call(ctx, name, arguments)
+	result, err := session.Tools().Call(ctx, name, arguments)
 	if err != nil {
 		log.Fatal(err) // not something a model could fix
 	}
-	fmt.Println(text) // the result, or what the model got wrong
+	// The content goes back to the model either way; IsError is a tool_result's
+	// is_error on the Claude Messages API.
+	fmt.Println(result.Content, result.IsError)
 }
 
 func ExampleToolset_ToAnthropic() {

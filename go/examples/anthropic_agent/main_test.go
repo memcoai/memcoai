@@ -166,6 +166,9 @@ func TestTheTaskRunsTwiceAndTheToolsAnswerFromMemory(t *testing.T) {
 	if len(results) != 1 || results[0]["tool_use_id"] != "toolu_1" || resultText(t, results[0]) != want {
 		t.Fatalf("tool results %v, want %q", results, want)
 	}
+	if results[0]["is_error"] == true {
+		t.Fatalf("a successful search was sent marked as an error: %v", results[0])
+	}
 	// A paused turn is sent back as it stands, for the service to continue.
 	history := sent[3]["messages"].([]any)
 	if len(history) != 2 || history[1].(map[string]any)["role"] != "assistant" {
@@ -285,6 +288,11 @@ func TestAMistakeTheModelCanFixGoesBackAsText(t *testing.T) {
 		resultText(t, results[0]) != "invalid request: query must be a string, not number" ||
 		resultText(t, results[1]) != "nothing found: no such memory" {
 		t.Fatalf("tool results %v", results)
+	}
+	for _, result := range results {
+		if result["is_error"] != true {
+			t.Fatalf("a mistake is not marked as an error: %v", result)
+		}
 	}
 }
 

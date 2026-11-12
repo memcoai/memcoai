@@ -140,6 +140,17 @@ def test_no_integration_resolves_to_none():
     assert resolve(token="t", env={}).integration is None
 
 
+def test_a_scoped_package_name_is_accepted_and_kept_as_given():
+    integration = Integration(name="@memco/eve", version="0.2.0")
+    assert resolve(token="t", integration=integration, env={}).integration == integration
+
+
+@pytest.mark.parametrize("name", ["@memco", "memco/eve", "@/eve", "@memco/", "@a/b/c", "@@a/b"])
+def test_a_name_that_is_not_a_word_or_a_scoped_name_is_refused(name: str):
+    with pytest.raises(errors.MemcoConfigError, match="integration name must be"):
+        resolve(token="t", integration=Integration(name=name, version="1"), env={})
+
+
 @pytest.mark.parametrize(
     ("name", "version", "field"),
     [

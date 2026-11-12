@@ -242,8 +242,8 @@ func converse(ctx context.Context, llm *anthropic.Client, params anthropic.BetaM
 }
 
 // call runs the Memco tools the model asked for. A mistake the model can fix
-// comes back as text for it to read; any other failure is returned, and ends
-// the run.
+// comes back as text for it to read, marked as an error; any other failure is
+// returned, and ends the run.
 func call(ctx context.Context, toolset *memcoai.Toolset, message *anthropic.BetaMessage) ([]anthropic.BetaContentBlockParamUnion, error) {
 	var results []anthropic.BetaContentBlockParamUnion
 	for _, block := range message.Content {
@@ -251,11 +251,11 @@ func call(ctx context.Context, toolset *memcoai.Toolset, message *anthropic.Beta
 		if !ok {
 			continue
 		}
-		text, err := toolset.Call(ctx, use.Name, json.RawMessage(use.JSON.Input.Raw()))
+		result, err := toolset.Call(ctx, use.Name, json.RawMessage(use.JSON.Input.Raw()))
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, anthropic.NewBetaToolResultBlock(use.ID, text, false))
+		results = append(results, anthropic.NewBetaToolResultBlock(use.ID, result.Content, result.IsError))
 	}
 	return results, nil
 }

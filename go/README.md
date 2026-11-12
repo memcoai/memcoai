@@ -130,7 +130,7 @@ toolset.ToAnthropic() // []AnthropicTool: {name, description, input_schema}
 toolset.ToOpenAI()    // []OpenAITool: {type: "function", function: {...}}
 
 // Hand a tool call straight back, arguments as the model sent them.
-text, err := toolset.Call(ctx, "memco_search", json.RawMessage(`{"query": "health checking"}`))
+result, err := toolset.Call(ctx, "memco_search", json.RawMessage(`{"query": "health checking"}`))
 ```
 
 With the [Anthropic Go SDK](https://github.com/anthropics/anthropic-sdk-go), a
@@ -169,10 +169,23 @@ the hosted MCP server publishes, compiled into the module by
 
 **Only two failures are reported back to the model as text** — a malformed
 request and a not-found handle, the two it can actually do something about.
-`Call` returns them as its string, with a nil error. Everything else, a rejected
+`Call` returns them as its result, with a nil error. Everything else, a rejected
 credential included, is returned as the error for your code to handle.
 `IsAgentRecoverable` names that line. `Render` turns any result into the text a
 tool returns, if you call the operations yourself.
+
+`Call` returns a `ToolResult`: `Content` is the text for the model, and
+`IsError` is true for those two failures, and for a tool name that is not
+offered. `Tool` and `Toolset` both return it. It is what a provider's tool
+result takes — `content` and `is_error` on a Claude `tool_result` block:
+
+```go
+result, err := toolset.Call(ctx, use.Name, json.RawMessage(use.JSON.Input.Raw()))
+if err != nil {
+	return err // not something a model could fix
+}
+block := anthropic.NewToolResultBlock(use.ID, result.Content, result.IsError)
+```
 
 ## Configuration
 

@@ -32,11 +32,11 @@ func toolNames(tools *Toolset) []string {
 
 func called(t *testing.T, tools *Toolset, name, args string) string {
 	t.Helper()
-	text, err := tools.Call(ctx, name, json.RawMessage(args))
+	result, err := tools.Call(ctx, name, json.RawMessage(args))
 	if err != nil {
 		t.Fatalf("%s(%s): %v", name, args, err)
 	}
-	return text
+	return result.Content
 }
 
 func TestEveryOfferedOperationIsOneToolInOrder(t *testing.T) {
@@ -255,23 +255,70 @@ func TestFailuresAModelCannotFixAreReturned(t *testing.T) {
 	f := connected(t)
 	tools := toolset(t, f)
 	f.server.Memory.Fail(&testserver.Failure{Code: codes.Unauthenticated, Details: "revoked"})
-	text, err := tools.Call(ctx, "memco_search", json.RawMessage(`{"query": "q"}`))
-	if text != "" {
-		t.Fatalf("text %q", text)
+	got, err := tools.Call(ctx, "memco_search", json.RawMessage(`{"query": "q"}`))
+	if got != (ToolResult{}) {
+		t.Fatalf("got %+v", got)
 	}
 	expect[*AuthenticationError](t, err)
-	text, err = tools.Tools[0].Call(ctx, json.RawMessage(`{"query": "q"}`))
-	if text != "" {
-		t.Fatalf("text %q", text)
+	got, err = tools.Tools[0].Call(ctx, json.RawMessage(`{"query": "q"}`))
+	if got != (ToolResult{}) {
+		t.Fatalf("got %+v", got)
 	}
 	expect[*AuthenticationError](t, err)
 
 	f.server.Memory.Fail(nil)
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	text, err = tools.Call(cancelled, "memco_search", json.RawMessage(`{"query": "q"}`))
-	if text != "" || !errors.Is(err, context.Canceled) {
-		t.Fatalf("a cancelled call: %q, %v", text, err)
+	got, err = tools.Call(cancelled, "memco_search", json.RawMessage(`{"query": "q"}`))
+	if got != (ToolResult{}) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled call: %+v, %v", got, err)
+	}
+}
+
+func TestCallSaysWhetherTheContentIsAFailure(t *testing.T) {
+	f := connected(t)
+	tools := toolset(t, f)
+	f.server.Memory.Respond("GetMemory", &memoryv1.GetMemoryResponse{})
+	notFound := `nothing found: no memory was returned for "memory-z-1"`
+	cases := map[string]struct {
+		name, args string
+		want       ToolResult
+	}{
+		"success":   {"memco_search", `{"query": "q"}`, ToolResult{Content: "0 memories"}},
+		"invalid":   {"memco_search", `{"query": " "}`, ToolResult{Content: "invalid request: query must not be empty", IsError: true}},
+		"not found": {"memco_get_memory", `{"idx": "memory-z-1"}`, ToolResult{Content: notFound, IsError: true}},
+		"not json":  {"memco_search", `"just a string"`, ToolResult{Content: "invalid request: arguments must be an object, not string", IsError: true}},
+	}
+	for label, c := range cases {
+		t.Run(label, func(t *testing.T) {
+			var tool Tool
+			for _, one := range tools.Tools {
+				if one.Name == c.name {
+					tool = one
+				}
+			}
+			if tool.Name == "" {
+				t.Fatalf("no tool named %s", c.name)
+			}
+			args := json.RawMessage(c.args)
+			for _, call := range []func() (ToolResult, error){
+				func() (ToolResult, error) { return tool.Call(ctx, args) },
+				func() (ToolResult, error) { return tools.Call(ctx, c.name, args) },
+			} {
+				if got, err := call(); err != nil || got != c.want {
+					t.Fatalf("got %+v, %v", got, err)
+				}
+			}
+		})
+	}
+}
+
+func TestAnInventedToolNameIsAnErrorOutcome(t *testing.T) {
+	f := connected(t)
+	tools := toolset(t, f)
+	got, err := tools.Call(ctx, "memco_delete_everything", json.RawMessage(`{}`))
+	if err != nil || !got.IsError || !strings.HasPrefix(got.Content, `invalid request: no tool named "memco_delete_everything"`) {
+		t.Fatalf("got %+v, %v", got, err)
 	}
 }
 

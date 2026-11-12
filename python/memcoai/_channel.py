@@ -121,11 +121,13 @@ _SHARED_OPTIONS = [
 def _options(config: ClientConfig) -> list[tuple[str, Any]]:
     """The channel options, with the user agent announcing any integration."""
     integration = config.integration
-    user_agent = (
-        USER_AGENT
-        if integration is None
-        else f"{USER_AGENT} {integration.name}/{integration.version}"
-    )
+    if integration is None:
+        user_agent = USER_AGENT
+    else:
+        # A scope is folded into the name: "@" and "/" cannot appear in a product
+        # token, and the service reads this one as name/version.
+        name = integration.name.removeprefix("@").replace("/", "-")
+        user_agent = f"{USER_AGENT} {name}/{integration.version}"
     return [("grpc.primary_user_agent", user_agent), *_SHARED_OPTIONS]
 
 

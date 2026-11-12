@@ -62,6 +62,18 @@ def test_an_integration_follows_the_sdk_token(captured_options: list[Any], build
     assert options["grpc.primary_user_agent"] == f"{USER_AGENT} memco-eve/0.2.0"
 
 
+@pytest.mark.parametrize("build", [build_channel, build_async_channel], ids=["sync", "async"])
+def test_a_scoped_package_name_is_announced_as_one_product_token(
+    captured_options: list[Any], build: Any
+):
+    # "@" and "/" cannot appear in a user-agent product token, and the service
+    # reads name/version: the scope is folded into the name instead.
+    integration = Integration(name="@memco/eve", version="0.2.0")
+    build(resolve(token="t", host="localhost:1", tls=False, integration=integration, env={}))
+    options = dict(captured_options[-1] or [])
+    assert options["grpc.primary_user_agent"] == f"{USER_AGENT} memco-eve/0.2.0"
+
+
 def test_the_user_agent_is_a_single_stable_product_token():
     # The service matches deprecation rules against this token, so a second
     # term or a changed shape could break that match.

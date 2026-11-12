@@ -48,7 +48,8 @@ class Integration:
     """The software calling the SDK on a developer's behalf, such as a framework's memory provider.
 
     Attributes:
-        name: The integration's product name, such as ``memco-eve``.
+        name: The integration's product name, such as ``memco-eve``. A scoped
+            package name, such as ``@memco/eve``, is announced as ``memco-eve``.
         version: The integration's own version, such as ``0.2.0``.
     """
 
@@ -56,7 +57,7 @@ class Integration:
     version: str
 
 
-_INTEGRATION_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_INTEGRATION_NAME = re.compile(r"(?=.{1,64}\Z)(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+")
 _INTEGRATION_VERSION = re.compile(r"[A-Za-z0-9._+-]{1,64}")
 
 
@@ -428,7 +429,9 @@ def resolve(
         # Each part is read once and a fresh Integration of the checked values is
         # kept, so a subclass cannot hand the check one value and the channel another.
         name, version = integration.name, integration.version
-        _check_integration_part("name", name, _INTEGRATION_NAME, "'.', '_' or '-'")
+        _check_integration_part(
+            "name", name, _INTEGRATION_NAME, "'.', '_' or '-', optionally as @scope/name"
+        )
         _check_integration_part("version", version, _INTEGRATION_VERSION, "'.', '_', '+' or '-'")
         # Plain str copies: a str subclass could otherwise render differently
         # from the buffer the pattern checked.

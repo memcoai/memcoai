@@ -66,14 +66,20 @@ const MAX_WIRE_SECONDS = 2 ** 31 - 1
  * memory provider.
  */
 export interface Integration {
-  /** The integration's product name, such as `memco-eve`. */
+  /**
+   * The integration's product name, such as `memco-eve`. A scoped package
+   * name, such as `@memco/eve`, is announced as `memco-eve`.
+   */
   name: string
   /** The integration's own version, such as `0.2.0`. */
   version: string
 }
 
-/** What an integration's name may be: one product-token word, capped. */
-const INTEGRATION_NAME = /^[A-Za-z0-9._-]{1,64}$/
+/**
+ * What an integration's name may be: one product-token word, or a package
+ * name scoped as `@scope/name`, capped either way.
+ */
+const INTEGRATION_NAME = /^(?=.{1,64}$)(?:@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/
 
 /** What its version may be: the same, plus `+` for build metadata. */
 const INTEGRATION_VERSION = /^[A-Za-z0-9._+-]{1,64}$/
@@ -679,7 +685,12 @@ export function resolve(options: ResolveOptions = {}): ClientConfig {
     }
     // Typed as unknown: a plain-JS caller can pass anything here.
     const { name, version }: { name: unknown; version: unknown } = integration
-    checkIntegrationPart('name', name, INTEGRATION_NAME, "'.', '_' or '-'")
+    checkIntegrationPart(
+      'name',
+      name,
+      INTEGRATION_NAME,
+      "'.', '_' or '-', optionally as @scope/name"
+    )
     checkIntegrationPart(
       'version',
       version,

@@ -354,6 +354,20 @@ test('the integration reaches the server after the SDK token', () => {
   })
 })
 
+test('a scoped package name is announced as one product token', () => {
+  // '@' and '/' cannot appear in a user-agent product token, and the service
+  // reads name/version: the scope is folded into the name instead.
+  const config = resolve({
+    token: 't',
+    integration: { name: '@memco/eve', version: '0.2.0' },
+    env: {}
+  })
+  assert.equal(
+    channelOptions(config.integration)['grpc.primary_user_agent'],
+    `${USER_AGENT} memco-eve/0.2.0`
+  )
+})
+
 test('the memory and health clients share one channel', () => {
   // Both stubs sit on one channel, so the health probe proves the connection
   // the memory calls then use rather than a sibling of it.
