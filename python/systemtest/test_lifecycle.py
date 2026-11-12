@@ -184,9 +184,7 @@ def _search_until_found(
     )
 
 
-def _search_until_titled(
-    client: Memco, query: str, domain: str, ours: tuple[str, ...], title: str
-) -> Insight:
+def _search_until_titled(client: Memco, query: str, domain: str, title: str) -> Insight:
     """Poll a fresh search until the memory carries an insight with this title.
 
     Deliberately not GetMemory on the idx the earlier search returned. An idx is
@@ -202,8 +200,6 @@ def _search_until_titled(
     waits = poll_waits()
     while time.monotonic() < deadline:
         for candidate in client.memory.search(query, domain=domain).memories:
-            if not _is_ours(candidate, ours):
-                continue
             insight = _insight_titled(candidate, title)
             if insight is not None:
                 return insight
@@ -214,6 +210,22 @@ def _search_until_titled(
         "is slower than the budget, or the service endorsed the addition as a duplicate "
         "of an insight the memory already held instead of adding it as a new one."
     )
+
+
+def _assert_no_leftover(client: Memco, query: str, domain: str, ours: tuple[str, ...]) -> None:
+    """Fail before writing when the domain already holds a memory with one of this run's titles.
+
+    Recognising the run's memory by title relies on none being there: a probe
+    left by a run killed before its cleanup would otherwise be taken for this
+    run's, and every later run would fail late and point the wrong way until
+    someone removed it.
+    """
+    for memory in client.memory.search(query, domain=domain).memories:
+        if _is_ours(memory, ours):
+            pytest.fail(
+                f"{domain} already holds {memory.idx}, a probe an earlier run left behind; "
+                "remove it before running this suite again"
+            )
 
 
 def _search_until_absent(client: Memco, query: str, domain: str, ours: tuple[str, ...]) -> None:
@@ -260,10 +272,12 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     """
     fields = probe(nonce)
     extra = addition()
+    ours = (fields["title"], extra["title"])
     print(f"\n[{domain}] probe {nonce}")
 
     session = client.memory.start_session(domain)
     assert session.id
+    _assert_no_leftover(client, fields["query"], domain, ours)
 
     write = client.memory.create_memory(
         query=fields["query"],
@@ -303,8 +317,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     assert enrichment.operation_id
     written.append(enrichment.operation_id)
-    ours = (fields["title"], extra["title"])
-    added = _search_until_titled(client, fields["query"], domain, ours, extra["title"])
+    added = _search_until_titled(client, fields["query"], domain, extra["title"])
     print(f"  enriched, insight {added.idx}")
 
     undo_addition = client.memory.revert_memory(enrichment.operation_id)
@@ -313,7 +326,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     # The outcome is what the service reported; this is what it did. The
     # addition is gone and the memory it joined is intact.
-    after = _search_until_titled(client, fields["query"], domain, ours, fields["title"])
+    after = _search_until_titled(client, fields["query"], domain, fields["title"])
     assert after.title == fields["title"], (
         "reverting the addition took the original insight with it"
     )

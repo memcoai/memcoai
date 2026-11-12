@@ -141,6 +141,9 @@ func lifecycle(t *testing.T, domain string) {
 		t.Fatal("the session has no id")
 	}
 
+	ours := []string{written.title, addition.title}
+	assertNoLeftover(t, client, written.query, domain, ours)
+
 	write, err := client.Memory.CreateMemory(ctx, memcoai.CreateMemoryParams{
 		Query:     written.query,
 		Title:     written.title,
@@ -196,8 +199,7 @@ func lifecycle(t *testing.T, domain string) {
 		t.Fatal("the enrichment was accepted without an operation id")
 	}
 	outstanding = append(outstanding, enrichment.OperationID)
-	ours := []string{written.title, addition.title}
-	added := searchUntilTitled(t, client, written.query, domain, ours, addition.title)
+	added := searchUntilTitled(t, client, written.query, domain, addition.title)
 	t.Logf("enriched, insight %s", added.Idx)
 
 	undoAddition, err := client.Memory.RevertMemory(ctx, enrichment.OperationID)
@@ -209,7 +211,7 @@ func lifecycle(t *testing.T, domain string) {
 	}
 	// The outcome is what the service reported; this is what it did. The
 	// memory the addition joined is still there, with its original insight.
-	searchUntilTitled(t, client, written.query, domain, ours, written.title)
+	searchUntilTitled(t, client, written.query, domain, written.title)
 
 	// Removing the original insight takes its memory with it: it is the last
 	// one the memory holds.
@@ -306,7 +308,7 @@ func searchUntilFound(t *testing.T, client *memcoai.Client, sessionID, query, ti
 // search that issued it and resolves to that snapshot, so an insight added
 // afterwards never appears through it. And no session, because within one a
 // memory already returned comes back as a bare reference with no insights.
-func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain string, ours []string, title string) memcoai.Insight {
+func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain, title string) memcoai.Insight {
 	t.Helper()
 	var insight memcoai.Insight
 	poll(t, ingestTimeout, "waiting for the enrichment to be ingested", func(ctx context.Context) (bool, error) {
@@ -315,9 +317,6 @@ func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain strin
 			return false, err
 		}
 		for _, candidate := range result.Memories {
-			if !isOurs(candidate, ours) {
-				continue
-			}
 			if found, ok := insightTitled(candidate, title); ok {
 				insight = found
 				return true, nil
@@ -330,6 +329,25 @@ func searchUntilTitled(t *testing.T, client *memcoai.Client, query, domain strin
 			"already held instead of adding it as a new one.", title, ingestTimeout)
 	})
 	return insight
+}
+
+// assertNoLeftover fails the test before it writes when the domain already
+// holds a memory with one of this run's titles. Recognising the run's memory
+// by title relies on none being there: a probe left by a run killed before its
+// cleanup would otherwise be taken for this run's, and every later run would
+// fail late and point the wrong way until someone removed it.
+func assertNoLeftover(t *testing.T, client *memcoai.Client, query, domain string, ours []string) {
+	t.Helper()
+	result, err := client.Memory.Search(t.Context(), query, memcoai.SearchParams{Domain: domain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range result.Memories {
+		if isOurs(m, ours) {
+			t.Fatalf("%s already holds %s, a probe an earlier run left behind; remove it before running "+
+				"this suite again", domain, m.Idx)
+		}
+	}
 }
 
 // searchUntilAbsent polls a session-less search until this run's memory is no

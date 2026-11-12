@@ -227,7 +227,6 @@ async function searchUntilTitled(
   client: Memco,
   query: string,
   domain: string,
-  ours: readonly string[],
   title: string
 ): Promise<Insight> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
@@ -235,7 +234,6 @@ async function searchUntilTitled(
   while (Date.now() < deadline) {
     for (const candidate of (await client.memory.search(query, { domain }))
       .memories) {
-      if (!isOurs(candidate, ours)) continue
       const found = insightTitled(candidate, title)
       if (found !== undefined) return found
     }
@@ -246,6 +244,30 @@ async function searchUntilTitled(
     `the enrichment never appeared within ${INGEST_TIMEOUT_MS / 1000}s. Either ingestion ` +
       'is slower than the budget, or the service endorsed the addition as a duplicate of ' +
       'an insight the memory already held instead of adding it as a new one.'
+  )
+}
+
+/**
+ * Fail before writing when the domain already holds a memory with one of this
+ * run's titles.
+ *
+ * Recognising the run's memory by title relies on none being there: a probe
+ * left by a run killed before its cleanup would otherwise be taken for this
+ * run's, and every later run would fail late and point the wrong way until
+ * someone removed it.
+ */
+async function assertNoLeftover(
+  client: Memco,
+  query: string,
+  domain: string,
+  ours: readonly string[]
+): Promise<void> {
+  const { memories } = await client.memory.search(query, { domain })
+  const leftover = memories.find(memory => isOurs(memory, ours))
+  assert.ok(
+    leftover === undefined,
+    `${domain} already holds ${leftover?.idx}, a probe an earlier run left ` +
+      'behind; remove it before running this suite again'
   )
 }
 
@@ -298,6 +320,7 @@ async function lifecycle(domain: string): Promise<void> {
   const nonce = nonceFor(domain)
   const fields = probe(nonce)
   const extra = addition()
+  const ours = [fields.title, extra.title]
   console.log(`\n[${domain}] probe ${nonce}`)
 
   await withClient(async client => {
@@ -307,6 +330,7 @@ async function lifecycle(domain: string): Promise<void> {
       // `domain` and again by connect(), so it is not called a third time here.
       const session = await client.memory.startSession(domain)
       assert.ok(session.id)
+      await assertNoLeftover(client, fields.query, domain, ours)
 
       const write = await client.memory.createMemory({
         query: fields.query,
@@ -361,7 +385,6 @@ async function lifecycle(domain: string): Promise<void> {
         client,
         fields.query,
         domain,
-        [fields.title, extra.title],
         extra.title
       )
       console.log(`  enriched, insight ${added.idx}`)
@@ -381,7 +404,6 @@ async function lifecycle(domain: string): Promise<void> {
         client,
         fields.query,
         domain,
-        [fields.title, extra.title],
         fields.title
       )
       assert.equal(
@@ -404,10 +426,7 @@ async function lifecycle(domain: string): Promise<void> {
       )
       console.log('  reverted')
 
-      await searchUntilAbsent(client, fields.query, domain, [
-        fields.title,
-        extra.title
-      ])
+      await searchUntilAbsent(client, fields.query, domain, ours)
       await getUntilGone(client, memory.idx)
       console.log('  gone')
     } finally {
