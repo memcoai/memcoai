@@ -169,7 +169,9 @@ export function channelOptions(
     'grpc.primary_user_agent':
       integration === null
         ? USER_AGENT
-        : `${USER_AGENT} ${integration.name}/${integration.version}`,
+        : // A scope is folded into the name: '@' and '/' cannot appear in a
+          // product token, and the service reads this one as name/version.
+          `${USER_AGENT} ${integration.name.replace(/^@/, '').replace('/', '-')}/${integration.version}`,
     ...SHARED_OPTIONS
   }
 }

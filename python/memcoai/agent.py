@@ -59,6 +59,7 @@ __all__ = [
     "AsyncTool",
     "AsyncToolset",
     "Tool",
+    "ToolResult",
     "Toolset",
     "briefing",
     "render",
@@ -141,6 +142,32 @@ _SCALAR_NAMES = {str: "a string", bool: "true or false"}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ToolResult:
+    """What a tool call came to: the text for the model, and whether it is a failure.
+
+    Returned by a tool's ``call`` and by :meth:`Toolset.call`. The two fields
+    are what a framework's tool result takes: ``content`` under the same name,
+    and ``is_error`` wherever it can mark a result as an error — ``is_error`` on
+    an Anthropic ``tool_result`` block, for one.
+
+    Attributes:
+        content: The rendered result, or what the model got wrong. Always text,
+            never the list of content blocks some frameworks also accept under
+            this name.
+        is_error: Whether the content reports a failure the model caused: one
+            of :data:`AGENT_RECOVERABLE`, or a tool name that is not offered.
+
+    Example:
+        >>> result = toolset.call(block.name, block.input)
+        >>> {"type": "tool_result", "tool_use_id": block.id,
+        ...  "content": result.content, "is_error": result.is_error}
+    """
+
+    content: str
+    is_error: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Tool:
     """One memory operation, ready to hand to an agent framework.
 
@@ -150,8 +177,10 @@ class Tool:
         parameters: A JSON Schema object describing the arguments, with a
             description on each. Every framework this SDK has been used with
             takes one of these directly.
-        call: Runs the operation and renders the result as text. Takes the
-            arguments the schema describes, by keyword.
+        call: Runs the operation and returns a :class:`ToolResult`: the result
+            rendered as text, or what the model got wrong with ``is_error``
+            set. Takes the arguments the schema describes, by keyword. Every
+            failure outside :data:`AGENT_RECOVERABLE` is raised.
 
     Example:
         >>> for tool in session.tools():
@@ -161,7 +190,7 @@ class Tool:
     name: str
     description: str
     parameters: dict[str, Any]
-    call: Callable[..., str]
+    call: Callable[..., ToolResult]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -172,7 +201,7 @@ class AsyncTool:
         name: The name a model calls, such as ``memco_search``.
         description: What the operation is for, as a model should read it.
         parameters: A JSON Schema object describing the arguments.
-        call: Runs the operation and renders the result as text, awaitably.
+        call: Runs the operation and returns a :class:`ToolResult`, awaitably.
 
     Example:
         >>> for tool in session.tools():
@@ -182,7 +211,7 @@ class AsyncTool:
     name: str
     description: str
     parameters: dict[str, Any]
-    call: Callable[..., Awaitable[str]]
+    call: Callable[..., Awaitable[ToolResult]]
 
 
 def _anthropic(tool: Tool | AsyncTool) -> dict[str, Any]:
@@ -220,11 +249,11 @@ def _openai(tool: Tool | AsyncTool) -> dict[str, Any]:
     }
 
 
-def _structured_tool() -> type[Any]:
-    """Import LangChain's tool class, saying what to install when it is absent.
+def _langchain_tools() -> Any:  # noqa: ANN401 - LangChain is not a dependency to name
+    """Import LangChain's tools module, saying what to install when it is absent.
 
     Returns:
-        ``langchain_core.tools.StructuredTool``.
+        ``langchain_core.tools``.
 
     Raises:
         ImportError: If LangChain is not installed.
@@ -232,14 +261,18 @@ def _structured_tool() -> type[Any]:
     try:
         # Imported here on purpose: LangChain is not a dependency of this SDK,
         # and a caller using another framework must not be made to install it.
-        from langchain_core.tools import StructuredTool  # noqa: PLC0415
+        from langchain_core import tools  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - needs LangChain absent
         raise ImportError("to_langchain() needs LangChain: pip install langchain") from exc
-    return StructuredTool
+    return tools
 
 
-def _langchain(tool: Tool) -> Any:  # noqa: ANN401 - LangChain is not a dependency to name
+def _langchain(tool: Tool) -> Any:  # noqa: ANN401 - as above
     """Build one LangChain tool.
+
+    A failure the model caused is raised as LangChain's ``ToolException`` and
+    handled by the tool itself, which is how LangChain marks a tool message as
+    an error: the content is the same text, the status says it failed.
 
     Args:
         tool: The tool to hand over.
@@ -247,16 +280,26 @@ def _langchain(tool: Tool) -> Any:  # noqa: ANN401 - LangChain is not a dependen
     Returns:
         A ``langchain_core.tools.StructuredTool``.
     """
-    return _structured_tool().from_function(
-        func=tool.call,
+    tools = _langchain_tools()
+
+    def func(**sent: object) -> str:
+        result = tool.call(**sent)
+        if result.is_error:
+            raise tools.ToolException(result.content)
+        return result.content
+
+    func.__name__ = tool.name
+    return tools.StructuredTool.from_function(
+        func=func,
         name=tool.name,
         description=tool.description,
         args_schema=tool.parameters,
+        handle_tool_error=True,
     )
 
 
 def _langchain_async(tool: AsyncTool) -> Any:  # noqa: ANN401 - as above
-    """Build one LangChain tool bound as a coroutine.
+    """Build one LangChain tool bound as a coroutine. Mirrors :func:`_langchain`.
 
     Args:
         tool: The tool to hand over.
@@ -264,11 +307,21 @@ def _langchain_async(tool: AsyncTool) -> Any:  # noqa: ANN401 - as above
     Returns:
         A ``langchain_core.tools.StructuredTool``, reached with ``ainvoke``.
     """
-    return _structured_tool().from_function(
-        coroutine=tool.call,
+    tools = _langchain_tools()
+
+    async def coroutine(**sent: object) -> str:
+        result = await tool.call(**sent)
+        if result.is_error:
+            raise tools.ToolException(result.content)
+        return result.content
+
+    coroutine.__name__ = tool.name
+    return tools.StructuredTool.from_function(
+        coroutine=coroutine,
         name=tool.name,
         description=tool.description,
         args_schema=tool.parameters,
+        handle_tool_error=True,
     )
 
 
@@ -342,19 +395,22 @@ class Toolset(tuple[Tool, ...]):
     ``to_*`` methods hand the same tools to a particular framework, and
     :meth:`call` runs the one a model named — which is what the definition-only
     shapes need, since there the host dispatches rather than the framework.
+    What comes back says whether it is a result or a failure the model caused.
 
     Example:
         >>> toolset = session.tools()
         >>> runnable = create_agent(model, tools=toolset.to_langchain())
         >>> # or, driving the loop yourself:
         >>> response = anthropic.messages.create(tools=toolset.to_anthropic(), ...)
-        >>> toolset.call(block.name, block.input)
+        >>> toolset.call(block.name, block.input).content
     """
 
     def to_langchain(self) -> list[Any]:
         """Hand these tools to LangChain.
 
-        LangChain takes a JSON Schema directly, so nothing is restated.
+        LangChain takes a JSON Schema directly, so nothing is restated. A
+        failure the model caused is marked as one: the tool message LangChain
+        builds for it has ``status="error"``, with the same text as its content.
 
         Returns:
             One ``langchain_core.tools.StructuredTool`` per operation, ready
@@ -398,7 +454,7 @@ class Toolset(tuple[Tool, ...]):
         """
         return [_openai(tool) for tool in self]
 
-    def call(self, name: str, arguments: str | Mapping[str, object]) -> str:
+    def call(self, name: str, arguments: str | Mapping[str, object]) -> ToolResult:
         """Run the tool a model named, and render what it returned.
 
         Args:
@@ -407,8 +463,9 @@ class Toolset(tuple[Tool, ...]):
                 the JSON text OpenAI hands back.
 
         Returns:
-            The result as text, or what the model got wrong. Nothing a model can
-            send reaches the caller as an exception.
+            The rendered result, or what the model got wrong with ``is_error``
+            set — a name that is not a tool included. Nothing a model can send
+            reaches the caller as an exception; every other failure is raised.
 
         Example:
             >>> toolset.call("memco_search", {"query": "how does X work"})
@@ -467,7 +524,7 @@ class AsyncToolset(tuple[AsyncTool, ...]):
         """
         return [_openai(tool) for tool in self]
 
-    async def call(self, name: str, arguments: str | Mapping[str, object]) -> str:
+    async def call(self, name: str, arguments: str | Mapping[str, object]) -> ToolResult:
         """Run the tool a model named, and render what it returned.
 
         Args:
@@ -476,8 +533,9 @@ class AsyncToolset(tuple[AsyncTool, ...]):
                 the JSON text OpenAI hands back.
 
         Returns:
-            The result as text, or what the model got wrong. Nothing a model can
-            send reaches the caller as an exception.
+            The rendered result, or what the model got wrong with ``is_error``
+            set — a name that is not a tool included. Nothing a model can send
+            reaches the caller as an exception; every other failure is raised.
 
         Example:
             >>> await toolset.call("memco_search", {"query": "how does X work"})
@@ -1257,7 +1315,7 @@ def _sync_call(
     method: Callable[..., Any],
     annotations: dict[str, object],
     required: Sequence[str],
-) -> Callable[..., str]:
+) -> Callable[..., ToolResult]:
     """Bind one operation as a tool body.
 
     Args:
@@ -1267,14 +1325,16 @@ def _sync_call(
         required: The arguments the operation cannot be called without.
 
     Returns:
-        A callable taking the arguments the schema describes and returning text.
+        A callable taking the arguments the schema describes and returning the
+        rendered result, or what the model got wrong.
     """
 
-    def call(**sent: object) -> str:
+    def call(**sent: object) -> ToolResult:
         try:
-            return render(method(**_arguments(annotations, required, sent)))
+            content = render(method(**_arguments(annotations, required, sent)))
         except AGENT_RECOVERABLE as exc:
             return _reported(exc)
+        return ToolResult(content, is_error=False)
 
     # Frameworks that introspect the callable get the tool's name rather than
     # six identical "call"s.
@@ -1287,7 +1347,7 @@ def _async_call(
     method: Callable[..., Awaitable[Any]],
     annotations: dict[str, object],
     required: Sequence[str],
-) -> Callable[..., Awaitable[str]]:
+) -> Callable[..., Awaitable[ToolResult]]:
     """Bind one operation as an awaitable tool body.
 
     Args:
@@ -1300,28 +1360,29 @@ def _async_call(
         A coroutine function taking the arguments the schema describes.
     """
 
-    async def call(**sent: object) -> str:
+    async def call(**sent: object) -> ToolResult:
         try:
-            return render(await method(**_arguments(annotations, required, sent)))
+            content = render(await method(**_arguments(annotations, required, sent)))
         except AGENT_RECOVERABLE as exc:
             return _reported(exc)
+        return ToolResult(content, is_error=False)
 
     call.__name__ = _PREFIX + name
     return call
 
 
-def _reported(exc: MemcoInvalidRequestError | MemcoNotFoundError) -> str:
+def _reported(exc: MemcoInvalidRequestError | MemcoNotFoundError) -> ToolResult:
     """Word a recoverable failure for the model that caused it.
 
     Args:
         exc: The failure, one of :data:`AGENT_RECOVERABLE`.
 
     Returns:
-        What went wrong, as text.
+        What went wrong, as an error result.
     """
     if isinstance(exc, MemcoNotFoundError):
-        return f"nothing found: {exc.message}"
+        return ToolResult(f"nothing found: {exc.message}", is_error=True)
     # Not "nothing was recorded": the SDK rejects some of these itself, but a
     # rejection from the service is the service's to describe, and what it did
     # or did not write is not something a client can assert on its behalf.
-    return f"invalid request: {exc.message}"
+    return ToolResult(f"invalid request: {exc.message}", is_error=True)

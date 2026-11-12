@@ -121,7 +121,8 @@
 //
 // [Session.Tools] offers a session's operations to a model as tools, in the
 // shapes [Toolset.ToAnthropic] and [Toolset.ToOpenAI] return, and
-// [Toolset.Call] runs the one a model named. [Briefing] turns what the service
-// says about a domain into guidance for a system prompt, and [Render] turns any
-// result into text a model can read.
+// [Toolset.Call] runs the one a model named and says whether what came back is
+// a failure the model caused. [Briefing] turns what the service says about a
+// domain into guidance for a system prompt, and [Render] turns any result into
+// text a model can read.
 package memcoai

@@ -142,7 +142,15 @@ toolset.toOpenAI() // [{ type: 'function', function: {...} }, ...]
 
 // Hand a tool call straight back. OpenAI sends its arguments as a JSON string;
 // both that and a plain object are accepted.
-const text = await toolset.call('memco_search', { query: 'health checking' })
+// isError is true when the content reports a failure the model caused, for a
+// framework that marks a tool result as one.
+const { content, isError } = await toolset.call(block.name, block.input)
+const result = {
+  type: 'tool_result',
+  tool_use_id: block.id,
+  content,
+  is_error: isError
+}
 ```
 
 Six operations are offered: `memco_search`, `memco_get_memory`,
@@ -163,6 +171,12 @@ the hosted MCP server publishes, compiled into the package at build time by
 request and a not-found handle, the two it can actually do something about.
 Everything else, a rejected credential included, is thrown for your code to
 handle. `AGENT_RECOVERABLE` names that line.
+
+`call()` returns a `ToolResult`, `{ content, isError }`: `content` is the text
+for the model, and `isError` is `true` for those two failures and for a tool
+name that is not offered. `Tool` and `Toolset` both return it. The tools
+`toLangChain()` builds carry it too — a tool message for such a failure has
+`status: 'error'`, with the same content.
 
 ## Configuration
 

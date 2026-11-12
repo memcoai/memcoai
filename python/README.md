@@ -126,7 +126,7 @@ you are driving the loop yourself:
 
 ```python
 response = anthropic.messages.create(tools=toolset.to_anthropic(), ...)
-result = toolset.call(block.name, block.input)           # -> text for the model
+result = toolset.call(block.name, block.input)           # -> ToolResult(content, is_error)
 
 completion = openai.chat.completions.create(tools=toolset.to_openai(), ...)
 result = toolset.call(call.function.name, call.function.arguments)   # JSON text is fine
@@ -153,6 +153,13 @@ request, an invented tool name, and a handle that resolves to nothing all come
 back as text the model can act on — `agent.AGENT_RECOVERABLE` is where that line
 is drawn. Everything else, a rejected credential above all, is raised: no wording
 a model reads will fix it.
+
+`call()` returns an `agent.ToolResult`: `content` is the text for the model, and
+`is_error` is `True` when it reports one of those failures, for a framework that
+marks a tool result as an error — `is_error` on an Anthropic `tool_result`
+block, for one. Each tool and both toolsets return it. The tools
+`to_langchain()` builds carry it too: a tool message for such a failure has
+`status="error"`, with the same content.
 
 [`examples/langchain_agent.py`](https://github.com/memcoai/memcoai/blob/main/python/examples/langchain_agent.py)
 is a complete agent in eighty lines, and defines no helpers of its own.

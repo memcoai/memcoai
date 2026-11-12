@@ -32,10 +32,11 @@ const (
 )
 
 // integrationName and integrationVersion are what an integration's name and
-// version may be: one product-token word, capped. A version may also carry
-// '+', for semver build metadata and PEP 440 local versions.
+// version may be: one product-token word, capped at 64 characters. A name may
+// instead be a package name scoped as @scope/name, and a version may also
+// carry '+', for semver build metadata and PEP 440 local versions.
 var (
-	integrationName    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	integrationName    = regexp.MustCompile(`^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$`)
 	integrationVersion = regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`)
 )
 
@@ -109,15 +110,18 @@ func Resolve(in Input, getenv func(string) string, log *slog.Logger) (*Config, e
 
 	config := &Config{Timeout: timeout}
 	if in.IntegrationName != "" || in.IntegrationVersion != "" {
-		if !integrationName.MatchString(in.IntegrationName) {
+		if len(in.IntegrationName) > 64 || !integrationName.MatchString(in.IntegrationName) {
 			return nil, fault.Config(fmt.Sprintf(
-				"integration name must be 1 to 64 letters, digits, '.', '_' or '-', got %q", in.IntegrationName))
+				"integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got %q", in.IntegrationName))
 		}
 		if !integrationVersion.MatchString(in.IntegrationVersion) {
 			return nil, fault.Config(fmt.Sprintf(
 				"integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got %q", in.IntegrationVersion))
 		}
-		config.Integration = in.IntegrationName + "/" + in.IntegrationVersion
+		// A scope is folded into the name: '@' and '/' cannot appear in a
+		// product token, and the service reads this one as name/version.
+		name := strings.ReplaceAll(strings.TrimPrefix(in.IntegrationName, "@"), "/", "-")
+		config.Integration = name + "/" + in.IntegrationVersion
 	}
 	client, err := resolveClient(in, getenv, log)
 	if err != nil {

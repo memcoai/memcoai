@@ -311,6 +311,35 @@ for (const version of ['0.2.0-rc.0', '1.0.0+build.5', '0.2.1.dev3+g1abc']) {
   })
 }
 
+test('a scoped package name is accepted and kept as given', () => {
+  const integration = { name: '@memco/eve', version: '0.2.0' }
+  assert.deepEqual(
+    resolve({ token: 't', integration, env: {} }).integration,
+    integration
+  )
+})
+
+for (const name of [
+  '@memco',
+  'memco/eve',
+  '@/eve',
+  '@memco/',
+  '@a/b/c',
+  '@@a/b'
+]) {
+  test(`a name that is not a word or a scoped name is refused: ${name}`, () => {
+    assert.throws(
+      () =>
+        resolve({ token: 't', integration: { name, version: '1' }, env: {} }),
+      (error: unknown) => {
+        assert.ok(error instanceof MemcoConfigError)
+        assert.match(error.message, /integration name must be/)
+        return true
+      }
+    )
+  })
+}
+
 test('no integration resolves to null', () => {
   assert.equal(resolve({ token: 't', env: {} }).integration, null)
 })
@@ -380,12 +409,12 @@ for (const [label, integration, message] of [
   [
     'a BigInt name',
     { name: 1n, version: '1' },
-    "integration name must be 1 to 64 letters, digits, '.', '_' or '-', got bigint"
+    "integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got bigint"
   ],
   [
     'a Symbol name',
     { name: Symbol('x'), version: '1' },
-    "integration name must be 1 to 64 letters, digits, '.', '_' or '-', got symbol"
+    "integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got symbol"
   ]
 ] as const) {
   test(`an integration that is ${label} is refused with a config error`, () => {

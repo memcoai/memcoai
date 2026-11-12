@@ -487,6 +487,11 @@ func TestAnIntegrationIsRenderedAsAProductToken(t *testing.T) {
 			}
 		})
 	}
+	// "@" and "/" cannot appear in a product token: a scope is folded into the name.
+	scoped, _ := resolved(t, Input{Token: "t", IntegrationName: "@memco/eve", IntegrationVersion: "0.2.0"}, nil)
+	if scoped.Integration != "memco-eve/0.2.0" {
+		t.Fatalf("a scoped name: got %q", scoped.Integration)
+	}
 	if config, _ := resolved(t, Input{Token: "t"}, nil); config.Integration != "" {
 		t.Fatalf("got %q without an integration", config.Integration)
 	}
@@ -494,12 +499,15 @@ func TestAnIntegrationIsRenderedAsAProductToken(t *testing.T) {
 
 func TestAMalformedIntegrationIsRefused(t *testing.T) {
 	cases := map[string]Input{
-		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got "memco+eve"`:                       {IntegrationName: "memco+eve", IntegrationVersion: "1.0.0"},
-		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got ""`:                                {IntegrationVersion: "1.0.0"},
-		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got ""`:                        {IntegrationName: "memco-eve"},
-		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got "memco eve"`:                       {IntegrationName: "memco eve", IntegrationVersion: "1.0.0"},
-		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got "1.0/0"`:                   {IntegrationName: "memco-eve", IntegrationVersion: "1.0/0"},
-		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', got "` + strings.Repeat("a", 65) + `"`: {IntegrationName: strings.Repeat("a", 65), IntegrationVersion: "1.0.0"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got "memco+eve"`:                       {IntegrationName: "memco+eve", IntegrationVersion: "1.0.0"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got ""`:                                {IntegrationVersion: "1.0.0"},
+		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got ""`:                                                   {IntegrationName: "memco-eve"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got "memco eve"`:                       {IntegrationName: "memco eve", IntegrationVersion: "1.0.0"},
+		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got "1.0/0"`:                                              {IntegrationName: "memco-eve", IntegrationVersion: "1.0/0"},
+		`integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got "` + strings.Repeat("a", 65) + `"`: {IntegrationName: strings.Repeat("a", 65), IntegrationVersion: "1.0.0"},
+	}
+	for _, name := range []string{"@memco", "memco/eve", "@/eve", "@memco/", "@a/b/c", "@@a/b"} {
+		cases[fmt.Sprintf("integration name must be 1 to 64 letters, digits, '.', '_' or '-', optionally as @scope/name, got %q", name)] = Input{IntegrationName: name, IntegrationVersion: "1"}
 	}
 	for want, in := range cases {
 		in.Token = "t"

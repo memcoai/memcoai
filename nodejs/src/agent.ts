@@ -156,15 +156,16 @@ export interface ToolParameters {
  *
  * The four fields are the whole handover: {@link Tool.name} and
  * {@link Tool.description} tell a model what this is, {@link Tool.parameters}
- * tells it what to send, and {@link Tool.call} runs it and returns text to hand
- * straight back as the tool result — no rendering left to do.
+ * tells it what to send, and {@link Tool.call} runs it and returns a
+ * {@link ToolResult} whose `content` is text to hand straight back as the tool
+ * result — no rendering left to do.
  *
  * {@link Tool.call} throws every failure except the two in
  * {@link AGENT_RECOVERABLE}, a malformed request and a handle that resolves to
- * nothing, which come back as text for the model to act on. So a rejected
- * credential, a timeout, an unreachable service or a spent quota reaches your
- * code as an exception rather than reaching the model as a suggestion to try
- * again.
+ * nothing, which come back as text for the model to act on, with `isError`
+ * set. So a rejected credential, a timeout, an unreachable service or a spent
+ * quota reaches your code as an exception rather than reaching the model as a
+ * suggestion to try again.
  *
  * Reach for these individually when wiring a framework by hand; {@link Toolset}
  * already does it for the frameworks it names.
@@ -193,9 +194,48 @@ export interface Tool {
    * Run the operation and render the result as text.
    *
    * @param args The arguments the schema describes. Untrusted.
-   * @returns The result as text, or what the model got wrong.
+   * @returns The rendered result, or what the model got wrong with `isError`
+   *   set. Every failure outside {@link AGENT_RECOVERABLE} is thrown.
+   *
+   * @example
+   * ```ts
+   * const { content, isError } = await tool.call({ query: 'how does X work' })
+   * ```
    */
-  call(args: Record<string, unknown>): Promise<string>
+  call(args: Record<string, unknown>): Promise<ToolResult>
+}
+
+/**
+ * What a tool call came to: the text for the model, and whether it is a
+ * failure.
+ *
+ * Returned by {@link Tool.call} and {@link Toolset.call}. The two fields are
+ * what a framework's tool result takes: `content` under the same name, and
+ * `isError` wherever it can mark a result as an error — `is_error` on an
+ * Anthropic `tool_result` block, for one.
+ *
+ * @example
+ * ```ts
+ * const { content, isError } = await toolset.call(block.name, block.input)
+ * const result = {
+ *   type: 'tool_result',
+ *   tool_use_id: block.id,
+ *   content,
+ *   is_error: isError
+ * }
+ * ```
+ */
+export interface ToolResult {
+  /**
+   * The rendered result, or what the model got wrong. Always text, never the
+   * list of content blocks some frameworks also accept under this name.
+   */
+  readonly content: string
+  /**
+   * Whether the content reports a failure the model caused: one of
+   * {@link AGENT_RECOVERABLE}, or a tool name that is not offered.
+   */
+  readonly isError: boolean
 }
 
 /**
@@ -203,8 +243,9 @@ export interface Tool {
  *
  * A definition only. {@link Toolset.toAnthropic} builds the array to pass as
  * `tools` on a `messages.create` call, and every `tool_use` block that comes
- * back goes to {@link Toolset.call}, whose text is the `content` of the
- * `tool_result` block you send in reply.
+ * back goes to {@link Toolset.call}, whose result carries the `content` of the
+ * `tool_result` block you send in reply and an `isError` to set its `is_error`
+ * from.
  *
  * @example
  * ```ts
@@ -214,8 +255,8 @@ export interface Tool {
  *
  * // Each tool_use block carries a name and an input object:
  * async function used(name: string, input: Record<string, unknown>) {
- *   const text = await toolset.call(name, input)
- *   // text -> the content of a tool_result block, back to the model
+ *   const { content, isError } = await toolset.call(name, input)
+ *   // content, and is_error: isError -> a tool_result block, back to the model
  * }
  * ```
  */
@@ -249,7 +290,7 @@ export interface OpenAIFunction {
  *
  * A definition only. {@link Toolset.toOpenAI} builds the array to pass as
  * `tools`, and every `tool_call` that comes back goes to {@link Toolset.call},
- * whose text becomes the `content` of the `{ role: 'tool' }` message you send
+ * whose `content` is the `content` of the `{ role: 'tool' }` message you send
  * in reply.
  *
  * That API delivers `tool_call.function.arguments` as a JSON **string** rather
@@ -265,8 +306,8 @@ export interface OpenAIFunction {
  *
  * // Each tool_call carries a name and its arguments as JSON text:
  * async function called(name: string, args: string) {
- *   const text = await toolset.call(name, args)
- *   // text -> the content of a { role: 'tool', tool_call_id } message
+ *   const { content } = await toolset.call(name, args)
+ *   // content -> a { role: 'tool', tool_call_id, content } message
  * }
  * ```
  */
@@ -846,14 +887,14 @@ function recoverable(
  */
 function reported(
   error: MemcoInvalidRequestError | MemcoNotFoundError
-): string {
+): ToolResult {
   if (error.name === MemcoNotFoundError.name) {
-    return `nothing found: ${error.detail}`
+    return { content: `nothing found: ${error.detail}`, isError: true }
   }
   // Not "nothing was recorded": the SDK rejects some of these itself, but a
   // rejection from the service is the service's to describe, and what it did or
   // did not write is not something a client can assert on its behalf.
-  return `invalid request: ${error.detail}`
+  return { content: `invalid request: ${error.detail}`, isError: true }
 }
 
 // -- the toolset ----------------------------------------------------------
@@ -866,6 +907,9 @@ function reported(
  * and a literal specifier would be a missing-module error at build time.
  */
 const LANGCHAIN_TOOLS: string = '@langchain/core/tools'
+
+/** Where LangChain keeps its tool message; indirect for the same reason. */
+const LANGCHAIN_MESSAGES: string = '@langchain/core/messages'
 
 /**
  * One LangChain tool.
@@ -882,7 +926,8 @@ type LangChainTool = any
  * The `to*` methods hand the same tools to a particular framework, and
  * {@link Toolset.call} runs the one a model named — which is what the
  * definition-only shapes need, since there the host dispatches rather than the
- * framework.
+ * framework. What comes back says whether it is a result or a failure the
+ * model caused.
  *
  * @example
  * ```ts
@@ -897,8 +942,9 @@ type LangChainTool = any
  * })
  *
  * // Hand a tool call straight back. Only a malformed request or a handle
- * // nothing answers to comes back as text; anything else throws.
- * const text = await toolset.call(block.name, block.input)
+ * // nothing answers to comes back as content, with isError set; anything
+ * // else throws.
+ * const { content, isError } = await toolset.call(block.name, block.input)
  * ```
  */
 export class Toolset {
@@ -964,6 +1010,11 @@ export class Toolset {
    * schema is passed through unchanged and this package needs no Zod
    * dependency to build one.
    *
+   * A failure the model caused is marked as one: where LangChain builds a tool
+   * message, which it does when a tool is invoked with a tool call, the message
+   * carries `status: 'error'` rather than `'success'`. Its content is the same
+   * text either way, and a tool invoked with bare arguments returns that text.
+   *
    * @returns One LangChain tool per operation, ready for
    *   `createAgent({ tools })`.
    * @throws MemcoConfigError If LangChain is not installed.
@@ -977,9 +1028,13 @@ export class Toolset {
     // Imported here on purpose: LangChain is not a dependency of this SDK, and
     // a caller using another framework must not be made to install it.
     let tool: (body: unknown, fields: unknown) => LangChainTool
+    let ToolMessage: new (fields: unknown) => unknown
     try {
       ;({ tool } = (await import(LANGCHAIN_TOOLS)) as {
         tool: (body: unknown, fields: unknown) => LangChainTool
+      })
+      ;({ ToolMessage } = (await import(LANGCHAIN_MESSAGES)) as {
+        ToolMessage: new (fields: unknown) => unknown
       })
     } catch (cause) {
       const error = new MemcoConfigError(
@@ -989,11 +1044,30 @@ export class Toolset {
       throw error
     }
     return this.tools.map(one =>
-      tool((args: Record<string, unknown>) => one.call(args), {
-        name: one.name,
-        description: one.description,
-        schema: one.parameters
-      })
+      tool(
+        async (
+          args: Record<string, unknown>,
+          config?: { toolCall?: { id?: string } }
+        ) => {
+          const { content, isError } = await one.call(args)
+          const id = config?.toolCall?.id
+          // LangChain wraps returned text in a tool message it marks a
+          // success, so a failure has to arrive as the message itself. Without
+          // a tool call there is no message to build, and the text is returned.
+          if (!isError || !id) return content
+          return new ToolMessage({
+            content,
+            tool_call_id: id,
+            name: one.name,
+            status: 'error'
+          })
+        },
+        {
+          name: one.name,
+          description: one.description,
+          schema: one.parameters
+        }
+      )
     )
   }
 
@@ -1003,8 +1077,9 @@ export class Toolset {
    * @param name The tool name the model used, which is untrusted.
    * @param args The arguments it sent, which are untrusted. An object, or the
    *   JSON text OpenAI hands back.
-   * @returns The result as text, or what the model got wrong. Nothing a model
-   *   can send reaches the caller as an exception.
+   * @returns The rendered result, or what the model got wrong with `isError`
+   *   set — a name that is not a tool included. Nothing a model can send
+   *   reaches the caller as an exception; every other failure is thrown.
    *
    * @example
    * ```ts
@@ -1015,7 +1090,7 @@ export class Toolset {
   async call(
     name: string,
     args: Record<string, unknown> | string
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     try {
       const tool = this.tools.find(one => one.name === name)
       if (tool === undefined) {
@@ -1082,12 +1157,13 @@ export function toolset(
         name: prefix + operation.name,
         description: named(TOOL_COPY[operation.name].description, prefix),
         parameters: parametersFor(operation, prefix),
-        call: async (args: Record<string, unknown>): Promise<string> => {
+        call: async (args: Record<string, unknown>): Promise<ToolResult> => {
           try {
-            return render(
-              await operation.invoke(session, argumentsFor(operation, args)),
-              prefix
+            const result = await operation.invoke(
+              session,
+              argumentsFor(operation, args)
             )
+            return { content: render(result, prefix), isError: false }
           } catch (error) {
             if (recoverable(error)) return reported(error)
             throw error

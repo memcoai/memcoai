@@ -122,7 +122,8 @@ type Options struct {
 //	})
 //	// Every call's user agent starts "memco-go/<sdk version> memco-eve/0.2.0".
 type Integration struct {
-	// Name is the integration's product name, such as "memco-eve".
+	// Name is the integration's product name, such as "memco-eve". A scoped
+	// package name, such as "@memco/eve", is announced as "memco-eve".
 	Name string
 	// Version is the integration's own version, such as "0.2.0".
 	Version string

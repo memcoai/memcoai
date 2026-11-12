@@ -40,6 +40,18 @@ type Tool struct {
 	session   *Session
 }
 
+// ToolResult is what a tool call came to: the text for the model, and whether
+// that text reports a failure the model caused.
+type ToolResult struct {
+	// Content is the rendered result, or what the model got wrong. It is
+	// always text, and is what a provider's tool result takes as its content.
+	Content string
+	// IsError reports whether Content is a failure the model can correct
+	// rather than a result: a malformed request, a handle that resolves to
+	// nothing, or a tool name that is not offered.
+	IsError bool
+}
+
 // Call runs the tool with the arguments a model sent, and renders the result
 // as text for the model.
 //
@@ -49,14 +61,14 @@ type Tool struct {
 //
 // It returns the rendered result. A mistake the model can correct — malformed
 // or missing arguments, a request the service refused as invalid, a handle that
-// resolves to nothing — also comes back as text, beginning "invalid request:"
-// or "nothing found:", with a nil error.
+// resolves to nothing — also comes back as a result, with IsError set and
+// Content beginning "invalid request:" or "nothing found:", and a nil error.
 //
 // Errors: every other failure of the operation, such as
 // [*AuthenticationError], [*ResourceExhaustedError] or a context that ended;
-// no wording would help a model with those. [IsAgentRecoverable] tells the two
-// apart.
-func (t Tool) Call(ctx context.Context, args json.RawMessage) (string, error) {
+// no wording would help a model with those, and the result is then the zero
+// value. [IsAgentRecoverable] tells the two apart.
+func (t Tool) Call(ctx context.Context, args json.RawMessage) (ToolResult, error) {
 	return recovered(t.call(ctx, args))
 }
 
@@ -78,16 +90,16 @@ func (t Tool) call(ctx context.Context, args json.RawMessage) (string, error) {
 
 // recovered words the failures a model can act on; every other failure is
 // returned, because no wording would help a model with it.
-func recovered(text string, err error) (string, error) {
+func recovered(text string, err error) (ToolResult, error) {
 	var invalid *InvalidRequestError
 	if errors.As(err, &invalid) {
-		return "invalid request: " + invalid.Detail, nil
+		return ToolResult{Content: "invalid request: " + invalid.Detail, IsError: true}, nil
 	}
 	var notFound *NotFoundError
 	if errors.As(err, &notFound) {
-		return "nothing found: " + notFound.Detail, nil
+		return ToolResult{Content: "nothing found: " + notFound.Detail, IsError: true}, nil
 	}
-	return text, err
+	return ToolResult{Content: text}, err
 }
 
 // Tools offers this session's operations to a model: search, get_memory,
@@ -200,11 +212,11 @@ type Toolset struct {
 //   - args: the model's arguments, as the JSON object it sent. OpenAI's
 //     function arguments string can be passed as is.
 //
-// It returns the rendered result, or text telling the model what it got
-// wrong, including a name that is not a tool.
+// It returns the rendered result, or a result with IsError set telling the
+// model what it got wrong, including a name that is not a tool.
 //
 // Errors: as [Tool.Call].
-func (s *Toolset) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {
+func (s *Toolset) Call(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
 	var names []string
 	for _, tool := range s.Tools {
 		if tool.Name == name {
@@ -246,7 +258,7 @@ type OpenAIFunction struct {
 
 // ToAnthropic returns the tools as Claude Messages API tool definitions, ready
 // to marshal into a request's tools. Run the model's tool_use blocks with
-// [Toolset.Call].
+// [Toolset.Call], whose result carries a tool_result's content and is_error.
 //
 // It returns one definition per tool, sharing each tool's Parameters.
 func (s *Toolset) ToAnthropic() []AnthropicTool {
