@@ -5,4 +5,4 @@ installed metadata, which a frozen application may not carry. Do not edit:
 ``make tool-docs-check`` and a pre-commit hook fail on any difference.
 """
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"

@@ -4,7 +4,7 @@ import warnings
 
 import pytest
 
-from memcoai import errors
+from memcoai import Integration, errors
 from memcoai._config import DEFAULT_HOST, DEFAULT_PORT, resolve
 
 
@@ -97,6 +97,78 @@ def test_an_unreadable_memco_api_tls_is_refused(value: str):
     # Whether traffic is encrypted is not something to guess from a typo.
     with pytest.raises(errors.MemcoConfigError, match="MEMCO_API_TLS"):
         resolve(token="t", env={"MEMCO_API_TLS": value})
+
+
+@pytest.mark.parametrize("version", ["0.2.0-rc.0", "1.0.0+build.5", "0.2.1.dev3+g1abc"])
+def test_an_integration_is_kept_as_given(version: str):
+    integration = Integration(name="memco-eve", version=version)
+    assert resolve(token="t", integration=integration, env={}).integration == integration
+
+
+def test_an_integration_is_read_once_so_what_is_sent_is_what_was_checked():
+    class Shifty(Integration):
+        reads = 0
+
+        @property
+        def name(self) -> str:
+            type(self).reads += 1
+            return "memco-eve" if type(self).reads == 1 else "evil\r\nx"
+
+    shifty = Shifty.__new__(Shifty)
+    object.__setattr__(shifty, "version", "0.2.0")
+    config = resolve(token="t", integration=shifty, env={})
+    assert config.integration == Integration(name="memco-eve", version="0.2.0")
+
+
+@pytest.mark.parametrize("part", ["name", "version"])
+def test_each_integration_part_is_kept_as_the_plain_string_that_was_checked(part: str):
+    class Sneaky(str):
+        def __format__(self, spec: str) -> str:
+            return "evil\r\nx"
+
+    parts = {"name": "memco-eve", "version": "1"}
+    checked = parts[part]
+    parts[part] = Sneaky(checked)
+    config = resolve(token="t", integration=Integration(**parts), env={})
+    assert config.integration is not None
+    value = getattr(config.integration, part)
+    assert type(value) is str
+    assert f"{value}" == checked
+
+
+def test_no_integration_resolves_to_none():
+    assert resolve(token="t", env={}).integration is None
+
+
+@pytest.mark.parametrize(
+    ("name", "version", "field"),
+    [
+        ("", "1.0.0", "name"),
+        ("memco-eve", "", "version"),
+        ("memco eve", "1.0.0", "name"),
+        ("memco-eve", "1.0/0", "version"),
+        ("a" * 65, "1.0.0", "name"),
+        ("memco-eve", None, "version"),
+        ("memco+eve", "1.0.0", "name"),
+    ],
+    ids=[
+        "blank name",
+        "blank version",
+        "space",
+        "slash",
+        "65 characters",
+        "not a string",
+        "plus in the name",
+    ],
+)
+def test_a_malformed_integration_is_refused(name: str, version: str | None, field: str):
+    with pytest.raises(errors.MemcoConfigError, match=f"integration {field} must be"):
+        resolve(token="t", integration=Integration(name=name, version=version), env={})  # type: ignore[arg-type]
+
+
+def test_an_integration_that_is_not_an_integration_is_refused():
+    with pytest.raises(errors.MemcoConfigError, match="integration must be an Integration"):
+        resolve(token="t", integration=("memco-eve", "0.2.0"), env={})  # type: ignore[arg-type]
 
 
 def test_non_positive_timeout_raises_config_error():

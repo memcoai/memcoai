@@ -1,6 +1,6 @@
 {
   "name": "@memco/memcoai",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Node.js SDK for Memco Shared Memory.",
   "keywords": [
     "memco",
@@ -69,14 +69,14 @@
     "@grpc/grpc-js": "^1.14.5"
   },
   "devDependencies": {
-    "@langchain/core": "1.2.9",
-    "@langchain/google-genai": "2.3.0",
+    "@langchain/core": "1.3.0",
+    "@langchain/google-genai": "2.3.4",
     "@types/node": "22.20.1",
     "ddg-search": "2026.2.16",
-    "langchain": "1.5.10",
-    "prettier": "3.9.6",
+    "langchain": "1.5.20",
+    "prettier": "3.9.10",
     "typedoc": "0.28.20",
-    "typedoc-plugin-markdown": "4.13.0",
+    "typedoc-plugin-markdown": "4.14.1",
     "typescript": "5.9.3"
   }
 }

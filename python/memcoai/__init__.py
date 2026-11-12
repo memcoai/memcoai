@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from . import _version, administration, agent, errors, operations, types
 from ._aio import AsyncMemco
-from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT
+from ._config import DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT, Integration
 from ._deprecation import MemcoDeprecationWarning
 from ._logging import configure as _configure_logging
 from ._provenance import provenance
@@ -94,6 +94,7 @@ __all__ = [
     "DEFAULT_TIMEOUT",
     "NEW_MEMORY",
     "AsyncMemco",
+    "Integration",
     "Memco",
     "MemcoDeprecationWarning",
     "__version__",

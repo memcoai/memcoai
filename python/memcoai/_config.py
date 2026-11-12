@@ -6,6 +6,7 @@ import inspect
 import logging
 import os
 import pathlib
+import re
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -43,6 +44,23 @@ CLIENT_SECRET_ENV = "MEMCO_CLIENT_SECRET"  # noqa: S105 - the variable name, not
 
 
 @dataclass(frozen=True, slots=True)
+class Integration:
+    """The software calling the SDK on a developer's behalf, such as a framework's memory provider.
+
+    Attributes:
+        name: The integration's product name, such as ``memco-eve``.
+        version: The integration's own version, such as ``0.2.0``.
+    """
+
+    name: str
+    version: str
+
+
+_INTEGRATION_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_INTEGRATION_VERSION = re.compile(r"[A-Za-z0-9._+-]{1,64}")
+
+
+@dataclass(frozen=True, slots=True)
 class ClientConfig:
     """Fully resolved settings for one client.
 
@@ -67,6 +85,7 @@ class ClientConfig:
             live while the exchange is in flight.
         token_lifetime: The lifetime in seconds to ask for on each issued
             token, or ``None`` for the service's default.
+        integration: The integration announced after the SDK, or ``None``.
     """
 
     token: str = field(repr=False)
@@ -77,6 +96,7 @@ class ClientConfig:
     client_id: str | None = None
     client_secret: str | None = field(default=None, repr=False)
     token_lifetime: int | None = None
+    integration: Integration | None = None
 
     @property
     def target(self) -> str:
@@ -320,6 +340,16 @@ def _resolve_tls(tls: bool | None, env: Mapping[str, str]) -> bool:
     return value == "true"
 
 
+def _check_integration_part(
+    part: str, value: object, pattern: re.Pattern[str], allowed: str
+) -> None:
+    """Refuse a part of an integration its pattern does not match."""
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise MemcoConfigError(
+            f"integration {part} must be 1 to 64 letters, digits, {allowed}, got {value!r}"
+        )
+
+
 def resolve(
     token: str | None = None,
     host: str | None = None,
@@ -329,6 +359,7 @@ def resolve(
     token_lifetime: int | None = None,
     tls: bool | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    integration: Integration | None = None,
     env: Mapping[str, str] | None = None,
 ) -> ClientConfig:
     """Resolve client settings from arguments and the environment.
@@ -364,6 +395,9 @@ def resolve(
             When omitted, ``MEMCO_API_TLS`` decides -- ``true`` or ``false`` --
             falling back to ``True``.
         timeout: Default deadline in seconds for each call.
+        integration: The integration calling the SDK, announced after its own
+            user-agent token. Each part is 1 to 64 letters, digits, ``.``,
+            ``_`` or ``-``, and the version may also carry ``+``.
         env: Environment mapping to read from. Defaults to :data:`os.environ`;
             supplying one is mainly useful in tests.
 
@@ -376,7 +410,8 @@ def resolve(
             available or a value is blank, if ``token_lifetime`` is given
             without client credentials or is not positive, if the host is blank
             or carries an invalid port, if ``MEMCO_API_TLS`` is neither
-            ``true`` nor ``false``, or if ``timeout`` is not positive.
+            ``true`` nor ``false``, if ``timeout`` is not positive, or if a
+            part of ``integration`` is malformed.
 
     Example:
         >>> resolve(token="sk-...", host="localhost:50051", tls=False).target
@@ -386,6 +421,18 @@ def resolve(
 
     if timeout <= 0:
         raise MemcoConfigError(f"timeout must be positive, got {timeout!r}")
+
+    if integration is not None:
+        if not isinstance(integration, Integration):
+            raise MemcoConfigError(f"integration must be an Integration, got {integration!r}")
+        # Each part is read once and a fresh Integration of the checked values is
+        # kept, so a subclass cannot hand the check one value and the channel another.
+        name, version = integration.name, integration.version
+        _check_integration_part("name", name, _INTEGRATION_NAME, "'.', '_' or '-'")
+        _check_integration_part("version", version, _INTEGRATION_VERSION, "'.', '_', '+' or '-'")
+        # Plain str copies: a str subclass could otherwise render differently
+        # from the buffer the pattern checked.
+        integration = Integration(name=str.__str__(name), version=str.__str__(version))
 
     client = _resolve_client(token, client_id, client_secret, environment)
     if client is None:
@@ -434,6 +481,7 @@ def resolve(
         client_id=client[0] if client else None,
         client_secret=client[1] if client else None,
         token_lifetime=token_lifetime,
+        integration=integration,
     )
     tls_from_env = tls is None and bool(environment.get(TLS_ENV, "").strip())
     _log.debug(

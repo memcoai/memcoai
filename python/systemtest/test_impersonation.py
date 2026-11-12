@@ -10,11 +10,12 @@ its own, so a crossed key would show as one finding what the other wrote.
 And closing a session really revokes its key.
 
 The memories written follow the lifecycle suite's rules, for the same reasons:
-the run marker lives only in the query, which becomes the memory's intent, and
-the insight is plain prose about this SDK, which the quality gate accepts. Each
-subject is distinct, so no write reads as the same knowledge as another. A
-write a failing test leaves behind goes with its customer network, whose
-deletion takes the memories placed in it.
+the insight is plain prose about this SDK, which the quality gate accepts, and
+a memory is recognised by its insight's title. Each subject is distinct, so no
+write reads as the same knowledge as another, and each user writes in a network
+of their own, so a title found there is that user's write. A write a failing
+test leaves behind goes with its customer network, whose deletion takes the
+memories placed in it.
 """
 
 from __future__ import annotations
@@ -71,18 +72,9 @@ SWEEP = {
 }
 
 
-def _asked(fields: dict[str, str], marker: str) -> dict[str, str]:
-    """The fields to write, with the run marker added to the query alone."""
-    return {**fields, "query": f"{fields['query']} (system test {marker})"}
-
-
-def _carries(memory: Memory | AsyncMemory, marker: str) -> bool:
-    """Whether a memory was written with this marker in its query.
-
-    The lifecycle suite's test, for either client's memories: the query passed
-    to create_memory becomes one of the memory's intents.
-    """
-    return any(marker in intent for intent in memory.intents)
+def _carries(memory: Memory | AsyncMemory, fields: dict[str, str]) -> bool:
+    """Whether a memory holds the insight these fields wrote, by its title."""
+    return any(insight.title == fields["title"] for insight in memory.insights)
 
 
 def _placed(
@@ -93,8 +85,7 @@ def _placed(
     """A new external user, placed in a customer network of its own.
 
     Returns:
-        The network's domain, and the user's external id, which doubles as the
-        marker of what the user writes: no other run or user carries it.
+        The network's domain, and the user's external id.
     """
     network, user = customer_networks(), external_users()
     admin.networks.add_member(network.id, user.id)
@@ -136,41 +127,43 @@ def _record_async_keys(monkeypatch: pytest.MonkeyPatch, client: AsyncMemco) -> l
     return keys
 
 
-def _found(session: Session, query: str, marker: str) -> None:
-    """Poll the session's search until the memory carrying the marker comes back."""
+def _found(session: Session, user: str, fields: dict[str, str]) -> None:
+    """Poll the session's search until the memory these fields wrote comes back."""
     deadline = time.monotonic() + INGEST_TIMEOUT
     waits = poll_waits()
     while time.monotonic() < deadline:
-        if any(_carries(memory, marker) for memory in session.search(query).memories):
+        if any(_carries(memory, fields) for memory in session.search(fields["query"]).memories):
             return
         print("  waiting for ingestion")
         time.sleep(next(waits))
-    pytest.fail(f"{marker}'s memory never became searchable within {INGEST_TIMEOUT:.0f}s")
+    pytest.fail(f"{user}'s memory never became searchable within {INGEST_TIMEOUT:.0f}s")
 
 
-async def _found_alone(session: AsyncSession, query: str, marker: str, other: str) -> None:
+async def _found_alone(
+    session: AsyncSession, user: str, fields: dict[str, str], other: dict[str, str]
+) -> None:
     """Poll as `_found` does, failing the moment a search returns the other user's memory."""
     deadline = time.monotonic() + INGEST_TIMEOUT
     waits = poll_waits()
     while time.monotonic() < deadline:
-        memories = (await session.search(query)).memories
+        memories = (await session.search(fields["query"])).memories
         assert not any(_carries(memory, other) for memory in memories), (
-            f"{marker}'s session found what {other} wrote, in a network {marker} is not in"
+            f"{user}'s session found {other['title']!r}, written in a network {user} is not in"
         )
-        if any(_carries(memory, marker) for memory in memories):
+        if any(_carries(memory, fields) for memory in memories):
             return
-        print(f"  waiting for ingestion of {marker}'s memory")
+        print(f"  waiting for ingestion of {user}'s memory")
         await asyncio.sleep(next(waits))
-    pytest.fail(f"{marker}'s memory never became searchable within {INGEST_TIMEOUT:.0f}s")
+    pytest.fail(f"{user}'s memory never became searchable within {INGEST_TIMEOUT:.0f}s")
 
 
 async def _act(
-    client: AsyncMemco, domain: str, user: str, fields: dict[str, str], other: str
+    client: AsyncMemco, domain: str, user: str, fields: dict[str, str], other: dict[str, str]
 ) -> None:
     """Write, find and revert a memory as one user, never seeing the other's."""
     async with client.memory.with_session(domain, external_id=user) as session:
         before = (await session.search(fields["query"])).memories
-        assert not any(_carries(memory, user) for memory in before)
+        assert not any(_carries(memory, fields) for memory in before)
         write = await session.create_memory(
             query=fields["query"],
             title=fields["title"],
@@ -178,7 +171,7 @@ async def _act(
             source=DataSource.AGENT,
         )
         assert write.operation_id, "the write was accepted without an operation id to revert"
-        await _found_alone(session, fields["query"], user, other)
+        await _found_alone(session, user, fields, other)
         undo = await session.revert_memory(write.operation_id)
         assert undo.outcome is RevertOutcome.MEMORY_REMOVED, (
             f"reverting as {user}, who wrote it, reported {undo.outcome.name}"
@@ -194,12 +187,12 @@ def test_a_session_acts_as_an_external_user_and_its_key_ends_with_it(
     """Write, find and revert a memory as an external user, then find the key refused."""
     domain, user = _placed(admin, customer_networks, external_users)
     keys = _record_keys(monkeypatch, admin)
-    fields = _asked(OPENING, user)
+    fields = OPENING
     print(f"\n[{domain}] acting as {user}")
 
     with admin.memory.with_session(domain, external_id=user) as session:
         before = session.search(fields["query"]).memories
-        assert not any(_carries(memory, user) for memory in before)
+        assert not any(_carries(memory, fields) for memory in before)
         write = session.create_memory(
             query=fields["query"],
             title=fields["title"],
@@ -207,7 +200,7 @@ def test_a_session_acts_as_an_external_user_and_its_key_ends_with_it(
             source=DataSource.AGENT,
         )
         assert write.operation_id, "the write was accepted without an operation id to revert"
-        _found(session, fields["query"], user)
+        _found(session, user, fields)
         undo = session.revert_memory(write.operation_id)
         assert undo.outcome is RevertOutcome.MEMORY_REMOVED, (
             f"reverting as the user who wrote it reported {undo.outcome.name}"
@@ -247,8 +240,8 @@ async def test_two_users_act_at_once_each_under_a_key_of_its_own(
     ) as client:
         keys = _record_async_keys(monkeypatch, client)
         await asyncio.gather(
-            _act(client, domain, first, _asked(RENEWAL, first), second),
-            _act(client, domain, second, _asked(SWEEP, second), first),
+            _act(client, domain, first, RENEWAL, SWEEP),
+            _act(client, domain, second, SWEEP, RENEWAL),
         )
         # One key per session, each checked before the client closes, so what
         # ended it is the close of its own session rather than the client's sweep.

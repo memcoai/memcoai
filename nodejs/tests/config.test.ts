@@ -299,6 +299,117 @@ test('a port outside the TCP range is named with the number', () => {
   )
 })
 
+// --- integration ---------------------------------------------------------
+
+for (const version of ['0.2.0-rc.0', '1.0.0+build.5', '0.2.1.dev3+g1abc']) {
+  test(`an integration versioned ${version} is kept as given`, () => {
+    const integration = { name: 'memco-eve', version }
+    assert.deepEqual(
+      resolve({ token: 't', integration, env: {} }).integration,
+      integration
+    )
+  })
+}
+
+test('no integration resolves to null', () => {
+  assert.equal(resolve({ token: 't', env: {} }).integration, null)
+})
+
+test('the integration is shown wherever the config is rendered', () => {
+  const config = resolve({
+    token: 't',
+    integration: { name: 'memco-eve', version: '0.2.0' },
+    env: {}
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(config)).integration, {
+    name: 'memco-eve',
+    version: '0.2.0'
+  })
+  assert.match(inspect(config), /memco-eve/)
+})
+
+for (const [label, integration, message] of [
+  ['a blank name', { name: '', version: '1.0.0' }, 'integration name must be'],
+  [
+    'a blank version',
+    { name: 'memco-eve', version: '' },
+    'integration version must be'
+  ],
+  [
+    'a space',
+    { name: 'memco eve', version: '1.0.0' },
+    'integration name must be'
+  ],
+  [
+    'a slash',
+    { name: 'memco-eve', version: '1.0/0' },
+    'integration version must be'
+  ],
+  [
+    '65 characters',
+    { name: 'a'.repeat(65), version: '1.0.0' },
+    'integration name must be'
+  ],
+  ['a missing version', { name: 'memco-eve' }, 'integration version must be'],
+  [
+    'a plus in the name',
+    { name: 'memco+eve', version: '1.0.0' },
+    'integration name must be'
+  ]
+] as const) {
+  test(`an integration with ${label} is refused`, () => {
+    assert.throws(
+      () =>
+        resolve({
+          token: 't',
+          integration: integration as { name: string; version: string },
+          env: {}
+        }),
+      (error: unknown) =>
+        error instanceof MemcoConfigError && error.message.includes(message)
+    )
+  })
+}
+
+for (const [label, integration, message] of [
+  [
+    'a string',
+    'memco-eve/0.2.0',
+    'integration must be an Integration, got string'
+  ],
+  [
+    'a BigInt name',
+    { name: 1n, version: '1' },
+    "integration name must be 1 to 64 letters, digits, '.', '_' or '-', got bigint"
+  ],
+  [
+    'a Symbol name',
+    { name: Symbol('x'), version: '1' },
+    "integration name must be 1 to 64 letters, digits, '.', '_' or '-', got symbol"
+  ]
+] as const) {
+  test(`an integration that is ${label} is refused with a config error`, () => {
+    assert.throws(
+      () => resolve({ token: 't', integration: integration as never, env: {} }),
+      (error: unknown) =>
+        error instanceof MemcoConfigError && error.message === message
+    )
+  })
+}
+
+test('an integration is read once, so what is sent is what was checked', () => {
+  let reads = 0
+  const integration = {
+    get name(): string {
+      reads += 1
+      return reads === 1 ? 'memco-eve' : 'evil\r\nx'
+    },
+    version: '0.2.0'
+  }
+  const config = resolve({ token: 't', integration, env: {} })
+  assert.deepEqual(config.integration, { name: 'memco-eve', version: '0.2.0' })
+})
+
 // --- call defaults -------------------------------------------------------
 
 test('TLS is on and the deadline is thirty seconds unless asked otherwise', () => {
@@ -388,7 +499,15 @@ test('the token is not an enumerable property', () => {
     Object.entries(config)
       .map(([key]) => key)
       .sort(),
-    ['clientId', 'host', 'port', 'timeout', 'tls', 'tokenLifetime']
+    [
+      'clientId',
+      'host',
+      'integration',
+      'port',
+      'timeout',
+      'tls',
+      'tokenLifetime'
+    ]
   )
 })
 

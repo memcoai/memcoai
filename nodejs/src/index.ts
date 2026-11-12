@@ -70,7 +70,8 @@ export {
 export {
   DEFAULT_HOST,
   DEFAULT_PORT,
-  DEFAULT_TIMEOUT
+  DEFAULT_TIMEOUT,
+  type Integration
 } from './internal/config.js'
 
 export { LOG_ENV, setLevel } from './internal/logging.js'

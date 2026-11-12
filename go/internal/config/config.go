@@ -31,6 +31,14 @@ const (
 	ClientSecretEnv = "MEMCO_CLIENT_SECRET"
 )
 
+// integrationName and integrationVersion are what an integration's name and
+// version may be: one product-token word, capped. A version may also carry
+// '+', for semver build metadata and PEP 440 local versions.
+var (
+	integrationName    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	integrationVersion = regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`)
+)
+
 // Input is what a caller passed; zero values mean unset.
 type Input struct {
 	Token         string
@@ -41,6 +49,10 @@ type Input struct {
 	Plaintext     bool
 	TLS           *bool
 	Timeout       time.Duration
+	// IntegrationName and IntegrationVersion name the integration calling the
+	// SDK; both empty means none.
+	IntegrationName    string
+	IntegrationVersion string
 }
 
 // Config is the resolved configuration: a token in Credential, or an API
@@ -54,6 +66,8 @@ type Config struct {
 	Port          int
 	TLS           bool
 	Timeout       time.Duration
+	// Integration is the integration's name/version product token, or empty.
+	Integration string
 }
 
 // Target is host:port, bracketing an IPv6 host.
@@ -94,6 +108,17 @@ func Resolve(in Input, getenv func(string) string, log *slog.Logger) (*Config, e
 	}
 
 	config := &Config{Timeout: timeout}
+	if in.IntegrationName != "" || in.IntegrationVersion != "" {
+		if !integrationName.MatchString(in.IntegrationName) {
+			return nil, fault.Config(fmt.Sprintf(
+				"integration name must be 1 to 64 letters, digits, '.', '_' or '-', got %q", in.IntegrationName))
+		}
+		if !integrationVersion.MatchString(in.IntegrationVersion) {
+			return nil, fault.Config(fmt.Sprintf(
+				"integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got %q", in.IntegrationVersion))
+		}
+		config.Integration = in.IntegrationName + "/" + in.IntegrationVersion
+	}
 	client, err := resolveClient(in, getenv, log)
 	if err != nil {
 		return nil, err

@@ -38,6 +38,7 @@ func TestSettingsAreRefusedAsConfigErrors(t *testing.T) {
 		"no API token: pass token=... or set MEMCO_API_TOKEN":                                             {Host: "localhost:1"},
 		"timeout must be positive, got -1s":                                                               {Token: "t", Timeout: -time.Second},
 		`host "localhost:http" has an unparseable port: "http" is not an integer`:                         {Token: "t", Host: "localhost:http"},
+		`integration version must be 1 to 64 letters, digits, '.', '_', '+' or '-', got ""`:               {Token: "t", Integration: Integration{Name: "memco-eve"}},
 		`"loud" is not a log level; use one of critical, debug, error, info, warning, or none to silence`: {Token: "t", LogLevel: "loud"},
 	}
 	t.Setenv("MEMCO_API_TOKEN", "")
@@ -322,6 +323,22 @@ func TestTheUserAgentNamesThisSDK(t *testing.T) {
 	}
 	for _, md := range f.server.Memory.Metadata() {
 		if got := strings.Join(md.Get("user-agent"), " "); !strings.HasPrefix(got, "memco-go/"+Version+" grpc-go/") {
+			t.Fatalf("user agent %q", got)
+		}
+	}
+}
+
+func TestAnIntegrationFollowsTheSDKToken(t *testing.T) {
+	f := connected(t, func(o *Options) { o.Integration = Integration{Name: "memco-eve", Version: "0.2.0"} })
+	if _, err := f.client.Memory.StartSession(ctx, "coding"); err != nil {
+		t.Fatal(err)
+	}
+	sent := f.server.Memory.Metadata()
+	if len(sent) == 0 {
+		t.Fatal("no call metadata recorded")
+	}
+	for _, md := range sent {
+		if got := strings.Join(md.Get("user-agent"), " "); !strings.HasPrefix(got, "memco-go/"+Version+" memco-eve/0.2.0 grpc-go/") {
 			t.Fatalf("user agent %q", got)
 		}
 	}

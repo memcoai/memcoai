@@ -11,10 +11,11 @@
  * other wrote. And closing a session really revokes its key.
  *
  * The memories written follow the lifecycle suite's rules, for the same
- * reasons: the run marker lives only in the query, which becomes the memory's
- * intent, and the insight is plain prose about this SDK, which the quality gate
- * accepts. Each subject is distinct, and about the Node.js SDK alone, so no
- * write reads as the same knowledge as another — this one's or another SDK's.
+ * reasons: the insight is plain prose about this SDK, which the quality gate
+ * accepts, and a memory is recognised by its insight's title. Each subject is
+ * distinct, and about the Node.js SDK alone, so no write reads as the same
+ * knowledge as another — this one's or another SDK's — and each user writes in
+ * a network of their own, so a title found there is that user's write.
  * A write a failing test leaves behind goes with its customer network, whose
  * deletion takes the memories placed in it.
  */
@@ -86,18 +87,9 @@ const SWEEP: Fields = {
     'the client makes.'
 }
 
-/** The fields to write, with the run marker added to the query alone. */
-function asked(fields: Fields, marker: string): Fields {
-  return { ...fields, query: `${fields.query} (system test ${marker})` }
-}
-
-/**
- * Whether a memory was written with this marker in its query.
- *
- * The query passed to createMemory becomes one of the memory's intents.
- */
-function carries(memory: Memory, marker: string): boolean {
-  return memory.intents.some(intent => intent.includes(marker))
+/** Whether a memory holds the insight these fields wrote, by its title. */
+function carries(memory: Memory, fields: Fields): boolean {
+  return memory.insights.some(insight => insight.title === fields.title)
 }
 
 /**
@@ -144,19 +136,19 @@ async function accepted(key: Minted): Promise<boolean> {
 }
 
 /**
- * Poll until the user finds the memory carrying the marker, failing the moment
- * they find what `other` wrote.
+ * Poll until the user finds what they wrote, failing the moment they find what
+ * the other user wrote.
  *
  * A fresh session per attempt: within one session a memory already delivered
- * comes back as a bare reference carrying no intents, so a second search in
+ * comes back as a bare reference carrying no insights, so a second search in
  * the same session could never recognise it.
  */
 async function foundAlone(
   client: Memco,
   domain: string,
   user: string,
-  query: string,
-  other: string | null
+  fields: Fields,
+  other: Fields | null
 ): Promise<void> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS
   const waits = pollWaits()
@@ -164,14 +156,14 @@ async function foundAlone(
     await using session = await client.memory.withSession(domain, {
       externalId: user
     })
-    const { memories } = await session.search(query)
+    const { memories } = await session.search(fields.query)
     if (other !== null) {
       assert.ok(
         !memories.some(memory => carries(memory, other)),
-        `${user}'s session found what ${other} wrote, in a network ${user} is not in`
+        `${user}'s session found ${JSON.stringify(other.title)}, written in a network ${user} is not in`
       )
     }
-    if (memories.some(memory => carries(memory, user))) {
+    if (memories.some(memory => carries(memory, fields))) {
       return
     }
     console.log(`  waiting for ingestion of ${user}'s memory`)
@@ -188,13 +180,13 @@ async function act(
   domain: string,
   user: string,
   fields: Fields,
-  other: string | null
+  other: Fields | null
 ): Promise<void> {
   await using session = await client.memory.withSession(domain, {
     externalId: user
   })
   const before = (await session.search(fields.query)).memories
-  assert.ok(!before.some(memory => carries(memory, user)))
+  assert.ok(!before.some(memory => carries(memory, fields)))
   const write = await session.createMemory({
     query: fields.query,
     title: fields.title,
@@ -205,7 +197,7 @@ async function act(
     write.operationId,
     'the write was accepted without an operation id to revert'
   )
-  await foundAlone(client, domain, user, fields.query, other)
+  await foundAlone(client, domain, user, fields, other)
   const undo = await session.revertMemory(write.operationId)
   assert.equal(
     undo.outcome,
@@ -227,13 +219,13 @@ test(
         const keys = recordKeys(admin)
         console.log(`\n[${network.domain}] acting as ${user.externalId}`)
 
-        const fields = asked(OPENING, user.externalId)
+        const fields = OPENING
         {
           await using session = await admin.memory.withSession(network.domain, {
             externalId: user.externalId
           })
           const before = (await session.search(fields.query)).memories
-          assert.ok(!before.some(memory => carries(memory, user.externalId)))
+          assert.ok(!before.some(memory => carries(memory, fields)))
           const write = await session.createMemory({
             ...fields,
             source: DataSource.AGENT
@@ -242,13 +234,7 @@ test(
             write.operationId,
             'the write has no operation id to revert'
           )
-          await foundAlone(
-            admin,
-            network.domain,
-            user.externalId,
-            fields.query,
-            null
-          )
+          await foundAlone(admin, network.domain, user.externalId, fields, null)
           const undo = await session.revertMemory(write.operationId)
           assert.equal(
             undo.outcome,
@@ -309,8 +295,8 @@ test(
           await client.connect()
           const keys = recordKeys(client)
           await Promise.all([
-            act(client, network.domain, one, asked(RENEWAL, one), two),
-            act(client, network.domain, two, asked(SWEEP, two), one)
+            act(client, network.domain, one, RENEWAL, SWEEP),
+            act(client, network.domain, two, SWEEP, RENEWAL)
           ])
           // Each checked before the client closes, so what ended it is its own
           // session's close rather than the client's sweep.

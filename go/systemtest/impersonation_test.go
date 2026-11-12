@@ -11,11 +11,12 @@ package systemtest
 // key would show as one finding what the other wrote. And closing a session
 // really revokes its key.
 //
-// The memories follow the lifecycle suite's rules: the run marker, here the
-// user's external id, lives only in the query, and the insight is plain prose
+// The memories follow the lifecycle suite's rules: the insight is plain prose
 // about this SDK, distinct from every other write, so none reads as the same
-// knowledge as another. A write a failing test leaves behind goes with its
-// customer network.
+// knowledge as another, and a memory is recognised by its insight's title.
+// Each user writes in a network of their own, so a title found there is that
+// user's write. A write a failing test leaves behind goes with its customer
+// network.
 
 import (
 	"context"
@@ -26,7 +27,6 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -78,16 +78,9 @@ var (
 	}
 )
 
-// asked is the note with the run marker added to the query alone.
-func asked(n note, marker string) note {
-	n.query += " (system test " + marker + ")"
-	return n
-}
-
-// carries reports whether a memory was written with marker in its query,
-// which becomes one of its intents.
-func carries(memory memcoai.Memory, marker string) bool {
-	return slices.ContainsFunc(memory.Intents, func(intent string) bool { return strings.Contains(intent, marker) })
+// carries reports whether a memory holds the insight n wrote, by its title.
+func carries(memory memcoai.Memory, n note) bool {
+	return slices.ContainsFunc(memory.Insights, func(insight memcoai.Insight) bool { return insight.Title == n.title })
 }
 
 // frame is a message the proxy passes on unread.
@@ -222,9 +215,9 @@ func keyWorks(ctx context.Context, key *adminv1.ImpersonationKey) (bool, error) 
 }
 
 // act writes, finds and reverts a memory as one user, failing if a search ever
-// returns what other wrote. It returns rather than fails, so it can run on a
-// goroutine of its own.
-func act(ctx context.Context, client *memcoai.Client, domain, user, other string, fields note) error {
+// returns what other, when set, wrote. It returns rather than fails, so it can
+// run on a goroutine of its own.
+func act(ctx context.Context, client *memcoai.Client, domain, user string, fields note, other *note) error {
 	session, err := client.Memory.StartSession(ctx, domain, memcoai.ExternalID(user))
 	if err != nil {
 		return fmt.Errorf("%s: opening: %w", user, err)
@@ -234,7 +227,7 @@ func act(ctx context.Context, client *memcoai.Client, domain, user, other string
 	if err != nil {
 		return fmt.Errorf("%s: searching first: %w", user, err)
 	}
-	if slices.ContainsFunc(before.Memories, func(m memcoai.Memory) bool { return carries(m, user) }) {
+	if slices.ContainsFunc(before.Memories, func(m memcoai.Memory) bool { return carries(m, fields) }) {
 		return fmt.Errorf("%s: its memory was found before it was written", user)
 	}
 	write, err := session.CreateMemory(ctx, memcoai.ScopedCreateMemoryParams{
@@ -252,10 +245,10 @@ func act(ctx context.Context, client *memcoai.Client, domain, user, other string
 		if err != nil {
 			return fmt.Errorf("%s: searching: %w", user, err)
 		}
-		if other != "" && slices.ContainsFunc(result.Memories, func(m memcoai.Memory) bool { return carries(m, other) }) {
-			return fmt.Errorf("%s's session found what %s wrote, in a network it is not in", user, other)
+		if other != nil && slices.ContainsFunc(result.Memories, func(m memcoai.Memory) bool { return carries(m, *other) }) {
+			return fmt.Errorf("%s's session found %q, written in a network it is not in", user, other.title)
 		}
-		if slices.ContainsFunc(result.Memories, func(m memcoai.Memory) bool { return carries(m, user) }) {
+		if slices.ContainsFunc(result.Memories, func(m memcoai.Memory) bool { return carries(m, fields) }) {
 			break
 		}
 		if time.Now().Add(pause).After(deadline) {
@@ -285,7 +278,7 @@ func TestASessionActsAsAnExternalUserAndItsKeyEndsWithIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := act(ctx, client, network.Domain, user.ExternalID, "", asked(opening, user.ExternalID)); err != nil {
+	if err := act(ctx, client, network.Domain, user.ExternalID, opening, nil); err != nil {
 		t.Fatal(err)
 	}
 	keys := proxy.minted()
@@ -327,10 +320,10 @@ func TestTwoUsersActAtOnceEachUnderAKeyOfItsOwn(t *testing.T) {
 
 	errs := make(chan error, 2)
 	go func() {
-		errs <- act(ctx, client, root.Domain, first.ExternalID, second.ExternalID, asked(renewal, first.ExternalID))
+		errs <- act(ctx, client, root.Domain, first.ExternalID, renewal, &sweep)
 	}()
 	go func() {
-		errs <- act(ctx, client, root.Domain, second.ExternalID, first.ExternalID, asked(sweep, second.ExternalID))
+		errs <- act(ctx, client, root.Domain, second.ExternalID, sweep, &renewal)
 	}()
 	for range 2 {
 		if err := <-errs; err != nil {

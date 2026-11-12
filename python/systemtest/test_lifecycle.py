@@ -51,10 +51,11 @@ def poll_waits() -> Iterator[float]:
 def probe(nonce: str) -> dict[str, str]:
     """The memory this run writes: true, substantive, and free of identifiers.
 
-    The run marker lives in the query and nowhere else. The query becomes the
-    memory's intent, which comes back on every search result, so the test can
-    still recognise its own memory — while the insight the service evaluates is
-    pure prose.
+    The run marker lives in the query and nowhere else, where it labels the run
+    for anyone reading the domain; the service does not return it. The test
+    recognises its memory by the insight's title instead, which belongs to this
+    SDK and this subject alone, while the insight the service evaluates is pure
+    prose.
 
     Two quality-gate rules have already rejected versions of this, and a
     rejection is invisible from here: the write is accepted, the memory never
@@ -126,14 +127,16 @@ def _insight_titled(memory: Memory, title: str) -> Insight | None:
     return None
 
 
-def _is_ours(memory: Memory, nonce: str) -> bool:
-    """Whether this memory was written by this run.
+def _is_ours(memory: Memory, titles: tuple[str, ...]) -> bool:
+    """Whether this memory holds an insight this run wrote, by title.
 
-    The marker is in the intent because it cannot be in the insight: the query
-    passed to create_memory becomes the memory's intent, and intents come back
-    on every search result.
+    The titles are this SDK's alone, and the CI job keeps one run per language
+    in flight, so a match is this run's write. The revert proves it: its outcome
+    would be MERGED, not MEMORY_REMOVED, had the write joined a memory someone
+    else left behind. Every title the run wrote is accepted, since a search may
+    sample either insight of the enriched memory.
     """
-    return any(nonce in intent for intent in memory.intents)
+    return any(insight.title in titles for insight in memory.insights)
 
 
 def _resolved(client: Memco, memory: Memory) -> Memory:
@@ -151,7 +154,7 @@ def _resolved(client: Memco, memory: Memory) -> Memory:
 
 
 def _search_until_found(
-    client: Memco, session_id: str, query: str, nonce: str, title: str
+    client: Memco, session_id: str, query: str, title: str
 ) -> tuple[Memory, Insight]:
     """Poll the search until this run's own memory comes back, or give up loudly.
 
@@ -167,8 +170,6 @@ def _search_until_found(
         seen = len(result.memories)
         for candidate in result.memories:
             memory = _resolved(client, candidate)
-            if not _is_ours(memory, nonce):
-                continue
             insight = _insight_titled(memory, title)
             if insight is not None:
                 return memory, insight
@@ -176,17 +177,14 @@ def _search_until_found(
         time.sleep(next(waits))
     pytest.fail(
         f"the memory never became searchable within {INGEST_TIMEOUT:.0f}s "
-        f"(last search returned {seen} memories, none whose intent names {nonce!r}). "
-        "Three things can cause this. The write may have been rejected downstream "
-        "by the quality gate, in which case it never becomes searchable at all. "
-        "Ingestion may simply be slower than the budget. Or the service may not "
-        "carry a newly created memory's own query in its intents, which is the "
-        "assumption this suite rests on to recognise its own memory without "
-        "putting an identifier in the insight."
+        f"(last search returned {seen} memories, none holding an insight titled {title!r}). "
+        "Two things can cause this. The write may have been rejected downstream by "
+        "the quality gate, in which case it never becomes searchable at all. Or "
+        "ingestion may simply be slower than the budget."
     )
 
 
-def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, title: str) -> Insight:
+def _search_until_titled(client: Memco, query: str, domain: str, title: str) -> Insight:
     """Poll a fresh search until the memory carries an insight with this title.
 
     Deliberately not GetMemory on the idx the earlier search returned. An idx is
@@ -202,8 +200,6 @@ def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, tit
     waits = poll_waits()
     while time.monotonic() < deadline:
         for candidate in client.memory.search(query, domain=domain).memories:
-            if not _is_ours(candidate, nonce):
-                continue
             insight = _insight_titled(candidate, title)
             if insight is not None:
                 return insight
@@ -216,13 +212,29 @@ def _search_until_titled(client: Memco, query: str, domain: str, nonce: str, tit
     )
 
 
-def _search_until_absent(client: Memco, query: str, domain: str, nonce: str) -> None:
+def _assert_no_leftover(client: Memco, query: str, domain: str, ours: tuple[str, ...]) -> None:
+    """Fail before writing when the domain already holds a memory with one of this run's titles.
+
+    Recognising the run's memory by title relies on none being there: a probe
+    left by a run killed before its cleanup would otherwise be taken for this
+    run's, and every later run would fail late and point the wrong way until
+    someone removed it.
+    """
+    for memory in client.memory.search(query, domain=domain).memories:
+        if _is_ours(memory, ours):
+            pytest.fail(
+                f"{domain} already holds {memory.idx}, a probe an earlier run left behind; "
+                "remove it before running this suite again"
+            )
+
+
+def _search_until_absent(client: Memco, query: str, domain: str, ours: tuple[str, ...]) -> None:
     """Poll a fresh search until this run's memory is no longer returned."""
     deadline = time.monotonic() + REMOVAL_TIMEOUT
     waits = poll_waits()
     while time.monotonic() < deadline:
         found = [
-            m for m in client.memory.search(query, domain=domain).memories if _is_ours(m, nonce)
+            m for m in client.memory.search(query, domain=domain).memories if _is_ours(m, ours)
         ]
         if not found:
             return
@@ -260,10 +272,12 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     """
     fields = probe(nonce)
     extra = addition()
+    ours = (fields["title"], extra["title"])
     print(f"\n[{domain}] probe {nonce}")
 
     session = client.memory.start_session(domain)
     assert session.id
+    _assert_no_leftover(client, fields["query"], domain, ours)
 
     write = client.memory.create_memory(
         query=fields["query"],
@@ -279,9 +293,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     written.append(write.operation_id)
     print(f"  created, operation {write.operation_id}")
 
-    memory, insight = _search_until_found(
-        client, session.id, fields["query"], nonce, fields["title"]
-    )
+    memory, insight = _search_until_found(client, session.id, fields["query"], fields["title"])
     print(f"  found as {memory.idx}, insight {insight.idx}")
 
     feedback = client.memory.share_feedback(
@@ -305,7 +317,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     assert enrichment.operation_id
     written.append(enrichment.operation_id)
-    added = _search_until_titled(client, fields["query"], domain, nonce, extra["title"])
+    added = _search_until_titled(client, fields["query"], domain, extra["title"])
     print(f"  enriched, insight {added.idx}")
 
     undo_addition = client.memory.revert_memory(enrichment.operation_id)
@@ -314,7 +326,7 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     # The outcome is what the service reported; this is what it did. The
     # addition is gone and the memory it joined is intact.
-    after = _search_until_titled(client, fields["query"], domain, nonce, fields["title"])
+    after = _search_until_titled(client, fields["query"], domain, fields["title"])
     assert after.title == fields["title"], (
         "reverting the addition took the original insight with it"
     )
@@ -331,6 +343,6 @@ def test_the_whole_lifecycle_runs_against_the_live_service(
     )
     print("  reverted")
 
-    _search_until_absent(client, fields["query"], domain, nonce)
+    _search_until_absent(client, fields["query"], domain, ours)
     _get_until_gone(client, memory.idx)
     print("  gone")

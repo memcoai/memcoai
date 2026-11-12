@@ -23,7 +23,7 @@ from memcoai.memory.v1 import memory_pb2_grpc as _pbg
 from . import _auth, _requests
 from ._auth import AsyncRenewing, Live, Minted
 from ._channel import build_async_channel
-from ._config import DEFAULT_TIMEOUT, resolve
+from ._config import DEFAULT_TIMEOUT, Integration, resolve
 from ._config import deadline as _deadline
 from ._logging import elapsed_ms, rpc_name, set_level
 from ._provenance import provenance as _provenance
@@ -110,6 +110,10 @@ class AsyncMemco:
             ``WARNING`` as it is built.
         timeout: Default deadline in seconds for each call, covering any wait
             for a credential as well as the request itself.
+        integration: The integration calling the SDK, such as a framework's
+            memory provider, announced to the service after the SDK's own
+            user-agent token so its traffic can be told apart. Set by
+            integrations, not applications; no environment variable sets it.
         env: Environment mapping to read defaults from. Defaults to
             :data:`os.environ`.
         log_level: The SDK's log level, as a name — ``"debug"``, ``"info"``,
@@ -127,8 +131,8 @@ class AsyncMemco:
             beside client credentials, only half of the client pair is given,
             ``token_lifetime`` is given without client credentials or is not
             positive, the host is unusable, ``MEMCO_API_TLS`` is neither
-            ``true`` nor ``false``, or ``log_level`` is not a level this SDK
-            accepts.
+            ``true`` nor ``false``, ``log_level`` is not a level this SDK
+            accepts, or a part of ``integration`` is malformed.
 
     Attributes:
         memory: The memory operations, as
@@ -156,6 +160,7 @@ class AsyncMemco:
         token_lifetime: int | None = None,
         tls: bool | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        integration: Integration | None = None,
         env: Mapping[str, str] | None = None,
         log_level: str | int | None = None,
     ) -> None:
@@ -171,6 +176,7 @@ class AsyncMemco:
                 token_lifetime=token_lifetime,
                 tls=tls,
                 timeout=timeout,
+                integration=integration,
                 env=env,
             )
         except MemcoConfigError as exc:

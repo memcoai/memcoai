@@ -229,9 +229,7 @@ func externalUser(t *testing.T, admin *memcoai.Client, roles ...string) (*memcoa
 	return admin.Users.Create(t.Context(), externalID, memcoai.CreateUserParams{Roles: roles})
 }
 
-// placed is a new creator placed in a customer network of its own. Its
-// external id doubles as the marker of what it writes: nothing else carries
-// it.
+// placed is a new creator placed in a customer network of its own.
 func placed(t *testing.T, admin *memcoai.Client, root memcoai.Network) (network memcoai.Network, user *memcoai.ExternalUser) {
 	t.Helper()
 	network = customerNetwork(t, admin, root)
